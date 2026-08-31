@@ -144,6 +144,27 @@ function clientIp() {
     return '0.0.0.0';
 }
 
+/* v1.2.46: label lokasi dari IP (best-effort, sekali saat percakapan dibuat).
+ * Dipakai jadi ID percakapan web: "IP · Kota". Aman kalau egress diblokir. */
+function deiGeoCity($ip) {
+    if ($ip === '' || $ip === '0.0.0.0' || $ip === '127.0.0.1' || strpos($ip, '::1') === 0) return '';
+    if (preg_match('/^(10\\.|192\\.168\\.|172\\.(1[6-9]|2\\d|3[01])\\.)/', $ip)) return '';
+    $url = 'http://ip-api.com/json/' . urlencode($ip) . '?fields=status,city,regionName,country';
+    $ctx = stream_context_create(['http' => ['timeout' => 3, 'ignore_errors' => true]]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw === false) return '';
+    $d = json_decode($raw, true);
+    if (!is_array($d) || ($d['status'] ?? '') !== 'success') return '';
+    $parts = array_values(array_filter([$d['city'] ?? '', $d['country'] ?? '']));
+    return implode(', ', array_slice($parts, 0, 2));
+}
+
+/* Label ID percakapan web: "IP · Kota" (kota opsional). */
+function deiWebConvLabel($ip, $city) {
+    $ip = ($ip && $ip !== '0.0.0.0') ? $ip : 'Pengunjung';
+    return $city ? ($ip . ' · ' . $city) : $ip;
+}
+
 /* ----------------------------------------------------------------------------
  *  Secret key (auto-generated, stored as PHP so it is never served as text)
  * ------------------------------------------------------------------------- */
@@ -2026,9 +2047,15 @@ switch ($action) {
                 $convs[$idx]['last_message'] = mb_substr($message, 0, 120);
                 $convs[$idx]['last_answer'] = mb_substr($answer, 0, 120);
                 $convs[$idx]['message_count'] = count($convMsgs);
-                // Auto-title: kalau masih 'Percakapan baru', ganti dengan pesan pertama user
-                if (($convs[$idx]['title'] ?? '') === 'Percakapan baru') {
-                    $convs[$idx]['title'] = mb_substr($message, 0, 60);
+                // v1.2.46: ID percakapan = IP + kota (bukan teks pesan).
+                // Isi kalau belum ada, atau kalau masih judul lama berbasis pesan.
+                $needLabel = empty($convs[$idx]['ip']) || ($convs[$idx]['title'] ?? '') === 'Percakapan baru';
+                if ($needLabel) {
+                    $ipC = $convs[$idx]['ip'] ?? clientIp();
+                    $cityC = $convs[$idx]['city'] ?? deiGeoCity($ipC);
+                    $convs[$idx]['ip'] = $ipC;
+                    $convs[$idx]['city'] = $cityC;
+                    $convs[$idx]['title'] = deiWebConvLabel($ipC, $cityC);
                 }
                 webConvWrite($convs);
             }
@@ -2085,15 +2112,21 @@ switch ($action) {
         }
 
         $convId = webConvGenId();
-        $title = trim($in['title'] ?? '') ?: 'Percakapan baru';
         $greeting = $s['bot']['greeting'] ?? 'Halo! Ada yang bisa saya bantu?';
         $now = date('Y-m-d H:i:s');
+
+        // v1.2.46: ID percakapan = IP + kota (best-effort), bukan teks pesan
+        $ipConv = clientIp();
+        $cityConv = deiGeoCity($ipConv);
+        $title = deiWebConvLabel($ipConv, $cityConv);
 
         // Create metadata entry
         $convs[] = [
             'id'            => $convId,
             'visitor_id'    => $visitorId,
             'title'         => mb_substr($title, 0, 120),
+            'ip'            => $ipConv,
+            'city'          => $cityConv,
             'created_at'    => $now,
             'last_ts'       => $now,
             'last_message'  => '',
@@ -2245,10 +2278,13 @@ switch ($action) {
             webConvSaveMessages($convId, $msgs);
             $first = $entries[0];
             $last  = $entries[count($entries) - 1];
+            $cityMig = deiGeoCity($ip);
             $convs[] = [
                 'id'            => $convId,
                 'visitor_id'    => $visitorId,
-                'title'         => mb_substr(($first['q'] ?? '') !== '' ? $first['q'] : 'Percakapan (arsip)', 0, 60),
+                'title'         => deiWebConvLabel($ip, $cityMig),
+                'ip'            => $ip,
+                'city'          => $cityMig,
                 'created_at'    => $first['ts'] ?? date('Y-m-d H:i:s'),
                 'last_ts'       => $last['ts'] ?? ($first['ts'] ?? date('Y-m-d H:i:s')),
                 'last_message'  => mb_substr((string)($last['q'] ?? ''), 0, 120),
