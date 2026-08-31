@@ -576,7 +576,10 @@
 
     <!-- WEB CONVERSATIONS (v1.2.45) -->
     <section class="panel" id="panel-webchat">
-      <div class="ph"><h2>Percakapan Web</h2><p>Pantau percakapan chat dari widget website. Setiap pengunjung bisa membuka beberapa topik percakapan terpisah.</p></div>
+      <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div><h2>Percakapan Web</h2><p>Pantau percakapan chat dari widget website. Setiap pengunjung bisa membuka beberapa topik percakapan terpisah.</p></div>
+        <button class="btn ghost sm" id="webImportBtn" type="button" title="Impor chat lama dari Laporan/Log jadi percakapan (per IP per hari)"><span data-ico="download" data-ico-size="14"></span> Impor Chat Lama</button>
+      </div>
       <div class="card" style="padding:0;overflow:hidden">
         <div class="wachat-wrap">
           <div class="wachat-list" id="webConvList"><div style="padding:16px;color:var(--muted)">Memuat…</div></div>

@@ -2206,6 +2206,64 @@ switch ($action) {
         break;
     }
 
+    /* ---------- ADMIN: Migrasi chat lama -> Percakapan Web (v1.2.45) ---------- */
+    case 'web_conv_migrate': {
+        requireAuth(['super_admin', 'admin']);
+        $markerFile = DATA_DIR . '/web-migrated.flag';
+        $force = !empty($_GET['force']);
+        if (file_exists($markerFile) && !$force) {
+            jsonOut(['ok' => false, 'error' => 'Migrasi sudah pernah dijalankan. Tambahkan &force=1 untuk mengulang.'], 409);
+        }
+
+        $logs = readJson(LOG_FILE, []);
+        // Kelompokkan entri channel 'web' per IP per hari
+        $groups = [];
+        foreach ($logs as $e) {
+            if (($e['channel'] ?? '') !== 'web') continue;
+            if (($e['q'] ?? '') === '' && ($e['a'] ?? '') === '') continue;
+            $ip  = (string)($e['ip'] ?? 'unknown');
+            $ts  = (string)($e['ts'] ?? '');
+            $day = substr($ts, 0, 10) ?: 'nodate';
+            $groups[$ip . '|' . $day][] = $e;
+        }
+
+        $convs = webConvReadAll();
+        $created = 0;
+        foreach ($groups as $key => $entries) {
+            // log tersimpan terbaru-dulu; urutkan menaik berdasarkan waktu
+            usort($entries, function ($a, $b) { return strcmp($a['ts'] ?? '', $b['ts'] ?? ''); });
+            $parts = explode('|', $key, 2);
+            $ip = $parts[0];
+            $convId = webConvGenId();
+            $visitorId = 'wv_mig_' . substr(md5($ip), 0, 12);
+            $msgs = [];
+            foreach ($entries as $e) {
+                if (($e['q'] ?? '') !== '') $msgs[] = ['role' => 'user', 'content' => $e['q'], 'ts' => $e['ts'] ?? ''];
+                if (($e['a'] ?? '') !== '') $msgs[] = ['role' => 'assistant', 'content' => $e['a'], 'ts' => $e['ts'] ?? ''];
+            }
+            if (empty($msgs)) continue;
+            webConvSaveMessages($convId, $msgs);
+            $first = $entries[0];
+            $last  = $entries[count($entries) - 1];
+            $convs[] = [
+                'id'            => $convId,
+                'visitor_id'    => $visitorId,
+                'title'         => mb_substr(($first['q'] ?? '') !== '' ? $first['q'] : 'Percakapan (arsip)', 0, 60),
+                'created_at'    => $first['ts'] ?? date('Y-m-d H:i:s'),
+                'last_ts'       => $last['ts'] ?? ($first['ts'] ?? date('Y-m-d H:i:s')),
+                'last_message'  => mb_substr((string)($last['q'] ?? ''), 0, 120),
+                'last_answer'   => mb_substr((string)($last['a'] ?? ''), 0, 120),
+                'message_count' => count($msgs),
+                'migrated'      => true,
+            ];
+            $created++;
+        }
+        webConvWrite($convs);
+        @file_put_contents($markerFile, date('Y-m-d H:i:s') . " migrated=$created\n");
+        jsonOut(['ok' => true, 'migrated' => $created, 'total_conversations' => count($convs)]);
+        break;
+    }
+
     /* ---------- PUBLIC: WhatsApp Cloud API webhook ---------- */
     case 'wa_webhook': {
         $s  = getSettings();

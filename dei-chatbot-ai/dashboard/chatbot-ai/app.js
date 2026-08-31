@@ -1631,6 +1631,23 @@
       var w = document.querySelector('#panel-webchat .wachat-wrap');
       if (w) w.classList.remove('showing-thread');
     };
+    if ($('#webImportBtn') && !$('#webImportBtn').dataset.wired) {
+      $('#webImportBtn').dataset.wired = '1';
+      $('#webImportBtn').onclick = function () {
+        if (!confirm('Impor chat lama (channel web) dari Log jadi percakapan? Dikelompokkan per IP per hari. Aman dijalankan sekali.')) return;
+        var btn = $('#webImportBtn');
+        btn.disabled = true;
+        api('web_conv_migrate', { method: 'POST' }).then(function (res) {
+          btn.disabled = false;
+          if (res.ok) {
+            toast('Impor selesai: ' + res.migrated + ' percakapan ditambahkan.');
+            fetchWebConvs();
+          } else {
+            toast(res.error || 'Gagal impor.', true);
+          }
+        }).catch(function () { btn.disabled = false; toast('Gagal impor.', true); });
+      };
+    }
     if (webState.timer) clearInterval(webState.timer);
     webState.timer = setInterval(function () {
       if (!$('#panel-webchat').classList.contains('active')) return;
