@@ -1,0 +1,8 @@
+# Folder API diakses langsung (api/index.php?action=...).
+# Matikan rewrite warisan dari .htaccess domain utama (penting untuk addon domain),
+# agar request /api/ tidak dibelokkan ke aplikasi lain.
+<IfModule mod_rewrite.c>
+  RewriteEngine Off
+</IfModule>
+Options -MultiViews
+DirectoryIndex index.php

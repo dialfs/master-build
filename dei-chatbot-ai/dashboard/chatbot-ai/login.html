@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Masuk — DEI Chatbot Dashboard</title>
+<link rel="icon" href="./favicon.ico" sizes="any">
+<link rel="icon" href="./favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--brand:#140383;--brand-2:#3b2fb8;--ink:#15152b;--muted:#6b6b82;--line:#e6e6ef;--bg:#f4f5fb}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',system-ui,sans-serif;background:
+        radial-gradient(900px 500px at 90% -10%,rgba(59,47,184,.18),transparent),
+        radial-gradient(700px 400px at -10% 110%,rgba(20,3,131,.16),transparent),
+        var(--bg);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:var(--ink)}
+  .card{background:#fff;width:100%;max-width:400px;border-radius:18px;padding:38px 34px;box-shadow:0 24px 60px rgba(20,3,131,.14);border:1px solid var(--line)}
+  .logo{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand-2));display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:18px}
+  h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:13.5px;margin:6px 0 26px}
+  label{display:block;font-size:13px;font-weight:500;margin-bottom:6px}
+  .field{margin-bottom:16px}
+  input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;outline:none;transition:border .15s}
+  input:focus{border-color:var(--brand)}
+  button{width:100%;padding:13px;background:var(--brand);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s}
+  button:hover{background:var(--brand-2)}
+  button:disabled{opacity:.6;cursor:default}
+  .err{background:#fdecec;color:#c0392b;font-size:13px;padding:10px 12px;border-radius:8px;margin-bottom:16px;display:none}
+  .hint{margin-top:18px;text-align:center;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+  <form class="card" id="form">
+    <div id="loginHead" style="display:flex;align-items:center;gap:13px;margin-bottom:8px">
+      <div class="logo" style="margin-bottom:0;flex-shrink:0"><img id="loginLogoImg" src="./logo-256.png" alt="DEI" style="width:100%;height:100%;border-radius:14px;display:block"></div>
+      <h1 style="margin:0;font-size:19px;line-height:1.25">DEI Chatbot Dashboard</h1>
+    </div>
+    <div id="loginTenant" style="color:var(--ink);font-size:16px;font-weight:600;margin:0 0 22px;min-height:22px"></div>
+    <p class="sub">Masuk untuk mengelola asisten AI Anda.</p>
+    <div class="err" id="err"></div>
+    <div class="field">
+      <label for="u">Username</label>
+      <input id="u" type="text" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="p">Password</label>
+      <input id="p" type="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" id="btn">Masuk</button>
+    <p class="hint">Default awal: <strong>admin</strong> / <strong>admin123</strong> — ganti segera.</p>
+  </form>
+
+<script>
+(function(){
+  // Dynamic base: dashboard lives at <base>/dashboard/chatbot-ai/
+  var path = window.location.pathname;
+  var idx = path.indexOf('/dashboard/chatbot-ai');
+  var base = idx >= 0 ? path.slice(0, idx) : path.replace(/\/[^\/]*$/, '');
+  var API = window.location.origin + base + '/api/index.php';
+
+  // fix: path logo absolut lewat base, bukan relatif ke URL browser.
+  // Relatif ("./logo-256.png") pecah saat diakses lewat alias pretty URL
+  // (https://chatbot.deintegra.com/{tenant}/login) karena browser menghitung
+  // relatifnya ke /{tenant}/, padahal berkasnya ada di
+  // /{tenant}/dashboard/chatbot-ai/logo-256.png. Kalau elemen tidak ketemu
+  // atau base kosong, src relatif bawaan di HTML tetap jadi fallback.
+  (function () {
+    var img = document.getElementById('loginLogoImg');
+    if (img) img.src = base + '/dashboard/chatbot-ai/logo-256.png';
+  })();
+
+  // v1.2.33: tampilkan nama bot tenant ini. 'bootstrap' dipilih karena satu-
+  // satunya sumber yang terbaca TANPA login — di halaman ini pengguna memang
+  // belum masuk. Kalau gagal, baris dibiarkan kosong: ini keterangan, bukan
+  // syarat untuk bisa login.
+  (function () {
+    var el = document.getElementById('loginTenant');
+    if (!el) return;
+    fetch(API + '?action=bootstrap&_=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var nama = res && res.config && res.config.bot && res.config.bot.bot_name;
+        if (nama) el.textContent = nama;
+      })
+      .catch(function () { /* dibiarkan kosong */ });
+  })();
+
+  var form = document.getElementById('form'),
+      err = document.getElementById('err'),
+      btn = document.getElementById('btn');
+
+  // already logged in?
+  // v1.2.30: pemutus loop. Kalau halaman ini sudah mengalihkan dua kali dalam
+  // sepuluh detik, berarti dashboard menolak token yang kita pegang dan
+  // melempar balik ke sini. Daripada berkedip tanpa henti, buang tokennya dan
+  // tampilkan formulir login.
+  (function () {
+    var KUNCI = 'dei_redir_guard';
+    var kini = Date.now();
+    var jejak = [];
+    try { jejak = JSON.parse(sessionStorage.getItem(KUNCI) || '[]'); } catch (e) { jejak = []; }
+    jejak = jejak.filter(function (t) { return kini - t < 10000; });   // 10 detik terakhir saja
+
+    if (jejak.length >= 2) {
+      try {
+        localStorage.removeItem('dei_token');
+        localStorage.removeItem('dei_user');
+        sessionStorage.removeItem(KUNCI);
+      } catch (e) {}
+      return;   // berhenti: tampilkan formulir login
+    }
+
+    var tok = localStorage.getItem('dei_token');
+    if (!tok) return;
+
+    // v1.2.31: jangan mengalihkan hanya karena token ADA — pastikan dulu masih
+    // sah. Token kedaluwarsa yang dianggap sah itulah yang dulu membuat halaman
+    // berputar antara login dan dashboard.
+    fetch(API + '?action=auth_check&_=' + Date.now(), {
+      headers: { 'X-Auth-Token': tok },
+      cache: 'no-store'
+    }).then(function (r) {
+      if (r.status === 200) {
+        jejak.push(kini);
+        try { sessionStorage.setItem(KUNCI, JSON.stringify(jejak)); } catch (e) {}
+        window.location.href = base + '/dashboard/chatbot-ai/index.html'; // v1.3.2 fix: absolute redirect (pretty URL compat)
+      } else {
+        // token ditolak -> bersihkan, biarkan pengguna login lagi
+        try {
+          localStorage.removeItem('dei_token');
+          localStorage.removeItem('dei_user');
+        } catch (e) {}
+      }
+    }).catch(function () {
+      // Jaringan bermasalah. Token TIDAK dibuang — membuang sesi hanya karena
+      // sinyal putus itu menyebalkan. Formulir login tetap tersedia.
+    });
+  })();
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    err.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Memproses...';
+    fetch(API + '?action=login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ username: document.getElementById('u').value, password: document.getElementById('p').value })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if (res && res.ok) {
+        try { sessionStorage.removeItem('dei_redir_guard'); } catch (e) {}   // v1.2.30
+        localStorage.setItem('dei_token', res.token);
+        localStorage.setItem('dei_user', JSON.stringify(res.user));
+        window.location.href = base + '/dashboard/chatbot-ai/index.html'; // v1.3.2 fix: absolute redirect (pretty URL compat)
+      } else {
+        err.textContent = (res && res.error) || 'Gagal masuk.';
+        err.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Masuk';
+      }
+    })
+    .catch(function(){
+      err.textContent = 'Tidak dapat terhubung ke server. Cek instalasi API.';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Masuk';
+    });
+  });
+})();
+</script>
+</body>
+</html>

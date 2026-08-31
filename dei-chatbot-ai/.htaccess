@@ -1,0 +1,42 @@
+# DEI AI Chatbot — root .htaccess (v1.3.2: pretty URL fixed + security)
+
+# --- Pretty URL routing ---
+RewriteEngine On
+RewriteRule ^$ dashboard/chatbot-ai/login.html [L]
+RewriteRule ^login/?$ dashboard/chatbot-ai/login.html [L]
+RewriteRule ^admin/?$ dashboard/chatbot-ai/index.html [L]
+RewriteRule ^dashboard/?$ dashboard/chatbot-ai/index.html [L]
+
+# v1.3.2: index.html + login.html at root now safe (login.html fixed absolute redirect)
+RewriteRule ^index\.html?$ dashboard/chatbot-ai/index.html [L]
+RewriteRule ^login\.html?$ dashboard/chatbot-ai/login.html [L]
+
+# --- Protect sensitive files ---
+<FilesMatch "\.(secret|secret\.php)$">
+  Require all denied
+</FilesMatch>
+
+# Block direct access to data/*.json (served only via API)
+RedirectMatch 403 ^/?.*/data/.*\.json$
+
+# --- Security headers ---
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# --- Gzip compression ---
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json
+</IfModule>
+
+# --- Browser caching ---
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 7 days"
+  ExpiresByType application/javascript "access plus 7 days"
+  ExpiresByType image/png "access plus 30 days"
+  ExpiresByType image/jpeg "access plus 30 days"
+</IfModule>
+

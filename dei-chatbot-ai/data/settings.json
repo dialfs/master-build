@@ -1,0 +1,69 @@
+{
+  "api": {
+    "claude_api_key": "",
+    "model": "claude-haiku-4-5-20251001",
+    "key_is_set": false
+  },
+  "bot": {
+    "bot_name": "Asisten AI",
+    "greeting": "Halo! Ada yang bisa saya bantu?",
+    "birthday_greeting": "",
+    "quick_replies": [
+      "Tanya layanan",
+      "Cek harga",
+      "Hubungi admin"
+    ],
+    "system_prompt": "Anda adalah asisten customer service yang ramah dan profesional. Jawab hanya berdasarkan informasi di knowledge base."
+  },
+  "appearance": {
+    "primary_color": "#140383",
+    "position": "right",
+    "avatar_type": "emoji",
+    "avatar_emoji": "🤖",
+    "avatar_icon_name": "bot",
+    "avatar_image": "",
+    "offset_bottom": 24,
+    "offset_right": 24
+  },
+  "widget": {
+    "chatbot_enabled": true,
+    "whatsapp_enabled": false,
+    "whatsapp_number": "",
+    "whatsapp_message": "Halo, saya tertarik dengan layanan Anda."
+  },
+  "whatsapp_api": {
+    "enabled": false,
+    "provider": "meta",
+    "access_token": "",
+    "phone_number_id": "",
+    "verify_token": "",
+    "app_secret": "",
+    "fonnte_token": "",
+    "fonnte_device": "",
+    "fonnte_webhook_key": "",
+    "keep_context": true
+  },
+  "telegram": {
+    "bot_token": "",
+    "chat_id": ""
+  },
+  "handoff": {
+    "enabled": true,
+    "keywords": [
+      "admin",
+      "manusia",
+      "human",
+      "lapor",
+      "komplain"
+    ]
+  },
+  "central_server": {
+    "url": "http://dei-pusat.test",
+    "tenant_id": "",
+    "license_key": "",
+    "auto_update": false,
+    "last_check": "",
+    "last_result": "",
+    "target_last_ver": ""
+  }
+}

@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>DEI Chatbot Dashboard</title>
+<link rel="icon" href="./favicon.ico" sizes="any">
+<link rel="icon" href="./favicon-32.png" type="image/png" sizes="32x32">
+<!-- v1.2.8: PWA + Web Push -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#140383">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand:#140383;--brand-2:#3b2fb8;--brand-soft:#eceaf9;
+    --ink:#15152b;--muted:#6b6b82;--line:#e6e6ef;--bg:#f4f5fb;
+    --ok:#1f9d55;--ok-bg:#e6f6ec;--warn:#c0392b;--warn-bg:#fdecec;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{overflow-x:hidden;max-width:100vw}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;min-height:100vh}
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+  a{color:var(--brand)}
+
+  /* layout */
+  .app{display:flex;min-height:100vh}
+  .side{width:248px;background:#fff;border-right:1px solid var(--line);position:fixed;inset:0 auto 0 0;display:flex;flex-direction:column;z-index:20}
+  .brand{padding:20px 20px 16px;display:flex;align-items:center;gap:11px;border-bottom:1px solid var(--line)}
+  .brand .mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+  .brand b{font-size:15px;letter-spacing:-.01em;display:block}
+  .brand small{color:var(--muted);font-size:11px}
+  nav{padding:12px 10px;flex:1;overflow-y:auto}
+  nav button{display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:none;border:none;padding:11px 12px;border-radius:9px;font-size:13.5px;font-weight:500;color:var(--muted);cursor:pointer;font-family:inherit;margin-bottom:2px}
+  nav button:hover{background:var(--bg);color:var(--ink)}
+  nav button.active{background:var(--brand-soft);color:var(--brand);font-weight:600}
+  nav button .ic{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex-shrink:0}
+  nav button .ic svg{display:block}
+  .who{padding:14px 16px;border-top:1px solid var(--line);font-size:12.5px}
+  .who .nm{font-weight:600}
+  .who .badge{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:20px;background:var(--brand-soft);color:var(--brand);font-weight:600;margin-top:3px}
+  .who button{margin-top:10px;background:none;border:1px solid var(--line);color:var(--muted);padding:7px 12px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12.5px;width:100%}
+  .who button:hover{border-color:var(--warn);color:var(--warn)}
+
+  main{flex:1;margin-left:248px;padding:28px 32px 60px;max-width:1100px}
+  .ph{margin-bottom:22px}
+  .ph h2{font-size:22px;font-weight:700;letter-spacing:-.02em}
+  .ph p{color:var(--muted);margin-top:4px}
+
+  .panel{display:none}
+  .panel.active{display:block;animation:fade .2s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin-bottom:18px}
+
+  /* v1.1.6: Pill badges untuk usage card — lebih lapang dari .badge umum */
+  .uc-pill{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:7px 14px;border-radius:999px;
+    font-size:12.5px;font-weight:600;line-height:1.2;letter-spacing:.15px;
+    color:#fff;background:#5d6479;
+    box-shadow:0 1px 2px rgba(0,0,0,.08);
+    white-space:nowrap;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .uc-pill:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  .uc-pill .uc-dot{
+    width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.85);
+    box-shadow:0 0 0 2px rgba(255,255,255,.2);
+    flex-shrink:0;
+  }
+  .uc-pill .uc-label{opacity:.78;font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;margin-right:2px}
+  .uc-pill.uc-status-active  .uc-dot{animation:ucPulse 2s ease-in-out infinite}
+  @keyframes ucPulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .card h3{font-size:15px;font-weight:600;margin-bottom:4px}
+  .card .desc{color:var(--muted);font-size:13px;margin-bottom:16px}
+
+  /* stat cards */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .stat .v{font-size:26px;font-weight:700;letter-spacing:-.02em}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+
+  /* form */
+  label.fl{display:block;font-size:13px;font-weight:500;margin:0 0 6px}
+  .row{margin-bottom:16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  input[type=text],input[type=password],input[type=number],input[type=date],select,textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;outline:none;background:#fff}
+  input:focus,select:focus,textarea:focus{border-color:var(--brand)}
+  textarea{resize:vertical;min-height:90px;line-height:1.5}
+  .help{font-size:12px;color:var(--muted);margin-top:5px}
+  input[type=color]{width:48px;height:38px;padding:2px;border:1px solid var(--line);border-radius:8px;cursor:pointer;vertical-align:middle}
+
+  .btn{background:var(--brand);color:#fff;border:none;padding:10px 18px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--brand-2)}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.ghost:hover{background:var(--brand-soft)}
+  .btn.sm{padding:7px 12px;font-size:12.5px}
+  .btn.danger{background:#fff;color:var(--warn);border:1px solid var(--line)}
+  .btn.danger:hover{border-color:var(--warn)}
+  .btn:disabled{opacity:.55;cursor:default}
+
+  /* table */
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{text-align:left;font-weight:600;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:10px 10px;border-bottom:1px solid var(--line)}
+  .tbl td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .tbl tr:hover td{background:var(--bg)}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;background:var(--brand-soft);color:var(--brand);font-weight:500}
+  .tag.none{background:#f0f0f4;color:var(--muted)}
+  .tbl .q{font-weight:500}
+  .tbl .a{color:var(--muted)}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+
+  .quick-rows .qr{display:flex;gap:8px;margin-bottom:8px}
+  .quick-rows .qr input{flex:1}
+  .quick-rows .qr button{flex-shrink:0;background:#fff;border:1px solid var(--line);border-radius:8px;width:38px;cursor:pointer;color:var(--warn)}
+
+  .toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px}
+  .toolbar .row{margin:0}
+  .toolbar .row label{font-size:12px}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 22px;border-radius:10px;font-size:13.5px;z-index:100;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+  .toast.err{background:var(--warn)}
+
+  .codebox{background:#0e0e22;color:#d6d6f0;border-radius:10px;padding:16px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 11px;border-radius:20px;font-weight:500}
+  .pill.on{background:var(--ok-bg);color:var(--ok)}
+  .pill.off{background:#f0f0f4;color:var(--muted)}
+
+  .switch{position:relative;display:inline-block;width:46px;height:26px}
+  .switch input{display:none}
+  .switch .sl{position:absolute;inset:0;background:#cfcfe0;border-radius:26px;cursor:pointer;transition:.2s}
+  .switch .sl:before{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .switch input:checked + .sl{background:var(--ok)}
+  .switch input:checked + .sl:before{transform:translateX(20px)}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)}
+  .toggle-row:last-child{border-bottom:none}
+  .toggle-row .tt{font-weight:500}
+  .toggle-row .td{font-size:12.5px;color:var(--muted)}
+
+  /* test chat */
+  #test-body{height:340px;overflow-y:auto;background:var(--bg);border-radius:10px;padding:14px;margin-bottom:12px}
+  .tm{display:flex;margin-bottom:9px}
+  .tm.user{justify-content:flex-end}
+  .tm-b{max-width:78%;padding:9px 13px;border-radius:13px;font-size:13.5px;line-height:1.45;white-space:pre-wrap}
+  .tm.bot .tm-b{background:#fff;border:1px solid var(--line)}
+  .tm.user .tm-b{background:var(--brand);color:#fff}
+
+  .hide{display:none!important}
+  @media(max-width:860px){
+    /* ===== Hamburger button (top-left, konvensional, dengan safe area) ===== */
+    .menu-btn{
+      display:flex!important;align-items:center;justify-content:center;
+      position:fixed;
+      top:calc(env(safe-area-inset-top, 0px) + 12px);
+      left:calc(env(safe-area-inset-left, 0px) + 12px);
+      z-index:50;
+      width:44px;height:44px;border-radius:12px;
+      background:var(--brand);color:#fff;border:none;
+      font-size:22px;line-height:1;
+      box-shadow:0 4px 12px rgba(20,3,131,.28);
+      cursor:pointer;
+      transition:transform .15s ease, box-shadow .15s ease;
+    }
+    .menu-btn:active{transform:scale(.92);box-shadow:0 2px 6px rgba(20,3,131,.2)}
+    .menu-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+    /* ===== Sidebar slide-in + backdrop ===== */
+    .side{transform:translateX(-100%);transition:transform .25s ease;box-shadow:0 0 24px rgba(0,0,0,.12)}
+    .side.open{transform:none}
+    /* Backdrop overlay when sidebar open */
+    body.side-open::before{
+      content:'';position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:15;
+      animation:fadeIn .2s ease;
+    }
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+    /* ===== Main content: pad-top untuk avoid hamburger collision ===== */
+    main{
+      margin-left:0;
+      padding:64px 14px calc(env(safe-area-inset-bottom, 0px) + 70px);
+      max-width:100vw;
+    }
+
+    /* ===== Page header: tidak ada padding-right canggung lagi (button di kiri) ===== */
+    .ph{padding-right:0;margin-bottom:16px}
+    .ph h2{font-size:18px}
+    .ph p{font-size:13px}
+
+    /* ===== Semua grid jadi single column ===== */
+    .stats{grid-template-columns:1fr;gap:10px}
+    .grid2{grid-template-columns:1fr}
+
+    /* ===== Card lebih ringkas, full width, no overflow ===== */
+    .card{padding:15px;margin-bottom:14px;max-width:100%;overflow-x:hidden}
+    .stat{padding:14px}
+    .stat .v{font-size:22px}
+
+    /* ===== Toolbar: tiap kontrol full width, tombol stack ===== */
+    .toolbar{gap:10px;flex-direction:column;align-items:stretch}
+    .toolbar .row{flex:1 1 100%;width:100%}
+    .toolbar .row input,.toolbar .row select{width:100%;font-size:16px}
+    .toolbar .btn{flex:1 1 auto;width:100%}
+
+    /* ===== Form row: paksa column biar tidak overflow ===== */
+    .row{flex-direction:column;align-items:stretch;gap:6px}
+    .row label.fl{flex:none;width:auto;margin-bottom:2px;font-weight:500}
+    .row input,.row select,.row textarea{width:100%;font-size:16px}
+
+    /* ===== Avatar picker v1.1.6 — file input dan preview stack vertikal ===== */
+    #c_avatar_emoji_row > div, #c_avatar_image_row > div > div:first-child{
+      flex-wrap:wrap;
+    }
+    #c_avatar_file{flex:1 1 100%!important;min-width:0!important;width:100%}
+    #c_avatar_emoji_picker{width:100%;font-size:16px}
+
+    /* ===== Usage card v1.1.5 — header stack vertikal ===== */
+    #usageCard > div:first-child{
+      flex-direction:column;align-items:flex-start;gap:10px;
+    }
+    #usageCard #usageBadges{width:100%}
+    .uc-pill{flex:1 1 auto;justify-content:center}
+    #ucStats{grid-template-columns:1fr!important;gap:10px!important}
+
+    /* ===== Tabel: scroll horizontal saja di dalam container, bukan dorong layout ===== */
+    .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+    .tbl{font-size:12.5px;min-width:auto}
+    .tbl th,.tbl td{padding:9px 8px;white-space:nowrap}
+
+    /* ===== Chart/SVG safe ===== */
+    #lineTrend svg,#pieSrcMed svg,#ucChart svg{max-width:100%;height:auto}
+    #ucChart{padding:8px}
+
+    /* ===== Code box & copy-key biar tidak overflow ===== */
+    .codebox,.copy-key{font-size:11.5px;word-break:break-all;overflow-wrap:anywhere}
+
+    /* ===== Modal full-screen feel di mobile ===== */
+    .modal-bg{padding:0;align-items:flex-end}
+    .modal{max-width:100%;max-height:90vh;border-radius:14px 14px 0 0;margin:0}
+
+    /* ===== Quick replies (kalau ada) ===== */
+    .qr{flex-direction:column;align-items:stretch;gap:6px}
+
+    /* ===== Input prevent zoom iOS (font 16px+) ===== */
+    input[type="text"],input[type="email"],input[type="password"],
+    input[type="number"],input[type="search"],input[type="tel"],
+    input[type="url"],input[type="date"],textarea,select{
+      font-size:16px;
+    }
+  }
+
+  @media(max-width:480px){
+    .ph h2{font-size:17px}
+    .card h3{font-size:14px}
+    .tbl{font-size:12px}
+    .menu-btn{width:42px;height:42px;font-size:20px}
+    /* uc-pill di layar sangat kecil: bisa wrap text */
+    .uc-pill{font-size:11.5px;padding:6px 12px}
+    .uc-pill .uc-label{display:none}    /* hilangkan label kecil di layar mungil */
+  }
+
+  .menu-btn{display:none}   /* default tersembunyi di desktop, di-show di @media mobile */
+  /* WhatsApp inbox */
+  .wachat-wrap{display:flex;height:min(72vh,640px)}
+  .wachat-list{width:300px;border-right:1px solid var(--line);overflow-y:auto;flex-shrink:0}
+  .wa-conv{padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+  .wa-conv:hover{background:var(--bg)}
+  .wachat-thread{flex:1;display:flex;flex-direction:column;min-width:0}
+  .wachat-thead{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+  .wa-back-btn{display:none}
+  .wachat-body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;background:var(--bg)}
+  .wachat-reply{border-top:1px solid var(--line);padding:12px 16px}
+  .wa-live{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-left:6px;vertical-align:middle}
+  @media(max-width:860px){
+    .wachat-wrap{flex-direction:column;height:auto}
+    .wachat-list{width:100%;max-height:none;border-right:none;border-bottom:1px solid var(--line)}
+    .wachat-body{height:300px}
+    /* v1.2.7: mobile master-detail — thread hidden until a chat is selected */
+    .wachat-thread{display:none}
+    .wachat-wrap.showing-thread .wachat-list{display:none}
+    .wachat-wrap.showing-thread .wachat-thread{display:flex}
+    .wa-back-btn{display:inline-flex !important;margin-right:10px}
+    .wachat-reply input{font-size:16px}
+    /* v1.2.7 back btn only mobile */
+  }
+
+/* === v1.2.0 WA Claim UI ==================================================== */
+
+.wa-filter-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #fafafa;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.wa-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.wa-filter-btn:hover {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+}
+
+.wa-filter-btn.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+.wa-filter-count {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.08);
+  color: inherit;
+  border-radius: 10px;
+}
+
+.wa-filter-btn.active .wa-filter-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.wa-audit-toggle {
+  border-style: dashed;
+}
+
+.wa-sidebar-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #ef4444;
+  border-radius: 9px;
+  text-align: center;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+.wa-audit-box {
+  padding: 12px 16px;
+  background: #fefce8;
+  border-bottom: 1px solid var(--line);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.wa-audit-header {
+  margin-bottom: 8px;
+}
+
+.wa-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wa-audit-row {
+  display: grid;
+  grid-template-columns: 130px 160px 100px 1fr auto;
+  gap: 10px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-family: 'Menlo', 'Consolas', monospace;
+  background: #fff;
+  border-radius: 4px;
+  border: 1px solid #fef3c7;
+  align-items: center;
+}
+
+.wa-audit-ts { color: var(--muted); }
+.wa-audit-action { font-weight: 600; }
+.wa-audit-agent { color: #1e40af; }
+.wa-audit-num { color: #7c2d12; }
+.wa-audit-extra { cursor: help; opacity: 0.6; }
+
+@media (max-width: 640px) {
+  .wa-filter-bar { gap: 6px; padding: 10px 12px; }
+  .wa-filter-btn { padding: 5px 10px; font-size: 11px; }
+  .wa-audit-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* === End v1.2.0 WA Claim UI ================================================ */
+
+</style>
+</head>
+<body>
+<button class="menu-btn" id="menuBtn"><span data-ico="menu" data-ico-size="20"></span></button>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="brand">
+      <div class="mark"><img src="./logo-256.png" alt="DEI" style="width:100%;height:100%;border-radius:10px;display:block"></div>
+      <div><b>DEI Chatbot</b><small>Admin Dashboard</small></div>
+    </div>
+    <nav id="nav">
+      <button data-tab="reports"  data-role="super_admin,admin" data-icon="bar-chart-3"><span class="ic"></span> Laporan &amp; Log</button>
+      <button data-tab="wachat"   data-role="super_admin,admin,wa_agent" data-icon="message-circle"><span class="ic"></span> Percakapan WA</button>
+      <button data-tab="leads"    data-role="super_admin,admin,wa_agent" data-icon="target"><span class="ic"></span> Leads</button>
+      <button data-tab="kontak"   data-role="super_admin,admin,wa_agent" data-icon="users"><span class="ic"></span> Kontak</button>
+      <button data-tab="kb"       data-role="super_admin,admin" data-icon="book-open"><span class="ic"></span> Knowledge Base</button>
+      <button data-tab="content"  data-role="super_admin,admin" data-icon="pen-tool"><span class="ic"></span> Balasan &amp; Tampilan</button>
+      <button data-tab="test"     data-role="super_admin,admin" data-icon="flask-conical"><span class="ic"></span> Tes Chatbot</button>
+      <button data-tab="widget"   data-role="super_admin,admin" data-icon="settings"><span class="ic"></span> Widget &amp; API</button>
+      <button data-tab="users"    data-role="super_admin,admin" data-icon="users"><span class="ic"></span> Pengguna</button>
+      <button data-tab="profile"  data-role="super_admin,admin,wa_agent" data-icon="user"><span class="ic"></span> Profil Saya</button>
+      <button data-tab="install"  data-role="super_admin,admin" data-icon="rocket"><span class="ic"></span> Pemasangan (GTM)</button>
+    </nav>
+    <div class="who">
+      <div class="nm" id="whoName">—</div>
+      <span class="badge" id="whoRole">—</span>
+      <button id="btnNotif" type="button" title="Aktifkan notifikasi pesan baru" style="margin-right:8px"><span data-ico="bell"></span> Notifikasi</button><button id="logout">Keluar</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <!-- LICENSE BANNER (super_admin/admin only) -->
+    <div id="licenseBanner" style="display:none;margin:0 0 14px;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:500;border:1px solid"></div>
+    <!-- CAP BANNER (all roles) -->
+    <div id="capBanner" style="display:none;margin:0 0 14px;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:500;border:1px solid"></div>
+
+    <!-- REPORTS -->
+    <section class="panel" id="panel-reports">
+      <div class="ph"><h2>Laporan &amp; Log</h2><p>Statistik percakapan, sumber traffic (UTM), dan ekspor data.</p></div>
+
+      <!-- v1.1.5: Usage card (Paket aktif + cap + chart 30 hari) -->
+      <div class="card" id="usageCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+          <h3 style="margin:0;font-size:15px;display:inline-flex;align-items:center;gap:8px"><span id="ucHeadIcon" style="display:inline-flex;color:var(--brand)"></span> Penggunaan Bulan Ini</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap" id="usageBadges">
+            <div id="ucTier" class="uc-pill">…</div>
+            <div id="ucStatus" class="uc-pill">…</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px" id="ucStats">
+          <div style="background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:12px">
+            <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Chat Terpakai</div>
+            <div style="font-size:22px;font-weight:700;color:var(--brand);margin-top:4px" id="ucUsedRaw">–</div>
+            <div style="height:8px;background:#eef0fb;border-radius:4px;overflow:hidden;margin-top:8px">
+              <div id="ucBar" style="height:100%;background:#16a34a;width:0%;transition:width .4s"></div>
+            </div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:6px" id="ucPct">0%</div>
+          </div>
+          <div style="background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:12px">
+            <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Reset dalam</div>
+            <div style="font-size:22px;font-weight:700;color:var(--brand);margin-top:4px" id="ucDaysLeft">– hari</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Cap reset tanggal 1 setiap bulan (WIB)</div>
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Aktivitas 30 hari terakhir (chat per hari)</div>
+        <div id="ucChart" style="background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:12px;min-height:140px"></div>
+      </div>
+
+      <div class="card">
+        <div class="toolbar">
+          <div class="row"><label class="fl">Dari tanggal</label><input type="date" id="repFrom"></div>
+          <div class="row"><label class="fl">Sampai tanggal</label><input type="date" id="repTo"></div>
+          <div class="row"><label class="fl">Channel</label>
+            <select id="repChannel"><option value="all">Semua</option><option value="web">Web</option><option value="whatsapp">WhatsApp</option></select>
+          </div>
+          <button class="btn" id="btnApply">Terapkan Filter</button>
+          <button class="btn ghost" id="btnExport">⬇ Unduh CSV</button>
+        </div>
+      </div>
+
+      <div class="stats" id="statCards"></div>
+
+      <div class="grid2">
+        <div class="card">
+          <h3>Komposisi Source / Medium</h3>
+          <div class="desc">Proporsi percakapan menurut source / medium (UTM).</div>
+          <div id="pieSrcMed" style="min-height:220px"></div>
+        </div>
+        <div class="card">
+          <h3>Tren Harian</h3>
+          <div class="desc">Percakapan &amp; pengunjung unik per hari.</div>
+          <div id="lineTrend" style="min-height:220px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Per Channel</h3>
+        <div class="desc">Jumlah percakapan dari Web (widget) vs WhatsApp.</div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Channel</th><th style="text-align:right">Chat</th></tr></thead><tbody id="tblChannel"></tbody></table></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h3>Source (UTM Source)</h3>
+          <div class="desc">Dari mana pengunjung yang chat berasal.</div>
+          <div class="scroll"><table class="tbl"><thead><tr><th>Source</th><th style="text-align:right">Chat</th><th style="text-align:right">User</th></tr></thead><tbody id="tblSource"></tbody></table></div>
+        </div>
+        <div class="card">
+          <h3>Medium (UTM Medium)</h3>
+          <div class="desc">Channel/medium pengunjung yang chat.</div>
+          <div class="scroll"><table class="tbl"><thead><tr><th>Medium</th><th style="text-align:right">Chat</th><th style="text-align:right">User</th></tr></thead><tbody id="tblMedium"></tbody></table></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Source / Medium</h3>
+        <div class="desc">Kombinasi source dan medium (mis. <span class="mono">google / cpc</span>).</div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Source / Medium</th><th style="text-align:right">Chat</th><th style="text-align:right">User</th></tr></thead><tbody id="tblSrcMed"></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h3>Campaign (UTM Campaign)</h3>
+        <div class="desc">Nama kampanye dari URL Builder.</div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Campaign</th><th style="text-align:right">Chat</th><th style="text-align:right">User</th></tr></thead><tbody id="tblCampaign"></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h3>Log Percakapan</h3>
+        <div class="desc">Riwayat percakapan terbaru beserta UTM source &amp; medium. Tombol "Unduh CSV" di atas memakai rentang tanggal yang dipilih.</div>
+        <div class="scroll">
+          <table class="tbl">
+            <thead><tr><th>Waktu</th><th>Pertanyaan</th><th>Jawaban AI</th><th>Source</th><th>Medium</th><th>Halaman</th></tr></thead>
+            <tbody id="tblLogs"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHATSAPP CONVERSATIONS -->
+    <section class="panel" id="panel-wachat">
+      <div class="ph"><h2>Percakapan WhatsApp <span class="wa-live" title="Auto-refresh aktif"></span></h2><p>Pantau chat masuk real-time, ambil alih dari bot, dan balas manual. Bot berhenti otomatis untuk nomor yang Anda tangani.</p></div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="wachat-wrap">
+          <div class="wachat-list" id="waConvList"><div style="padding:16px;color:var(--muted)">Memuat…</div></div>
+          <div class="wachat-thread">
+            <!-- v1.2.7-fix: back btn di luar thead -->
+            <button class="btn ghost sm wa-back-btn" id="waBackBtn" type="button" style="margin:10px 10px 0"><span data-ico="arrow-left" data-ico-size="14"></span> Kembali ke daftar</button>
+            <div class="wachat-thead" id="waThreadHead"><span style="color:var(--muted)">← Pilih percakapan.</span></div>
+            <div class="wachat-body" id="waThreadBody"></div>
+            <div class="wachat-reply" id="waReplyBar" style="display:none">
+              <div class="help" id="waWindowNote" style="margin-bottom:8px"></div>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="waReplyInput" placeholder="Tulis balasan manual…" style="flex:1">
+                <button class="btn" id="waReplySend">Kirim</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- KNOWLEDGE BASE -->
+    <!-- LEADS (v1.2.20) -->
+    <section class="panel" id="panel-leads">
+      <div class="ph"><h2>Leads</h2><p>Ringkasan otomatis dari percakapan WhatsApp. AI menyiapkan bahannya, Anda yang menentukan qualified.</p></div>
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:0;flex-wrap:wrap">
+          <button class="btn ghost sm lead-filter active" data-lead-status="all">Semua</button>
+          <button class="btn ghost sm lead-filter" data-lead-status="baru">Baru</button>
+          <button class="btn ghost sm lead-filter" data-lead-status="qualified">Qualified</button>
+          <button class="btn ghost sm lead-filter" data-lead-status="follow_up">Follow-up</button>
+          <button class="btn ghost sm lead-filter" data-lead-status="closed">Closed</button>
+          <button class="btn ghost sm" id="btnReloadLeads" style="margin-left:auto">&#8635; Muat ulang</button>
+        </div>
+        <p style="margin:10px 2px 0;color:var(--muted);font-size:13px;line-height:1.5">
+          Kartu dibuat otomatis saat percakapan mencapai 8 pesan. Kolom yang kosong berarti
+          hal itu tidak disebut customer &mdash; bukan berarti tidak ada.
+        </p>
+      </div>
+      <div id="leadList"></div>
+    </section>
+
+    <!-- KONTAK (v1.2.39) -->
+    <section class="panel" id="panel-kontak">
+      <div class="ph"><h2>Kontak</h2><p>Semua kontak WhatsApp dengan tag pipeline. Klik satu kontak untuk ubah tag atau lihat detail.</p></div>
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:0;flex-wrap:wrap">
+          <button class="btn ghost sm contact-filter active" data-contact-stage="all">All</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="new">Unrated</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="cold">Cold</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="warm">Warm</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="hot_prospect">Hot Prospect</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="lost">Unqualified</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="active_customer">Active Customer</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="churned">Churned</button>
+          <button class="btn ghost sm contact-filter" data-contact-stage="vip_birthday_today" style="margin-left:8px">&#127874; Ulang Tahun VIP Hari Ini</button>
+          <button class="btn ghost sm" id="btnReloadKontak" style="margin-left:auto">&#8635; Muat ulang</button>
+        </div>
+      </div>
+      <div id="contactList"></div>
+    </section>
+
+    <section class="panel" id="panel-kb">
+      <div class="ph"><h2>Knowledge Base</h2><p>Sumber jawaban AI. Semakin lengkap, semakin akurat.</p></div>
+      <!-- v1.2.22: pemisah tab -->
+      <div class="toolbar" style="margin-bottom:14px">
+        <button class="btn ghost sm kb-tab active" data-kbtab="entri">Entri KB</button>
+        <button class="btn ghost sm kb-tab" data-kbtab="harga"><span data-ico="wallet" data-ico-size="14"></span> Daftar Harga</button>
+      </div>
+      <div id="kbTabEntri">
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:0">
+          <div class="row" style="flex:1"><input type="text" id="kbSearch" placeholder="Cari entri..."></div>
+          <button class="btn" id="btnAddKb">+ Tambah Entri</button>
+          <button class="btn ghost" id="btnImportCsv"><span data-ico="upload" data-ico-size="15"></span> Impor CSV</button>
+          <button class="btn ghost" id="btnSaveKb"><span data-ico="save" data-ico-size="15"></span> Simpan Perubahan</button>
+          <button class="btn ghost" id="btnFindDup"><span data-ico="search" data-ico-size="15"></span> Analisa Duplikat</button>
+          <button class="btn ghost" id="btnFindGaps"><span data-ico="circle-help" data-ico-size="15"></span> Belum Terjawab</button>
+          <input type="file" id="kbCsvFile" accept=".csv,text/csv" style="display:none">
+        </div>
+        <p style="margin:10px 2px 0;color:var(--muted);font-size:13px;line-height:1.5">
+          Format CSV: <code>category, question, answer</code> — pemisah koma atau titik-koma, baris header opsional.
+          Entri hasil impor masih bisa diperiksa/diedit sebelum Anda klik <strong>Simpan Perubahan</strong>.
+          <a href="#" id="btnCsvTemplate">Unduh template CSV</a>
+        </p>
+      </div>
+      <!-- v1.2.13: kelola kategori notif (super_admin only) -->
+      <div class="card" id="catManager" style="display:none">
+        <h3 style="margin-top:0">Kategori Topik</h3>
+        <p style="margin:0 0 10px;color:var(--muted);font-size:13px;line-height:1.5">
+          Dipakai untuk tag <strong>Topik</strong> di entri KB dan kategori notif agent.
+          Kategori bawaan tidak dapat dihapus. Kategori yang masih dipakai KB/pengguna juga tidak dapat dihapus.
+        </p>
+        <div id="catList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+        <div class="toolbar" style="margin-bottom:0">
+          <div class="row" style="flex:1"><input type="text" id="catNew" placeholder="Nama kategori baru (mis. Finance)" maxlength="30"></div>
+          <button class="btn" id="btnAddCat">+ Tambah Kategori</button>
+        </div>
+      </div>
+      <div class="card" id="dupResult" style="display:none"></div>
+      <div class="card" id="gapResult" style="display:none"></div>
+      <div id="kbList"></div>
+      </div><!-- /kbTabEntri -->
+
+      <!-- v1.2.22: DAFTAR HARGA -->
+      <div id="kbTabHarga" style="display:none">
+        <div class="card">
+          <div class="toolbar" style="margin-bottom:0;flex-wrap:wrap">
+            <button class="btn" id="btnAddPrice">+ Tambah Baris</button>
+            <button class="btn ghost" id="btnSavePrice"><span data-ico="save" data-ico-size="15"></span> Simpan Daftar Harga</button>
+            <span id="priceMeta" class="help" style="margin-left:auto"></span>
+          </div>
+          <p style="margin:10px 2px 0;color:var(--muted);font-size:13px;line-height:1.5">
+            Daftar ini jadi <strong>satu-satunya sumber harga</strong> bagi bot: menang atas
+            Knowledge Base, dan bot dilarang menghitung total &mdash; ia hanya menyebut harga
+            satuan lalu mengarahkan ke tim Anda.
+          </p>
+          <p style="margin:8px 2px 0;color:#b91c1c;font-size:13px;line-height:1.5">
+            <strong>Penting:</strong> hapus entri harga lama di tab Entri KB. Kalau dua tempat
+            memuat angka berbeda, bot bisa memakai yang salah tanpa ketahuan.
+          </p>
+        </div>
+        <div class="card">
+          <div id="priceList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTENT (Reply & Appearance) -->
+    <section class="panel" id="panel-content">
+      <div class="ph"><h2>Balasan &amp; Tampilan</h2><p>Atur teks balasan bot dan tampilan widget.</p></div>
+
+      <!-- v1.2.3: Konfigurasi Terstruktur -->
+      <div class="card">
+        <h3>Konfigurasi Terstruktur <span style="color:var(--muted);font-weight:normal;font-size:12px">(v1.2.3)</span></h3>
+        <div class="desc">Field terstruktur untuk quick setup. Kalau kosong, sistem pakai <em>Persona / Instruksi AI</em> di bawah.</div>
+
+        <div class="grid2">
+          <div class="row">
+            <label class="fl">Sapaan User</label>
+            <select id="c_user_address">
+              <option value="">— Tidak set —</option>
+              <option value="Bapak/Ibu">Bapak/Ibu</option>
+              <option value="Kak">Kak</option>
+              <option value="Anda">Anda</option>
+              <option value="Kamu">Kamu</option>
+              <option value="Sobat">Sobat</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="fl">Style Bahasa</label>
+            <select id="c_language_style">
+              <option value="">— Tidak set —</option>
+              <option value="formal">Formal Profesional</option>
+              <option value="semi_formal">Semi-Formal</option>
+              <option value="casual">Casual Friendly</option>
+              <option value="enthusiastic">Enthusiastic</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <label class="fl">Bahasa Didukung</label>
+          <div style="flex:1;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" class="c_lang" value="id"> Indonesia</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" class="c_lang" value="en"> English</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" class="c_lang" value="zh"> Mandarin</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" class="c_lang" value="ar"> Arabic</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" class="c_lang" value="ja"> Japanese</label>
+          </div>
+        </div>
+        <div class="row" id="c_lang_behavior_row" style="display:none">
+          <label class="fl">Behavior Awal (>1 bahasa)</label>
+          <select id="c_language_prompt_behavior" style="flex:1">
+            <option value="ask_user">Tanya user pilih bahasa</option>
+            <option value="auto_detect">Auto-detect dari pesan user</option>
+          </select>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <label class="fl">Aturan Response</label>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="c_rule_no_asterisk"> Hilangkan tanda * dan ** di jawaban</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="c_rule_one_question"> Tanya 1 pertanyaan per turn</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="c_rule_summary"> Summary sebelum konfirmasi</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="c_rule_emoji"> Gunakan emoji ramah</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="c_rule_concise"> Response singkat (max 3 kalimat)</label>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <label class="fl">Kalau AI Tidak Tahu</label>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="radio" name="c_fallback" value=""> Tidak set (pakai instruksi textarea di bawah)</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="radio" name="c_fallback" value="say_dont_know"> Bilang tidak tahu, offer bantuan admin</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="radio" name="c_fallback" value="ask_contact"> Langsung minta nama + no HP untuk callback</label>
+            <label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="radio" name="c_fallback" value="redirect_wa"> Redirect ke WhatsApp admin</label>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn ghost" id="btnPreviewPrompt" type="button">Preview Generated Prompt</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Teks Balasan</h3>
+        <div class="desc">Nama bot, sapaan pembuka, balasan cepat, dan persona AI.</div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Nama Bot</label><input type="text" id="c_bot_name"></div>
+          <div class="row"><label class="fl">Sapaan Pembuka</label><input type="text" id="c_greeting"></div>
+          <div class="row" id="row_birthday_greeting"><label class="fl">Ucapan Ulang Tahun</label>
+            <textarea id="c_birthday_greeting" rows="2" placeholder="Selamat ulang tahun, {nama}! Semoga sehat selalu dan sukses terus."></textarea></div>
+          <p id="hint_birthday_greeting" style="margin:2px 2px 10px;color:var(--muted);font-size:12px">Pakai <code>{nama}</code> untuk menyisipkan nama pelanggan otomatis. Dipakai tombol "Kirim Ucapan" di halaman Kontak.</p>
+        </div>
+        <div class="row">
+          <label class="fl">Balasan Cepat (Quick Replies)</label>
+          <div class="quick-rows" id="quickRows"></div>
+          <button class="btn ghost sm" id="btnAddQuick" type="button">+ Tambah balasan cepat</button>
+        </div>
+        <div class="row">
+          <label class="fl">Persona / Instruksi AI (System Prompt) <span style="color:#e67e22;font-size:11px">(instruksi custom Anda — jangan kosongkan)</span></label>
+          <textarea id="c_prompt" style="min-height:150px"></textarea>
+          <div class="help">Menentukan gaya bicara dan aturan jawaban AI. Hindari format markdown.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Tampilan Widget</h3>
+        <div class="desc">Warna, avatar, dan posisi tombol chat di website.</div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Warna Utama</label>
+            <input type="color" id="c_color"> <input type="text" id="c_color_hex" class="mono" style="width:120px;display:inline-block;vertical-align:middle">
+          </div>
+          <div class="row"><label class="fl">Posisi Tombol</label>
+            <select id="c_position"><option value="right">Kanan bawah</option><option value="left">Kiri bawah</option></select>
+          </div>
+          <div class="row"><label class="fl">Tipe Avatar</label>
+            <div style="flex:1;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="radio" name="c_avatar_type" value="emoji" id="c_avatar_type_emoji"> Emoji</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="radio" name="c_avatar_type" value="icon" id="c_avatar_type_icon"> Icon Profesional</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="radio" name="c_avatar_type" value="image" id="c_avatar_type_image"> Gambar</label>
+            </div>
+          </div>
+          <div class="row" id="c_avatar_emoji_row">
+            <label class="fl">Avatar Emoji</label>
+            <div style="flex:1;display:flex;gap:8px;align-items:center">
+              <select id="c_avatar_emoji_picker" style="flex:1">
+                <option value="🤖">🤖 Robot (AI assistant)</option>
+                <option value="💬">💬 Bubble Chat</option>
+                <option value="👋">👋 Salam</option>
+                <option value="😊">😊 Ramah</option>
+                <option value="💁‍♀️">💁‍♀️ CS Wanita</option>
+                <option value="💁‍♂️">💁‍♂️ CS Pria</option>
+                <option value="🙋‍♀️">🙋‍♀️ Halo Wanita</option>
+                <option value="🙋‍♂️">🙋‍♂️ Halo Pria</option>
+                <option value="👨‍💼">👨‍💼 Profesional Pria</option>
+                <option value="👩‍💼">👩‍💼 Profesional Wanita</option>
+                <option value="📞">📞 Telepon</option>
+                <option value="✨">✨ Bintang</option>
+                <option value="__custom__">— Custom (ketik sendiri) —</option>
+              </select>
+              <input type="text" id="c_avatar_emoji_custom" maxlength="6" placeholder="Emoji" style="width:80px;display:none">
+              <span id="c_avatar_emoji_preview" style="font-size:28px;width:48px;text-align:center">🤖</span>
+            </div>
+          </div>
+          <div class="row" id="c_avatar_icon_row" style="display:none">
+            <label class="fl">Avatar Icon</label>
+            <div style="flex:1;display:flex;gap:8px;align-items:center">
+              <select id="c_avatar_icon_picker" style="flex:1">
+                <option value="bot">Bot — AI Assistant</option>
+                <option value="message-circle">Pesan — Bubble Chat</option>
+                <option value="hand">Salam</option>
+                <option value="smile">Ramah</option>
+                <option value="headphones">Customer Support</option>
+                <option value="user-round">Profil User</option>
+                <option value="briefcase-business">Profesional / Corporate</option>
+                <option value="phone">Telepon / Contact</option>
+                <option value="sparkles">Premium / Sparkle</option>
+                <option value="mail">Email / Inquiry</option>
+                <option value="life-buoy">Bantuan / Support</option>
+                <option value="crown">VIP Service</option>
+              </select>
+              <span id="c_avatar_icon_preview" style="width:48px;height:48px;display:inline-flex;align-items:center;justify-content:center;color:var(--brand);background:#f7f8ff;border-radius:50%;border:1px solid var(--line)"></span>
+            </div>
+            <div class="help" style="margin-top:6px">Icon SVG profesional dari Lucide — cocok untuk brand corporate, legal, B2B.</div>
+          </div>
+          <div class="row" id="c_avatar_image_row" style="display:none">
+            <label class="fl">Avatar Gambar</label>
+            <div style="flex:1">
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <input type="file" id="c_avatar_file" accept="image/png,image/jpeg,image/webp" style="flex:1;min-width:160px;font-size:12px">
+                <img id="c_avatar_image_preview" style="width:48px;height:48px;border-radius:50%;border:1px solid var(--line);object-fit:cover;display:none">
+                <button type="button" class="btn ghost" id="c_avatar_image_clear" style="padding:6px 10px;font-size:12px;display:none">Hapus Gambar</button>
+              </div>
+              <div class="help" id="c_avatar_image_status" style="margin-top:6px">Maks 2 MB · Otomatis di-resize jadi 96×96 px PNG (crop center) · Format: PNG/JPG/WEBP</div>
+              <input type="hidden" id="c_avatar_image">
+            </div>
+          </div>
+          <div class="row"><label class="fl">Jarak dari bawah (px)</label><input type="number" id="c_offset_bottom"></div>
+          <div class="row"><label class="fl">Jarak dari samping (px)</label><input type="number" id="c_offset_right"></div>
+        </div>
+      </div>
+      <button class="btn" id="btnSaveContent"><span data-ico="save" data-ico-size="15"></span> Simpan</button>
+    </section>
+
+    <!-- TEST -->
+    <section class="panel" id="panel-test">
+      <div class="ph"><h2>Tes Chatbot</h2><p>Uji jawaban AI langsung sebelum live.</p></div>
+      <div class="card">
+        <div id="test-body"></div>
+        <div class="toolbar" style="margin-bottom:0">
+          <div class="row" style="flex:1;margin:0"><input type="text" id="testInput" placeholder="Ketik pertanyaan tes..."></div>
+          <button class="btn" id="testSend">Kirim</button>
+          <button class="btn ghost" id="testClear">Bersihkan</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- WIDGET & API -->
+    <section class="panel" id="panel-widget">
+      <div class="ph"><h2>Widget &amp; API</h2><p>Aktifkan/matikan widget, atur WhatsApp, dan konfigurasi API AI.</p></div>
+      <div class="card">
+        <h3>Status Widget</h3>
+        <div class="toggle-row"><div><div class="tt">AI Chatbot Bubble</div><div class="td">Tampilkan tombol chat AI di website.</div></div>
+          <label class="switch"><input type="checkbox" id="w_chatbot"><span class="sl"></span></label></div>
+        <div class="toggle-row"><div><div class="tt">WhatsApp Floating Button</div><div class="td">Tampilkan tombol WhatsApp di website.</div></div>
+          <label class="switch"><input type="checkbox" id="w_whatsapp"><span class="sl"></span></label></div>
+      </div>
+      <div class="card">
+        <h3>WhatsApp</h3>
+        <div class="grid2">
+          <div class="row"><label class="fl">Nomor WhatsApp</label><input type="text" id="w_wa_number" placeholder="6287825698030"><div class="help">Format internasional tanpa + atau spasi.</div></div>
+          <div class="row"><label class="fl">Pesan Default</label><input type="text" id="w_wa_msg"></div>
+        </div>
+      </div>
+      <div class="card" data-role-card="super_admin"><h3>Konfigurasi API AI</h3>
+        <div class="desc">Kunci API Anthropic &amp; parameter model.</div>
+        <div class="row"><label class="fl">Claude API Key</label><input type="text" id="a_key" class="mono" placeholder="sk-ant-..."><div class="help">Diambil dari console.anthropic.com. Kunci disimpan terenkripsi-tampilan; kosongkan untuk tidak mengubah.</div></div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Model</label>
+            <select id="a_model">
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — cepat &amp; hemat</option>
+              <option value="claude-sonnet-4-6">Claude Sonnet 4.6 — lebih cerdas</option>
+              <option value="claude-opus-4-6">Claude Opus 4.6 — paling canggih</option>
+            </select>
+          </div>
+          <div class="row"><label class="fl">Max Tokens Balasan</label><input type="number" id="a_maxtok"></div>
+          <div class="row"><label class="fl">Rate Limit (per IP / jam)</label><input type="number" id="a_rate"></div>
+          <div class="row"><label class="fl">Max Entri KB per Jawaban</label><input type="number" id="a_kbmax"></div>
+          <div class="row"><label class="fl">Batas Simpan Log</label><input type="number" id="a_loglimit"></div>
+        </div>
+      </div>
+      <div class="card" data-role-card="super_admin"><h3>WhatsApp Bot</h3>
+        <div class="desc">Hubungkan chatbot AI ini ke WhatsApp. Pesan masuk akan dijawab otomatis dari Knowledge Base yang sama.</div>
+        <div class="row"><label class="fl">Penyedia</label><select id="wa_provider">
+          <option value="meta">Meta Cloud API — resmi, nomor khusus (tidak bisa dipakai di HP)</option>
+          <option value="fonnte">Fonnte — memakai nomor yang sudah ada, tidak resmi</option>
+        </select><div class="help">Fonnte memakai jalur tidak resmi: nomor tetap bisa dipakai di HP, tetapi berisiko diblokir WhatsApp. Cocok untuk uji coba atau klien yang belum siap mengganti nomor.</div></div>
+        <div class="toggle-row"><div><div class="tt">Aktifkan Bot WhatsApp</div><div class="td">Balas otomatis pesan WhatsApp yang masuk.</div></div>
+          <label class="switch"><input type="checkbox" id="wa_enabled"><span class="sl"></span></label></div>
+        <div class="row wa-meta-only"><label class="fl">Access Token (Permanent)</label><input type="text" id="wa_token" class="mono" placeholder="EAAG..."><div class="help">Token dari Meta for Developers › WhatsApp › API Setup. Disimpan terenkripsi-tampilan; kosongkan untuk tidak mengubah.</div></div>
+        <div class="grid2">
+          <div class="row wa-meta-only"><label class="fl">Phone Number ID</label><input type="text" id="wa_pnid" class="mono" placeholder="1234567890"><div class="help">Bukan nomor telepon — ID dari halaman API Setup.</div></div>
+          <div class="row wa-meta-only"><label class="fl">Verify Token</label><input type="text" id="wa_verify" class="mono" placeholder="buat-token-rahasia-bebas"><div class="help">Token bebas buatan Anda, dipakai saat mendaftarkan webhook.</div></div>
+          <div class="row wa-meta-only"><label class="fl">App Secret</label><input type="text" id="wa_secret" class="mono" placeholder="(opsional, untuk verifikasi tanda tangan)"><div class="help">Dari Meta App › Settings › Basic. Disarankan untuk keamanan; kosongkan untuk tidak mengubah.</div></div>
+          <div class="row"><label class="fl">Rate Limit (per nomor / jam)</label><input type="number" id="wa_rate" placeholder="20"></div>
+        </div>
+        <div class="row wa-fonnte-only"><label class="fl">Token Fonnte</label><input type="text" id="fon_token" class="mono" placeholder="token dari panel Fonnte"><div class="help">Panel Fonnte › Device › Token. Kosongkan untuk tidak mengubah.</div></div>
+        <div class="row wa-fonnte-only"><label class="fl">Nomor Perangkat</label><input type="text" id="fon_device" class="mono" placeholder="628xxxxxxxxxx"><div class="help">Nomor WhatsApp yang terhubung di Fonnte. Dipakai menolak kiriman dari perangkat lain.</div></div>
+        <div class="row wa-fonnte-only"><label class="fl">Webhook URL (Fonnte)</label>
+          <div class="row" style="flex-direction:row;gap:8px;align-items:center">
+            <input type="text" id="fon_webhook_url" class="mono" readonly style="flex:1">
+            <button class="btn ghost" id="btnCopyFonWebhook" type="button">Salin</button>
+          </div>
+          <div class="help">Tempel di panel Fonnte › Device › Webhook. Alamat ini memuat kunci rahasia — jangan dibagikan.</div></div>
+        <div class="toggle-row"><div><div class="tt">Ingat Konteks Percakapan</div><div class="td">Simpan beberapa pesan terakhir per nomor (kedaluwarsa 6 jam).</div></div>
+          <label class="switch"><input type="checkbox" id="wa_ctx"><span class="sl"></span></label></div>
+        <div class="row wa-meta-only"><label class="fl">Callback URL (Webhook)</label>
+          <div class="row" style="flex-direction:row;gap:8px;align-items:center">
+            <input type="text" id="wa_webhook_url" class="mono" readonly style="flex:1">
+            <button class="btn ghost" id="btnCopyWebhook" type="button">Salin</button>
+          </div>
+          <div class="help">Tempel URL ini di Meta App › WhatsApp › Configuration › Callback URL, lalu isi Verify Token yang sama seperti di atas, dan subscribe field <code>messages</code>.</div>
+        </div>
+      </div>
+      <div class="card" data-role-card="super_admin"><h3>Notifikasi Telegram</h3>
+        <div class="desc">Dapatkan notifikasi instan ke Telegram setiap ada chat masuk (WhatsApp &amp; web).</div>
+        <div class="toggle-row"><div><div class="tt">Aktifkan Notifikasi Telegram</div><div class="td">Kirim ping ke Telegram tiap chat masuk.</div></div>
+          <label class="switch"><input type="checkbox" id="tg_enabled"><span class="sl"></span></label></div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Bot Token</label><input type="text" id="tg_token" class="mono" placeholder="123456:ABC-DEF..."><div class="help">Dari @BotFather di Telegram. Kosongkan untuk tidak mengubah.</div></div>
+          <div class="row"><label class="fl">Chat ID</label><input type="text" id="tg_chatid" class="mono" placeholder="mis. 123456789"><div class="help">ID chat/grup tujuan notifikasi. Cara dapat: chat ke bot Anda, lalu buka api.telegram.org/bot&lt;token&gt;/getUpdates.</div></div>
+        </div>
+        <div class="toggle-row"><div><div class="tt">Notifikasi chat WhatsApp</div></div><label class="switch"><input type="checkbox" id="tg_wa"><span class="sl"></span></label></div>
+        <div class="toggle-row"><div><div class="tt">Notifikasi chat Web</div></div><label class="switch"><input type="checkbox" id="tg_web"><span class="sl"></span></label></div>
+      </div>
+
+      <div class="card">
+        <h3>Handoff Otomatis (ambil alih ke manusia)</h3>
+        <div class="desc">Jika pesan WhatsApp mengandung salah satu kata kunci ini, bot berhenti otomatis dan percakapan ditandai "menunggu admin".</div>
+        <div class="toggle-row"><div><div class="tt">Aktifkan Auto-handoff</div></div><label class="switch"><input type="checkbox" id="ho_enabled"><span class="sl"></span></label></div>
+        <div class="row"><label class="fl">Kata kunci (satu per baris)</label><textarea id="ho_keywords" rows="6" class="mono" placeholder="admin&#10;cs&#10;manusia"></textarea><div class="help">Satu kata/frasa per baris. Kata tunggal dicocokkan sebagai kata utuh; frasa dicocokkan sebagai bagian kalimat.</div></div>
+      </div>
+
+      <div class="card" data-role-card="super_admin"><h3>Server Pusat (Auto-Update)</h3>
+        <div class="desc">Hubungkan dashboard ini ke server pusat untuk auto-update kode + report-back statistik agregat. Diisi oleh Super Admin.</div>
+        <div class="row"><label class="fl">URL Server Pusat</label><input id="cs_url" placeholder="https://chat.deintegra.com"></div>
+        <div class="row"><label class="fl">Tenant ID</label><input id="cs_tenant" placeholder="deintegra" class="mono"></div>
+        <div class="row"><label class="fl">License Key</label><input id="cs_license" placeholder="(diberikan saat daftar tenant)" class="mono"></div>
+        <div class="toggle-row"><div><div class="tt">Auto-update saat login</div><div class="ds">Saat super_admin/admin login, dashboard otomatis cek versi baru &amp; pasang.</div></div><label class="switch"><input type="checkbox" id="cs_auto"><span class="sl"></span></label></div>
+        <div class="row" style="gap:8px"><button class="btn ghost" id="btnCheckUpdate" type="button"><span data-ico="rotate-cw" data-ico-size="15"></span> Cek Update Sekarang</button><button class="btn ghost" id="btnSaveCentral" type="button">💾 Simpan Setting Pusat</button></div>
+        <div class="help" id="csStatus">Versi terpasang: <span class="mono" id="csVersion">–</span> · Cek terakhir: <span id="csLastCheck">–</span> · Status: <span id="csLastResult">–</span></div>
+      </div>
+
+      <button class="btn" id="btnSaveWidget"><span data-ico="save" data-ico-size="15"></span> Simpan Semua</button>
+    </section>
+
+    <!-- USERS -->
+    <section class="panel" id="panel-users">
+      <div class="ph"><h2>Pengguna</h2><p>Kelola akun. <strong>Admin</strong>: akses penuh. <strong>Editor</strong>: hanya Balasan &amp; Tampilan.</p></div>
+      <div class="card">
+        <h3 id="userFormTitle">Tambah Pengguna</h3>
+        <div class="grid2">
+          <div class="row"><label class="fl">Username</label><input type="text" id="u_username"></div>
+          <div class="row"><label class="fl">Nama</label><input type="text" id="u_name"></div>
+          <div class="row"><label class="fl">Password</label><input type="password" id="u_password" placeholder="(kosongkan jika tidak diubah)"></div>
+          <div class="row"><label class="fl">Peran</label><select id="u_role">
+            <option value="super_admin">Super Admin — akses penuh + kelola pengguna</option>
+            <option value="admin" selected>Admin — kelola konten &amp; lihat laporan (tidak akses secret/WA Cloud API)</option>
+            <option value="wa_agent">WA Agent — hanya balas chat WhatsApp</option>
+          </select></div>
+          <div class="row"><label class="fl">Kategori Notif</label>
+            <div id="u_categories" style="flex:1;display:flex;flex-wrap:wrap;gap:10px">
+              <!-- v1.2.13: diisi dinamis oleh renderUserCategories() -->
+            </div>
+          </div>
+          <div class="help">Kategori menentukan notif chat/WA yang diterima agent (per topik). Super Admin &amp; Admin selalu terima semua. Kosongkan = terima semua.</div>
+          <div class="help">Password minimal 8 karakter, harus mengandung huruf besar, huruf kecil, dan angka.</div>
+        </div>
+        <button class="btn" id="btnSaveUser">Simpan Pengguna</button>
+        <button class="btn ghost" id="btnResetUser" type="button">Reset Form</button>
+      </div>
+      <div class="card">
+        <div class="scroll"><table class="tbl"><thead><tr><th>Username</th><th>Nama</th><th>Peran</th><th></th></tr></thead><tbody id="tblUsers"></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- INSTALL -->
+    <section class="panel" id="panel-install">
+      <div class="ph"><h2>Pemasangan via Google Tag Manager</h2><p>Pasang widget di website mana pun tanpa mengubah kode HTML.</p></div>
+      <div class="card">
+        <h3>Langkah Pemasangan</h3>
+        <ol style="padding-left:20px;line-height:1.9;font-size:13.5px;color:var(--ink)">
+          <li>Buka <a href="https://tagmanager.google.com" target="_blank">Google Tag Manager</a> → pilih container website Anda.</li>
+          <li>Klik <strong>Tags → New → Tag Configuration → Custom HTML</strong>.</li>
+          <li>Tempel kode di bawah ini ke kotak HTML.</li>
+          <li>Triggering → pilih <strong>All Pages</strong>.</li>
+          <li>Beri nama (mis. "DEI Chatbot") → <strong>Save</strong> → <strong>Submit / Publish</strong>.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>Kode Custom HTML (GTM)</h3>
+        <div class="desc">URL host sudah disesuaikan otomatis dengan domain dashboard ini.</div>
+        <div class="codebox" id="gtmCode">memuat...</div>
+        <div style="margin-top:12px"><button class="btn" id="btnCopyGtm"><span data-ico="copy" data-ico-size="15"></span> Salin Kode</button></div>
+      </div>
+      <div class="card">
+        <h3>Alternatif: Pasang Langsung (tanpa GTM)</h3>
+        <div class="desc">Tambahkan sebelum &lt;/body&gt; di setiap halaman.</div>
+        <div class="codebox" id="directCode">memuat...</div>
+        <div style="margin-top:12px"><button class="btn ghost" id="btnCopyDirect"><span data-ico="copy" data-ico-size="15"></span> Salin Kode</button></div>
+      </div>
+    </section>
+    <!-- PROFILE (v1.2.2) -->
+    <section class="panel" id="panel-profile">
+      <div class="ph"><h2>Profil Saya</h2><p>Kelola akun Anda sendiri — info akun &amp; ganti password.</p></div>
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin:0 0 12px 0;font-size:15px">Info Akun</h3>
+        <table style="width:100%;font-size:14px">
+          <tr><td style="padding:6px 0;color:var(--muted);width:140px">Username</td><td id="profileUsername" style="font-weight:600">-</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted)">Nama</td><td id="profileName" style="font-weight:600">-</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted)">Role</td><td id="profileRole" style="font-weight:600">-</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 12px 0;font-size:15px">Ganti Password</h3>
+        <div style="margin-bottom:10px"><label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px">Password Lama</label><input type="password" id="profileCurrentPw" class="input" placeholder="Masukkan password saat ini"></div>
+        <div style="margin-bottom:10px"><label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px">Password Baru</label><input type="password" id="profileNewPw" class="input" placeholder="Minimal 8 karakter, kombinasi huruf & angka"></div>
+        <div style="margin-bottom:10px"><label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px">Konfirmasi Password Baru</label><input type="password" id="profileConfirmPw" class="input" placeholder="Ulangi password baru"></div>
+        <p class="hint" style="font-size:12px;color:var(--muted);margin:8px 0">Password minimal 8 karakter. Setelah berhasil, Anda akan otomatis logout.</p>
+        <button class="btn" id="btnChangePassword">Simpan Password</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

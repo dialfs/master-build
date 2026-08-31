@@ -1,0 +1,16 @@
+# DEI dashboard — file aplikasi tidak boleh dipakai dari cache tanpa cek ulang.
+# Alasan: app.js/index.html sering diperbarui; kalau browser menyimpannya lama,
+# agent tetap melihat versi lama sampai hard refresh (dan itu tidak bisa dipaksa
+# dari jauh). "no-cache" = boleh simpan, TAPI wajib revalidasi -> biasanya 304.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|css)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+    Header unset Expires
+    Header unset Pragma
+  </FilesMatch>
+</IfModule>
+
+# Matikan aturan expires warisan dari .htaccess induk untuk folder ini saja.
+<IfModule mod_expires.c>
+  ExpiresActive Off
+</IfModule>

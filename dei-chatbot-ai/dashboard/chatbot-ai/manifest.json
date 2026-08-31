@@ -1,0 +1,31 @@
+{
+  "name": "DEI Chatbot Dashboard",
+  "short_name": "DEI",
+  "description": "Dashboard admin DEI AI Chat Widget - kelola chatbot & percakapan WhatsApp",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#140383",
+  "theme_color": "#140383",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
