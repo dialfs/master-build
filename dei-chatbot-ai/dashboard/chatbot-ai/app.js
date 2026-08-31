@@ -1678,28 +1678,30 @@
       list.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center">Belum ada percakapan web.</div>';
       return;
     }
-    list.innerHTML = '';
-    convs.forEach(function (c) {
+    list.innerHTML = convs.map(function (c) {
+      var active = (webState.current === c.id) ? 'background:var(--brand-soft);' : '';
+      var t = waConvTimeInfo(c.last_ts || c.created_at);
+      var accent = t.today ? 'border-left:3px solid var(--brand);' : 'border-left:3px solid transparent;';
+      var timeStyle = t.today
+        ? 'font-size:12px;font-weight:600;color:var(--brand);white-space:nowrap'
+        : 'font-size:12px;color:var(--muted);white-space:nowrap';
+      var timeHtml = t.label ? '<span style="' + timeStyle + '">' + esc(t.label) + '</span>' : '';
       var preview = c.last_message
-        ? '<b style="color:var(--txt)">Pengunjung:</b> ' + esc(c.last_message)
-        : (c.last_answer ? '<b style="color:var(--txt)">Bot:</b> ' + esc(c.last_answer) : '');
-      var msgCount = c.message_count || 0;
-      var row = document.createElement('div');
-      row.className = 'wa-conv-row' + (webState.current === c.id ? ' active' : '');
-      row.innerHTML =
-        '<div class="wa-conv-left">' +
-          '<div class="wa-conv-av">' + ico('monitor-smartphone', 18) + '</div>' +
+        ? '<span style="color:var(--ink)">Pengunjung:</span> ' + esc(c.last_message)
+        : (c.last_answer ? '<span style="color:var(--muted)">Bot:</span> ' + esc(c.last_answer) : 'Belum ada pesan');
+      var count = c.message_count || 0;
+      var badge = '<span class="tag" style="background:var(--brand-soft);color:var(--brand);padding:2px 8px;font-size:11px">' + count + ' pesan</span>';
+      var mig = c.migrated ? ' <span class="tag" style="background:#e5e7eb;color:#374151;padding:2px 8px;font-size:11px">arsip</span>' : '';
+      return '<div class="wa-conv" data-cid="' + esc(c.id) + '" style="' + active + accent + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">' +
+          '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(c.title || 'Percakapan') + '</span>' + timeHtml +
         '</div>' +
-        '<div class="wa-conv-mid">' +
-          '<div class="wa-conv-name">' + esc(c.title || 'Percakapan') + '</div>' +
-          '<div class="wa-conv-preview">' + (preview || '<i style="color:var(--muted)">Belum ada pesan</i>') + '</div>' +
-        '</div>' +
-        '<div class="wa-conv-right">' +
-          '<div class="wa-conv-ts">' + waConvTimeInfo(c.last_ts || c.created_at).label + '</div>' +
-          '<div style="font-size:11px;color:var(--muted)">' + msgCount + ' pesan</div>' +
-        '</div>';
-      row.onclick = function () { selectWebConv(c.id); };
-      list.appendChild(row);
+        '<div style="font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">' + preview + '</div>' +
+        '<div style="margin-top:6px">' + badge + mig + '</div>' +
+      '</div>';
+    }).join('');
+    $$('#webConvList .wa-conv').forEach(function (el) {
+      el.onclick = function () { selectWebConv(el.dataset.cid); };
     });
   }
 
@@ -1714,37 +1716,35 @@
     var head = $('#webThreadHead');
     var body = $('#webThreadBody');
     if (!silent && head) head.innerHTML = '<span style="color:var(--muted)">Memuat…</span>';
-    if (!silent && body) body.innerHTML = '';
+    if (!silent && body) body.innerHTML = '<div style="color:var(--muted);margin:auto">Memuat…</div>';
     return api('web_thread_admin', { query: '&conversation_id=' + encodeURIComponent(convId) })
       .then(function (res) {
         if (!res.ok) return;
         var conv = res.conversation || {};
         var msgs = res.messages || [];
+        var count = msgs.length;
         if (head) {
           head.innerHTML =
-            '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border)">' +
-              '<div>' + ico('monitor-smartphone', 20) + '</div>' +
+            '<div style="display:flex;align-items:center;gap:10px;width:100%">' +
+              '<div style="width:38px;height:38px;border-radius:50%;background:var(--brand-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--brand)">' + ico('monitor-smartphone', 20) + '</div>' +
               '<div style="flex:1;min-width:0">' +
-                '<div style="font-weight:600;font-size:15px">' + esc(conv.title || 'Percakapan') + '</div>' +
-                '<div style="font-size:12px;color:var(--muted)">Visitor: ' + esc(conv.visitor_id || '-') + ' &middot; Dibuat: ' + esc(conv.created_at || '') + '</div>' +
+                '<div style="font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(conv.title || 'Percakapan') + '</div>' +
+                '<div style="font-size:12px;color:var(--muted)">Pengunjung web &middot; ' + count + ' pesan' + (conv.migrated ? ' &middot; arsip' : '') + '</div>' +
               '</div>' +
             '</div>';
         }
         if (body) {
-          body.innerHTML = '';
-          msgs.forEach(function (m) {
-            var bubble = document.createElement('div');
-            bubble.className = 'wa-msg ' + (m.role === 'user' ? 'wa-msg-in' : 'wa-msg-out');
-            bubble.innerHTML =
-              '<div class="wa-msg-bubble">' +
-                '<div class="wa-msg-text">' + esc(m.content || '') + '</div>' +
-                '<div class="wa-msg-ts">' + esc(m.ts || '') + '</div>' +
-              '</div>';
-            body.appendChild(bubble);
-          });
+          var lastDate = '';
+          var html = msgs.map(function (m) {
+            var h = '';
+            var dk = waDateKey(m.ts);
+            if (dk && dk !== lastDate) { h += waDateSepHtml(waDateLabel(dk)); lastDate = dk; }
+            h += waBubble(m.content || '', (m.role === 'user' ? 'in' : 'bot'), m.ts);
+            return h;
+          }).join('');
+          body.innerHTML = html || '<div style="color:var(--muted);margin:auto">Belum ada pesan.</div>';
           body.scrollTop = body.scrollHeight;
         }
-        // refresh list to highlight active
         renderWebConvs(webState.convs);
       })
       .catch(function () {
