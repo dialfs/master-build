@@ -31,12 +31,14 @@ define('RATELIMIT_FILE', DATA_DIR . '/ratelimit.json');
 define('SECRET_FILE', DATA_DIR . '/.secret.php');
 define('WA_SESSIONS_DIR', DATA_DIR . '/wa-sessions');
 define('WA_MODES_FILE', DATA_DIR . '/wa-modes.json');
+define('WEB_CONV_FILE', DATA_DIR . '/web-conversations.json');  // v1.2.45: percakapan web per-sesi
+define('WEB_SESSIONS_DIR', DATA_DIR . '/web-sessions');          // v1.2.45: riwayat pesan per conversation_id
 
 /* ----------------------------------------------------------------------------
  *  CORS — the widget runs on the client's site (loaded via GTM) so public
  *  endpoints must allow cross-origin requests.
  * ------------------------------------------------------------------------- */
-$PUBLIC_ACTIONS = ['bootstrap', 'chat'];
+$PUBLIC_ACTIONS = ['bootstrap', 'chat', 'web_conv_list', 'web_conv_thread', 'web_conv_new'];
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 if (in_array($action, $PUBLIC_ACTIONS, true)) {
@@ -1841,6 +1843,48 @@ function tgNotify($s, $text) {
 /* ============================================================================
  *  ROUTER
  * ========================================================================= */
+
+/* ============================================================================
+ *  v1.2.45: Web Conversations — percakapan per-sesi (mirip WA threads)
+ * ============================================================================ */
+function webConvGenId() {
+    return 'wc_' . bin2hex(random_bytes(8));
+}
+function webConvGenVisitor() {
+    return 'wv_' . bin2hex(random_bytes(8));
+}
+function webConvReadAll() {
+    return readJson(WEB_CONV_FILE, []);
+}
+function webConvWrite($convs) {
+    writeJson(WEB_CONV_FILE, $convs);
+}
+function webConvFind($convs, $convId) {
+    foreach ($convs as $i => $c) {
+        if (($c['id'] ?? '') === $convId) return $i;
+    }
+    return -1;
+}
+function webConvSessionFile($convId) {
+    // sanitize: hanya alfanumerik + underscore
+    $safe = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$convId);
+    return WEB_SESSIONS_DIR . '/' . $safe . '.json';
+}
+function webConvLoadMessages($convId) {
+    $f = webConvSessionFile($convId);
+    if (!is_file($f)) return [];
+    $d = json_decode(@file_get_contents($f), true);
+    return is_array($d) ? $d : [];
+}
+function webConvSaveMessages($convId, $msgs) {
+    if (!is_dir(WEB_SESSIONS_DIR)) @mkdir(WEB_SESSIONS_DIR, 0755, true);
+    @file_put_contents(webConvSessionFile($convId), json_encode($msgs, JSON_UNESCAPED_UNICODE), LOCK_EX);
+}
+// Limit jumlah percakapan per visitor (hapus yang paling lama)
+define('WEB_CONV_LIMIT_PER_VISITOR', 50);
+// Limit total percakapan di file (auto-prune yang paling lama)
+define('WEB_CONV_LIMIT_TOTAL', 2000);
+
 switch ($action) {
 
     /* ---------- PUBLIC: widget bootstrap (no secrets) ---------- */
@@ -1913,6 +1957,19 @@ switch ($action) {
         $history = is_array($in['history'] ?? null) ? $in['history'] : [];
         $utm = is_array($in['utm'] ?? null) ? $in['utm'] : [];
 
+        // v1.2.45: web conversations — kalau ada conversation_id, ambil history dari session file
+        $convId = trim($in['conversation_id'] ?? '');
+        $visitorId = trim($in['visitor_id'] ?? '');
+        if ($convId !== '') {
+            // Ambil history dari conversation session (lebih akurat dari yang dikirim widget)
+            $convHistory = webConvLoadMessages($convId);
+            if (!empty($convHistory)) {
+                $history = array_map(function ($m) {
+                    return ['role' => $m['role'], 'content' => $m['content']];
+                }, array_slice($convHistory, -8));
+            }
+        }
+
         list($ok, $answer, $kbUsed, $usage) = generateAnswer($s, $message, $history);
         // v1.2.5: strip markdown kalau rule no_asterisk aktif
         $answer = stripMarkdownIfEnabled($answer, $s);
@@ -1954,6 +2011,29 @@ switch ($action) {
         $logs = array_slice($logs, 0, $logLimit);
         writeJson(LOG_FILE, $logs);
 
+        // v1.2.45: simpan ke web conversation session
+        if ($convId !== '') {
+            $convMsgs = webConvLoadMessages($convId);
+            $convMsgs[] = ['role' => 'user', 'content' => $message, 'ts' => date('Y-m-d H:i:s')];
+            $convMsgs[] = ['role' => 'assistant', 'content' => $answer, 'ts' => date('Y-m-d H:i:s')];
+            webConvSaveMessages($convId, $convMsgs);
+
+            // Update metadata di web-conversations.json
+            $convs = webConvReadAll();
+            $idx = webConvFind($convs, $convId);
+            if ($idx >= 0) {
+                $convs[$idx]['last_ts'] = date('Y-m-d H:i:s');
+                $convs[$idx]['last_message'] = mb_substr($message, 0, 120);
+                $convs[$idx]['last_answer'] = mb_substr($answer, 0, 120);
+                $convs[$idx]['message_count'] = count($convMsgs);
+                // Auto-title: kalau masih 'Percakapan baru', ganti dengan pesan pertama user
+                if (($convs[$idx]['title'] ?? '') === 'Percakapan baru') {
+                    $convs[$idx]['title'] = mb_substr($message, 0, 60);
+                }
+                webConvWrite($convs);
+            }
+        }
+
         // v1.2.11: push notif chat web masuk (tiap pesan) — tiru pola WA (Fase 3)
         try {
             $deiWebPushFile = DATA_DIR . '/push-subs.json';
@@ -1974,6 +2054,155 @@ switch ($action) {
         }
 
         jsonOut(['ok' => true, 'answer' => $answer, 'kb_used' => $kbUsed]);
+        break;
+    }
+
+    /* ---------- PUBLIC: Web Conversations (v1.2.45) ---------- */
+    case 'web_conv_new': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonOut(['ok' => false, 'error' => 'Method not allowed'], 405);
+        $s = getSettings();
+        if (!($s['widget']['chatbot_enabled'] ?? true)) {
+            jsonOut(['ok' => false, 'error' => 'Chatbot sedang dinonaktifkan.'], 403);
+        }
+
+        $in = bodyInput();
+        $visitorId = trim($in['visitor_id'] ?? '');
+        if ($visitorId === '') {
+            $visitorId = webConvGenVisitor();
+        }
+
+        // Enforce limits
+        $convs = webConvReadAll();
+        if (count($convs) >= WEB_CONV_LIMIT_TOTAL) {
+            jsonOut(['ok' => false, 'error' => 'Batas percakapan tercapai.'], 429);
+        }
+        $visitorCount = 0;
+        foreach ($convs as $c) {
+            if (($c['visitor_id'] ?? '') === $visitorId) $visitorCount++;
+        }
+        if ($visitorCount >= WEB_CONV_LIMIT_PER_VISITOR) {
+            jsonOut(['ok' => false, 'error' => 'Batas percakapan per pengunjung tercapai.'], 429);
+        }
+
+        $convId = webConvGenId();
+        $title = trim($in['title'] ?? '') ?: 'Percakapan baru';
+        $greeting = $s['bot']['greeting'] ?? 'Halo! Ada yang bisa saya bantu?';
+        $now = date('Y-m-d H:i:s');
+
+        // Create metadata entry
+        $convs[] = [
+            'id'            => $convId,
+            'visitor_id'    => $visitorId,
+            'title'         => mb_substr($title, 0, 120),
+            'created_at'    => $now,
+            'last_ts'       => $now,
+            'last_message'  => '',
+            'last_answer'   => mb_substr($greeting, 0, 120),
+            'message_count' => 1,
+        ];
+        webConvWrite($convs);
+
+        // Create session file with greeting
+        webConvSaveMessages($convId, [
+            ['role' => 'assistant', 'content' => $greeting, 'ts' => $now],
+        ]);
+
+        jsonOut([
+            'ok'              => true,
+            'conversation_id' => $convId,
+            'visitor_id'      => $visitorId,
+            'greeting'        => $greeting,
+        ]);
+        break;
+    }
+
+    case 'web_conv_list': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') jsonOut(['ok' => false, 'error' => 'Method not allowed'], 405);
+        $visitorId = trim($_GET['visitor_id'] ?? '');
+        if ($visitorId === '') jsonOut(['ok' => false, 'error' => 'visitor_id required'], 400);
+
+        $convs = webConvReadAll();
+        $mine = [];
+        foreach ($convs as $c) {
+            if (($c['visitor_id'] ?? '') === $visitorId) {
+                $mine[] = $c;
+            }
+        }
+        // Sort by last_ts descending (newest first)
+        usort($mine, function ($a, $b) {
+            return strcmp($b['last_ts'] ?? '', $a['last_ts'] ?? '');
+        });
+
+        jsonOut(['ok' => true, 'conversations' => $mine]);
+        break;
+    }
+
+    case 'web_conv_thread': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') jsonOut(['ok' => false, 'error' => 'Method not allowed'], 405);
+        $convId = trim($_GET['conversation_id'] ?? '');
+        $visitorId = trim($_GET['visitor_id'] ?? '');
+        if ($convId === '' || $visitorId === '') {
+            jsonOut(['ok' => false, 'error' => 'conversation_id and visitor_id required'], 400);
+        }
+
+        // Verify ownership
+        $convs = webConvReadAll();
+        $idx = webConvFind($convs, $convId);
+        if ($idx < 0 || ($convs[$idx]['visitor_id'] ?? '') !== $visitorId) {
+            jsonOut(['ok' => false, 'error' => 'Conversation not found'], 404);
+        }
+
+        $messages = webConvLoadMessages($convId);
+        jsonOut([
+            'ok'       => true,
+            'conversation' => $convs[$idx],
+            'messages' => $messages,
+        ]);
+        break;
+    }
+
+    /* ---------- ADMIN: Web Conversations Dashboard (v1.2.45) ---------- */
+    case 'web_conversations_admin': {
+        $u = requireAuth(['super_admin', 'admin', 'wa_agent']);
+        $convs = webConvReadAll();
+
+        // Sort by last_ts descending
+        usort($convs, function ($a, $b) {
+            return strcmp($b['last_ts'] ?? '', $a['last_ts'] ?? '');
+        });
+
+        // Pagination
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $perPage = min(50, max(10, (int)($_GET['per_page'] ?? 20)));
+        $total = count($convs);
+        $slice = array_slice($convs, ($page - 1) * $perPage, $perPage);
+
+        jsonOut([
+            'ok'            => true,
+            'conversations' => $slice,
+            'total'         => $total,
+            'page'          => $page,
+            'per_page'      => $perPage,
+            'total_pages'   => (int)ceil($total / $perPage),
+        ]);
+        break;
+    }
+
+    case 'web_thread_admin': {
+        $u = requireAuth(['super_admin', 'admin', 'wa_agent']);
+        $convId = trim($_GET['conversation_id'] ?? '');
+        if ($convId === '') jsonOut(['ok' => false, 'error' => 'conversation_id required'], 400);
+
+        $convs = webConvReadAll();
+        $idx = webConvFind($convs, $convId);
+        if ($idx < 0) jsonOut(['ok' => false, 'error' => 'Conversation not found'], 404);
+
+        $messages = webConvLoadMessages($convId);
+        jsonOut([
+            'ok'           => true,
+            'conversation' => $convs[$idx],
+            'messages'     => $messages,
+        ]);
         break;
     }
 

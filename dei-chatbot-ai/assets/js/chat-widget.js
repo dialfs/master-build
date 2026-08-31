@@ -1,7 +1,6 @@
-/* DEI AI Chat Widget — loaded via Google Tag Manager (or direct <script>).
+/* DEI AI Chat Widget v1.2.45 — Multi-Conversation (WhatsApp-style)
+ * Loaded via Google Tag Manager (or direct <script>).
  * All appearance/behaviour comes from the dashboard via ?action=bootstrap.
- * The widget figures out the API host from window.DEI_CHATBOT_BASE (set by the
- * GTM snippet) or, failing that, from this script's own src URL.
  */
 (function () {
   'use strict';
@@ -19,7 +18,6 @@
       }
     }
     if (cur && cur.src) {
-      // .../assets/js/chat-widget.js -> strip the last 3 path segments
       return cur.src.replace(/\/assets\/js\/chat-widget\.js.*$/, '');
     }
     return '';
@@ -46,6 +44,27 @@
     });
   }
   function el(html) { var d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstChild; }
+  function timeAgo(ts) {
+    if (!ts) return '';
+    var d = new Date(ts.replace(' ', 'T'));
+    var now = new Date();
+    var diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return 'baru saja';
+    if (diff < 3600) return Math.floor(diff / 60) + ' mnt lalu';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' jam lalu';
+    if (diff < 604800) return Math.floor(diff / 86400) + ' hari lalu';
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  }
+
+  /* ---- visitor ID (persisted in localStorage) -------------------------- */
+  function getVisitorId() {
+    var k = 'dei_visitor_id';
+    try { var v = localStorage.getItem(k); if (v) return v; } catch (e) {}
+    return '';
+  }
+  function setVisitorId(id) {
+    try { localStorage.setItem('dei_visitor_id', id); } catch (e) {}
+  }
 
   /* v1.1.9: 12 Lucide avatar icons (matches dashboard hybrid picker) */
   var AVATAR_ICONS = {
@@ -81,13 +100,16 @@
     var color = ap.primary_color || '#140383';
     var side = ap.position === 'left' ? 'left' : 'right';
     var ob = (ap.offset_bottom != null ? ap.offset_bottom : 24);
-    var or = (ap.offset_right != null ? ap.offset_right : 24);
+    var or_ = (ap.offset_right != null ? ap.offset_right : 24);
     var bot = cfg.bot || {};
-    var history = [];
+
+    /* state */
+    var visitorId = getVisitorId();
+    var currentConvId = '';
+    var conversations = [];
+    var currentView = 'list'; /* 'list' | 'thread' */
 
     /* avatar markup */
-    // v1.1.6+v1.1.9: respect explicit avatar_type — image | icon | emoji.
-    // Fallback (older widget_config without avatar_type): image wins if URL set.
     var useImage = ap.avatar_type
       ? (ap.avatar_type === 'image' && !!ap.avatar_image)
       : !!ap.avatar_image;
@@ -105,12 +127,12 @@
     var css = document.createElement('style');
     css.textContent = [
       '.dei-w *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}',
-      '#dei-chat-btn{position:fixed;bottom:' + ob + 'px;' + side + ':' + or + 'px;width:60px;height:60px;border-radius:50%;background:' + color + ';border:none;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:2147483000;display:flex;align-items:center;justify-content:center;transition:transform .15s}',
+      '#dei-chat-btn{position:fixed;bottom:' + ob + 'px;' + side + ':' + or_ + 'px;width:60px;height:60px;border-radius:50%;background:' + color + ';border:none;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:2147483000;display:flex;align-items:center;justify-content:center;transition:transform .15s}',
       '#dei-chat-btn:hover{transform:scale(1.07)}',
       '#dei-chat-btn svg{width:28px;height:28px;fill:#fff}',
       '#dei-chat-btn.dei-pulse::after{content:"";position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 0 ' + color + '66;animation:dei-pulse 2.2s infinite}',
       '@keyframes dei-pulse{0%{box-shadow:0 0 0 0 ' + color + '55}70%{box-shadow:0 0 0 14px ' + color + '00}100%{box-shadow:0 0 0 0 ' + color + '00}}',
-      '#dei-teaser{position:fixed;bottom:' + (ob + 76) + 'px;' + side + ':' + or + 'px;width:300px;max-width:calc(100vw - 32px);background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.22);z-index:2147483000;overflow:hidden;display:none;animation:dei-in .25s ease}',
+      '#dei-teaser{position:fixed;bottom:' + (ob + 76) + 'px;' + side + ':' + or_ + 'px;width:300px;max-width:calc(100vw - 32px);background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.22);z-index:2147483000;overflow:hidden;display:none;animation:dei-in .25s ease}',
       '#dei-teaser .tz-h{background:' + color + ';color:#fff;padding:12px 14px;display:flex;align-items:center;gap:9px}',
       '#dei-teaser .tz-av{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
       '#dei-teaser .tz-nm{font-weight:600;font-size:13.5px;line-height:1.2}',
@@ -120,13 +142,35 @@
       '#dei-teaser .tz-q{display:flex;flex-wrap:wrap;gap:6px;padding:4px 14px 14px}',
       '#dei-teaser .tz-q button{background:#fff;border:1px solid ' + color + ';color:' + color + ';border-radius:16px;padding:7px 12px;font-size:12.5px;cursor:pointer;text-align:left}',
       '#dei-teaser .tz-q button:hover{background:' + color + ';color:#fff}',
-      '#dei-chat-window{position:fixed;bottom:' + (ob + 76) + 'px;' + side + ':' + or + 'px;width:360px;max-width:calc(100vw - 32px);height:520px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,.25);z-index:2147483000;display:none;flex-direction:column;overflow:hidden;animation:dei-in .2s ease}',
+      /* main window */
+      '#dei-chat-window{position:fixed;bottom:' + (ob + 76) + 'px;' + side + ':' + or_ + 'px;width:360px;max-width:calc(100vw - 32px);height:520px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,.25);z-index:2147483000;display:none;flex-direction:column;overflow:hidden;animation:dei-in .2s ease}',
       '@keyframes dei-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}',
+      /* header */
       '.dch{background:' + color + ';color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0}',
       '.dch-av{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
       '.dch-name{font-weight:600;font-size:15px;line-height:1.2}',
       '.dch-sub{font-size:11px;opacity:.8}',
       '.dch-x{margin-left:auto;background:none;border:none;color:#fff;font-size:22px;cursor:pointer;opacity:.85;line-height:1}',
+      '.dch-back{background:none;border:none;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;margin-right:2px}',
+      '.dch-back svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}',
+      /* conversation list view */
+      '.dei-conv-list{flex:1;overflow-y:auto;background:#f5f6fa}',
+      '.dei-conv-new{display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fff;border-bottom:1px solid #eee;cursor:pointer;transition:background .15s}',
+      '.dei-conv-new:hover{background:#f0f0ff}',
+      '.dei-conv-new-icon{width:42px;height:42px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+      '.dei-conv-new-icon svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
+      '.dei-conv-new-text{font-size:14px;font-weight:600;color:' + color + '}',
+      '.dei-conv-item{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background .15s}',
+      '.dei-conv-item:hover{background:#f8f8ff}',
+      '.dei-conv-item-av{width:42px;height:42px;border-radius:50%;background:' + color + '18;display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+      '.dei-conv-item-av svg{width:20px;height:20px;fill:none;stroke:' + color + ';stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
+      '.dei-conv-item-body{flex:1;min-width:0}',
+      '.dei-conv-item-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}',
+      '.dei-conv-item-title{font-size:14px;font-weight:600;color:#1a1a2e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.dei-conv-item-time{font-size:11px;color:#999;white-space:nowrap;flex-shrink:0}',
+      '.dei-conv-item-preview{font-size:12.5px;color:#777;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.dei-conv-empty{padding:40px 20px;text-align:center;color:#999;font-size:13.5px;line-height:1.5}',
+      /* thread view (chat messages) */
       '.dch-body{flex:1;overflow-y:auto;padding:16px;background:#f5f6fa}',
       '.dm{display:flex;margin-bottom:10px}',
       '.dm.user{justify-content:flex-end}',
@@ -145,7 +189,8 @@
       '.dch-typing span{width:7px;height:7px;border-radius:50%;background:#bbb;animation:dei-bounce 1.2s infinite}',
       '.dch-typing span:nth-child(2){animation-delay:.2s}.dch-typing span:nth-child(3){animation-delay:.4s}',
       '@keyframes dei-bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}',
-      '#dei-wa-btn{position:fixed;bottom:' + ob + 'px;' + side + ':' + (or + (cfg.chatbot_enabled ? 72 : 0)) + 'px;width:56px;height:56px;border-radius:50%;background:#25d366;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.22);z-index:2147482999;display:flex;align-items:center;justify-content:center}',
+      /* WA button */
+      '#dei-wa-btn{position:fixed;bottom:' + ob + 'px;' + side + ':' + (or_ + (cfg.chatbot_enabled ? 72 : 0)) + 'px;width:56px;height:56px;border-radius:50%;background:#25d366;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.22);z-index:2147482999;display:flex;align-items:center;justify-content:center}',
       '#dei-wa-btn svg{width:30px;height:30px;fill:#fff}'
     ].join('');
     document.head.appendChild(css);
@@ -166,16 +211,21 @@
     /* ---- Chatbot ---- */
     if (cfg.chatbot_enabled) {
       var btn = el('<button id="dei-chat-btn" title="Chat"><svg viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.6 2 11c0 2.2 1.1 4.2 3 5.6V21l3.9-2.1c1 .3 2 .4 3.1.4 5.5 0 10-3.6 10-8s-4.5-8-10-8z"/></svg></button>');
+
       var win = el(
         '<div id="dei-chat-window">' +
-          '<div class="dch">' +
+          /* -- header (dynamic: changes between list & thread views) -- */
+          '<div class="dch" id="dei-hdr">' +
             '<div class="dch-av">' + avatar + '</div>' +
             '<div><div class="dch-name">' + esc(bot.bot_name || 'Assistant') + '</div><div class="dch-sub">Online • Powered by AI</div></div>' +
             '<button class="dch-x" aria-label="Tutup">&times;</button>' +
           '</div>' +
-          '<div class="dch-body" id="dei-body"></div>' +
-          '<div class="dch-quick" id="dei-quick"></div>' +
-          '<div class="dch-foot">' +
+          /* -- conversation list view -- */
+          '<div class="dei-conv-list" id="dei-conv-list"></div>' +
+          /* -- thread view (hidden initially) -- */
+          '<div class="dch-body" id="dei-body" style="display:none"></div>' +
+          '<div class="dch-quick" id="dei-quick" style="display:none"></div>' +
+          '<div class="dch-foot" id="dei-foot" style="display:none">' +
             '<input id="dei-input" type="text" placeholder="Ketik pesan..." autocomplete="off">' +
             '<button class="dch-send" aria-label="Kirim"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>' +
           '</div>' +
@@ -184,11 +234,165 @@
       wrap.appendChild(btn);
       wrap.appendChild(win);
 
+      var hdr = win.querySelector('#dei-hdr');
+      var convListEl = win.querySelector('#dei-conv-list');
       var body = win.querySelector('#dei-body');
       var quick = win.querySelector('#dei-quick');
+      var foot = win.querySelector('#dei-foot');
       var input = win.querySelector('#dei-input');
       var opened = false;
+      var sending = false;
 
+      /* ---- view switching ---- */
+      function setHeaderList() {
+        hdr.innerHTML =
+          '<div class="dch-av">' + avatar + '</div>' +
+          '<div><div class="dch-name">' + esc(bot.bot_name || 'Assistant') + '</div><div class="dch-sub">Online • Powered by AI</div></div>' +
+          '<button class="dch-x" aria-label="Tutup">&times;</button>';
+        hdr.querySelector('.dch-x').onclick = function () { toggleWindow(false); };
+      }
+      function setHeaderThread(title) {
+        hdr.innerHTML =
+          '<button class="dch-back" aria-label="Kembali"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>' +
+          '<div class="dch-av">' + avatar + '</div>' +
+          '<div style="flex:1;min-width:0"><div class="dch-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title || bot.bot_name || 'Chat') + '</div><div class="dch-sub">Online • Powered by AI</div></div>' +
+          '<button class="dch-x" aria-label="Tutup">&times;</button>';
+        hdr.querySelector('.dch-back').onclick = function () { showView('list'); };
+        hdr.querySelector('.dch-x').onclick = function () { toggleWindow(false); };
+      }
+
+      function showView(view) {
+        currentView = view;
+        if (view === 'list') {
+          setHeaderList();
+          convListEl.style.display = '';
+          body.style.display = 'none';
+          quick.style.display = 'none';
+          foot.style.display = 'none';
+          loadConversationList();
+        } else {
+          convListEl.style.display = 'none';
+          body.style.display = '';
+          quick.style.display = '';
+          foot.style.display = '';
+        }
+      }
+
+      /* ---- conversation list ---- */
+      function loadConversationList() {
+        if (!visitorId) {
+          renderConvList([]);
+          return;
+        }
+        fetch(API + '?action=web_conv_list&visitor_id=' + encodeURIComponent(visitorId))
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res && res.ok) {
+              conversations = res.conversations || [];
+              renderConvList(conversations);
+            }
+          })
+          .catch(function () { renderConvList([]); });
+      }
+
+      function renderConvList(list) {
+        convListEl.innerHTML = '';
+        /* "New Conversation" button */
+        var newBtn = el(
+          '<div class="dei-conv-new">' +
+            '<div class="dei-conv-new-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>' +
+            '<div class="dei-conv-new-text">Percakapan Baru</div>' +
+          '</div>'
+        );
+        newBtn.onclick = function () { createNewConversation(); };
+        convListEl.appendChild(newBtn);
+
+        if (list.length === 0) {
+          convListEl.appendChild(el('<div class="dei-conv-empty">Belum ada percakapan.<br>Klik tombol di atas untuk mulai chat.</div>'));
+          return;
+        }
+
+        list.forEach(function (c) {
+          var preview = c.last_message || c.last_answer || '';
+          var item = el(
+            '<div class="dei-conv-item">' +
+              '<div class="dei-conv-item-av"><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></div>' +
+              '<div class="dei-conv-item-body">' +
+                '<div class="dei-conv-item-top">' +
+                  '<div class="dei-conv-item-title">' + esc(c.title || 'Percakapan') + '</div>' +
+                  '<div class="dei-conv-item-time">' + timeAgo(c.last_ts) + '</div>' +
+                '</div>' +
+                '<div class="dei-conv-item-preview">' + esc(preview) + '</div>' +
+              '</div>' +
+            '</div>'
+          );
+          item.onclick = function () { openThread(c.id, c.title); };
+          convListEl.appendChild(item);
+        });
+      }
+
+      /* ---- create new conversation ---- */
+      function createNewConversation(initialMessage) {
+        fetch(API + '?action=web_conv_new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visitor_id: visitorId })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res && res.ok) {
+              if (!visitorId) {
+                visitorId = res.visitor_id;
+                setVisitorId(visitorId);
+              }
+              currentConvId = res.conversation_id;
+              /* switch to thread view */
+              body.innerHTML = '';
+              setHeaderThread('Percakapan baru');
+              showView('thread');
+              addMsg('bot', res.greeting || bot.greeting || 'Halo!');
+              renderQuick();
+              input.focus();
+              /* if there's an initial message (from teaser quick reply), send it */
+              if (initialMessage) {
+                send(initialMessage);
+              }
+            }
+          })
+          .catch(function () { /* fail silently */ });
+      }
+
+      /* ---- open existing thread ---- */
+      function openThread(convId, title) {
+        currentConvId = convId;
+        body.innerHTML = '';
+        setHeaderThread(title);
+        showView('thread');
+        /* load messages */
+        body.innerHTML = '<div style="text-align:center;padding:30px;color:#999;font-size:13px">Memuat...</div>';
+        fetch(API + '?action=web_conv_thread&conversation_id=' + encodeURIComponent(convId) + '&visitor_id=' + encodeURIComponent(visitorId))
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            body.innerHTML = '';
+            if (res && res.ok && res.messages) {
+              res.messages.forEach(function (m) {
+                addMsg(m.role === 'user' ? 'user' : 'bot', m.content);
+              });
+              /* update title from server if available */
+              if (res.conversation && res.conversation.title) {
+                var nameEl = hdr.querySelector('.dch-name');
+                if (nameEl) nameEl.textContent = res.conversation.title;
+              }
+            }
+            quick.innerHTML = '';
+            input.focus();
+          })
+          .catch(function () {
+            body.innerHTML = '<div style="text-align:center;padding:30px;color:#c33;font-size:13px">Gagal memuat pesan.</div>';
+          });
+      }
+
+      /* ---- messaging helpers ---- */
       function addMsg(role, text) {
         var m = el('<div class="dm ' + role + '"><div class="dm-b"></div></div>');
         m.querySelector('.dm-b').textContent = text;
@@ -209,53 +413,72 @@
           quick.appendChild(b);
         });
       }
-      function toggle(open) {
+
+      function toggleWindow(open) {
         opened = (open != null) ? open : !opened;
         win.style.display = opened ? 'flex' : 'none';
         btn.style.display = opened ? 'none' : 'flex';
-        if (opened && !body.childElementCount) {
-          addMsg('bot', bot.greeting || 'Halo!');
-          renderQuick();
+        if (opened) {
+          showView('list');
         }
-        if (opened) input.focus();
       }
 
+      /* ---- send message ---- */
       function send(text) {
         text = (text || input.value).trim();
-        if (!text) return;
+        if (!text || sending) return;
+        if (!currentConvId) return;
         input.value = '';
         quick.innerHTML = '';
         addMsg('user', text);
-        history.push({ role: 'user', content: text });
         var typing = showTyping();
+        sending = true;
+
+        /* auto-title: kalau ini pesan pertama user, jadikan judul percakapan */
+        var isFirstUserMsg = !body.querySelector('.dm.user + .dm.user'); /* hanya 1 user msg */
 
         fetch(API + '?action=chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, history: history.slice(-8), utm: getUTM() })
+          body: JSON.stringify({
+            message: text,
+            conversation_id: currentConvId,
+            visitor_id: visitorId,
+            history: [],
+            utm: getUTM()
+          })
         })
           .then(function (r) { return r.json(); })
           .then(function (res) {
             typing.remove();
+            sending = false;
             if (res && res.ok) {
               addMsg('bot', res.answer);
-              history.push({ role: 'assistant', content: res.answer });
+              /* update title in header if this was first message */
+              if (isFirstUserMsg) {
+                var shortTitle = text.length > 40 ? text.substring(0, 40) + '...' : text;
+                var nameEl = hdr.querySelector('.dch-name');
+                if (nameEl) nameEl.textContent = shortTitle;
+                /* also update on server: reuse the metadata update that happens in chat action */
+              }
             } else {
               addMsg('bot', (res && res.error) || 'Maaf, terjadi gangguan. Coba lagi nanti.');
             }
           })
           .catch(function () {
             typing.remove();
+            sending = false;
             addMsg('bot', 'Maaf, koneksi bermasalah. Coba lagi nanti.');
           });
       }
 
-      btn.onclick = function () { hideTeaser(true); toggle(true); };
-      win.querySelector('.dch-x').onclick = function () { toggle(false); };
+      /* ---- event bindings ---- */
+      btn.onclick = function () { hideTeaser(true); toggleWindow(true); };
+      win.querySelector('.dch-x').onclick = function () { toggleWindow(false); };
       win.querySelector('.dch-send').onclick = function () { send(); };
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
 
-      /* ---- attention teaser: greeting + quick-reply options on the launcher ---- */
+      /* ---- attention teaser ---- */
       var qreplies = (bot.quick_replies || []).filter(function (q) { return String(q).trim() !== ''; });
       var teaser = el(
         '<div id="dei-teaser" role="dialog" aria-label="Chat">' +
@@ -278,14 +501,14 @@
         b.onclick = function (e) {
           e.stopPropagation();
           hideTeaser(true);
-          toggle(true);
-          send(q);               // open chat and send this prefilled message
+          toggleWindow(true);
+          /* Create a new conversation and send the quick-reply */
+          createNewConversation(q);
         };
         tzq.appendChild(b);
       });
 
-      // Clicking the greeting area just opens the chat normally
-      teaser.querySelector('.tz-g').onclick = function () { hideTeaser(true); toggle(true); };
+      teaser.querySelector('.tz-g').onclick = function () { hideTeaser(true); toggleWindow(true); };
       teaser.querySelector('.tz-x').onclick = function (e) { e.stopPropagation(); hideTeaser(true); };
 
       function hideTeaser(remember) {
@@ -301,7 +524,6 @@
         teaser.style.display = 'block';
         btn.classList.add('dei-pulse');
       }
-      // appear shortly after load to grab attention (once per browser session)
       setTimeout(showTeaser, 1800);
     }
   }

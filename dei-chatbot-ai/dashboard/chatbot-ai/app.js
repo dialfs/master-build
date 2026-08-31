@@ -1619,6 +1619,122 @@
     });
   }
 
+  /* ---- Web Conversations (v1.2.45) ---- */
+  var webState = { convs: [], current: null, timer: null };
+
+  function loadWebchat() {
+    var wrap = document.querySelector('#panel-webchat .wachat-wrap');
+    if (wrap) wrap.classList.remove('showing-thread');
+    if (window.scrollTo) window.scrollTo(0, 0);
+    fetchWebConvs();
+    if ($('#webBackBtn')) $('#webBackBtn').onclick = function () {
+      var w = document.querySelector('#panel-webchat .wachat-wrap');
+      if (w) w.classList.remove('showing-thread');
+    };
+    if (webState.timer) clearInterval(webState.timer);
+    webState.timer = setInterval(function () {
+      if (!$('#panel-webchat').classList.contains('active')) return;
+      fetchWebConvs(true).then(function () {
+        if (webState.current) fetchWebThread(webState.current, true);
+      });
+    }, 8000);
+  }
+
+  function fetchWebConvs(silent) {
+    var list = $('#webConvList');
+    if (!silent && list) list.innerHTML = '<div style="padding:16px;color:var(--muted)">Memuat…</div>';
+    return api('web_conversations_admin')
+      .then(function (res) {
+        if (!res.ok) return;
+        webState.convs = res.conversations || [];
+        renderWebConvs(webState.convs);
+      })
+      .catch(function () {
+        if (!silent && list) list.innerHTML = '<div style="padding:16px;color:var(--err)">Gagal memuat.</div>';
+      });
+  }
+
+  function renderWebConvs(convs) {
+    var list = $('#webConvList');
+    if (!list) return;
+    if (!convs.length) {
+      list.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center">Belum ada percakapan web.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    convs.forEach(function (c) {
+      var preview = c.last_message
+        ? '<b style="color:var(--txt)">Pengunjung:</b> ' + esc(c.last_message)
+        : (c.last_answer ? '<b style="color:var(--txt)">Bot:</b> ' + esc(c.last_answer) : '');
+      var msgCount = c.message_count || 0;
+      var row = document.createElement('div');
+      row.className = 'wa-conv-row' + (webState.current === c.id ? ' active' : '');
+      row.innerHTML =
+        '<div class="wa-conv-left">' +
+          '<div class="wa-conv-av">' + ico('monitor-smartphone', 18) + '</div>' +
+        '</div>' +
+        '<div class="wa-conv-mid">' +
+          '<div class="wa-conv-name">' + esc(c.title || 'Percakapan') + '</div>' +
+          '<div class="wa-conv-preview">' + (preview || '<i style="color:var(--muted)">Belum ada pesan</i>') + '</div>' +
+        '</div>' +
+        '<div class="wa-conv-right">' +
+          '<div class="wa-conv-ts">' + waConvTimeInfo(c.last_ts || c.created_at).label + '</div>' +
+          '<div style="font-size:11px;color:var(--muted)">' + msgCount + ' pesan</div>' +
+        '</div>';
+      row.onclick = function () { selectWebConv(c.id); };
+      list.appendChild(row);
+    });
+  }
+
+  function selectWebConv(convId) {
+    webState.current = convId;
+    var wrap = document.querySelector('#panel-webchat .wachat-wrap');
+    if (wrap) wrap.classList.add('showing-thread');
+    fetchWebThread(convId);
+  }
+
+  function fetchWebThread(convId, silent) {
+    var head = $('#webThreadHead');
+    var body = $('#webThreadBody');
+    if (!silent && head) head.innerHTML = '<span style="color:var(--muted)">Memuat…</span>';
+    if (!silent && body) body.innerHTML = '';
+    return api('web_thread_admin', { query: '&conversation_id=' + encodeURIComponent(convId) })
+      .then(function (res) {
+        if (!res.ok) return;
+        var conv = res.conversation || {};
+        var msgs = res.messages || [];
+        if (head) {
+          head.innerHTML =
+            '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border)">' +
+              '<div>' + ico('monitor-smartphone', 20) + '</div>' +
+              '<div style="flex:1;min-width:0">' +
+                '<div style="font-weight:600;font-size:15px">' + esc(conv.title || 'Percakapan') + '</div>' +
+                '<div style="font-size:12px;color:var(--muted)">Visitor: ' + esc(conv.visitor_id || '-') + ' &middot; Dibuat: ' + esc(conv.created_at || '') + '</div>' +
+              '</div>' +
+            '</div>';
+        }
+        if (body) {
+          body.innerHTML = '';
+          msgs.forEach(function (m) {
+            var bubble = document.createElement('div');
+            bubble.className = 'wa-msg ' + (m.role === 'user' ? 'wa-msg-in' : 'wa-msg-out');
+            bubble.innerHTML =
+              '<div class="wa-msg-bubble">' +
+                '<div class="wa-msg-text">' + esc(m.content || '') + '</div>' +
+                '<div class="wa-msg-ts">' + esc(m.ts || '') + '</div>' +
+              '</div>';
+            body.appendChild(bubble);
+          });
+          body.scrollTop = body.scrollHeight;
+        }
+        // refresh list to highlight active
+        renderWebConvs(webState.convs);
+      })
+      .catch(function () {
+        if (head) head.innerHTML = '<span style="color:var(--err)">Gagal memuat.</span>';
+      });
+  }
+
   function loadWachat() {
     // v1.2.39 fase7: membuka menu "Percakapan WA" harus diperlakukan sama
     // dengan menekan tombol Back di mobile -- balik ke DAFTAR percakapan,
@@ -3008,6 +3124,7 @@
   var loaders = {
     reports: function () { initReportsControls(); loadUsageCard(); loadReports(); },
     wachat: loadWachat,
+    webchat: loadWebchat,
     leads: loadLeads,
     kontak: loadKontak,
     kb: loadKb,

@@ -425,6 +425,7 @@
     <nav id="nav">
       <button data-tab="reports"  data-role="super_admin,admin" data-icon="bar-chart-3"><span class="ic"></span> Laporan &amp; Log</button>
       <button data-tab="wachat"   data-role="super_admin,admin,wa_agent" data-icon="message-circle"><span class="ic"></span> Percakapan WA</button>
+      <button data-tab="webchat"  data-role="super_admin,admin,wa_agent" data-icon="monitor-smartphone"><span class="ic"></span> Percakapan Web</button>
       <button data-tab="leads"    data-role="super_admin,admin,wa_agent" data-icon="target"><span class="ic"></span> Leads</button>
       <button data-tab="kontak"   data-role="super_admin,admin,wa_agent" data-icon="users"><span class="ic"></span> Kontak</button>
       <button data-tab="kb"       data-role="super_admin,admin" data-icon="book-open"><span class="ic"></span> Knowledge Base</button>
@@ -568,6 +569,21 @@
                 <button class="btn" id="waReplySend">Kirim</button>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WEB CONVERSATIONS (v1.2.45) -->
+    <section class="panel" id="panel-webchat">
+      <div class="ph"><h2>Percakapan Web</h2><p>Pantau percakapan chat dari widget website. Setiap pengunjung bisa membuka beberapa topik percakapan terpisah.</p></div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="wachat-wrap">
+          <div class="wachat-list" id="webConvList"><div style="padding:16px;color:var(--muted)">Memuat…</div></div>
+          <div class="wachat-thread">
+            <button class="btn ghost sm wa-back-btn" id="webBackBtn" type="button" style="margin:10px 10px 0"><span data-ico="arrow-left" data-ico-size="14"></span> Kembali ke daftar</button>
+            <div class="wachat-thead" id="webThreadHead"><span style="color:var(--muted)">← Pilih percakapan.</span></div>
+            <div class="wachat-body" id="webThreadBody"></div>
           </div>
         </div>
       </div>
