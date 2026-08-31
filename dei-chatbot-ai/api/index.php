@@ -2608,6 +2608,65 @@ switch ($action) {
                     // v1.2.36: alur pemrosesan dipindah ke fungsi bersama
                     waProcessIncoming($s, $wa, $from, $text, $deiWaName, $change['value']['metadata'] ?? []);
                 }
+
+                /* v1.2.48: COEXISTENCE — pesan yang dikirim AGENT dari app HP (echo).
+                 * Tujuan: tampil di thread dashboard + bot otomatis mundur. */
+                foreach (($change['value']['message_echoes'] ?? []) as $echo) {
+                    $eto = waNormNum($echo['to'] ?? ($echo['recipient_id'] ?? ''));
+                    if ($eto === '') continue;
+                    $etext = (($echo['type'] ?? '') === 'text') ? trim($echo['text']['body'] ?? '') : '';
+                    if ($etext === '') continue;
+                    try {
+                        $elogs = readJson(LOG_FILE, []);
+                        $eid = (string)($echo['id'] ?? '');
+                        $dup = false;
+                        if ($eid !== '') { foreach ($elogs as $el) { if (($el['echo_id'] ?? '') === $eid) { $dup = true; break; } } }
+                        if (!$dup) {
+                            array_unshift($elogs, [
+                                'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $etext, 'ip' => $eto,
+                                'channel' => 'whatsapp', 'dir' => 'manual', 'src' => 'hp', 'echo_id' => $eid,
+                                'utm_source' => 'whatsapp', 'utm_medium' => 'hp', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
+                            ]);
+                            writeJson(LOG_FILE, array_slice($elogs, 0, $logLimit));
+                            waSetMode($eto, 'human'); // agent balas dari HP = ambil alih -> bot mundur
+                            if ($keepCtx) { $eh = waLoadHistory($eto); $eh[] = ['role' => 'assistant', 'content' => $etext]; waSaveHistory($eto, $eh); }
+                        }
+                    } catch (\Throwable $e) { error_log('wa echo: ' . $e->getMessage()); }
+                }
+
+                /* v1.2.48: COEXISTENCE — sinkronisasi kontak dari app HP. */
+                foreach (($change['value']['smb_app_state_sync'] ?? []) as $sync) {
+                    $cn  = waNormNum($sync['contact']['phone_number'] ?? ($sync['wa_id'] ?? ($sync['phone_number'] ?? '')));
+                    $cnm = trim((string)($sync['contact']['full_name'] ?? ($sync['full_name'] ?? ($sync['name'] ?? ''))));
+                    if ($cn !== '') { try { waSaveContact($cn, $cnm); } catch (\Throwable $e) {} }
+                }
+
+                /* v1.2.48: COEXISTENCE — riwayat chat lama (best-effort, sekali saat onboarding).
+                 * Skema history bisa bervariasi; tulis apa yang bisa dibaca tanpa mengasumsikan terlalu dalam. */
+                foreach (($change['value']['history'] ?? []) as $hist) {
+                    foreach (($hist['threads'] ?? []) as $thread) {
+                        $hnum = waNormNum($thread['id'] ?? ($thread['contact_id'] ?? ''));
+                        if ($hnum === '') continue;
+                        $hlogs = readJson(LOG_FILE, []);
+                        foreach (($thread['messages'] ?? []) as $hm) {
+                            if (($hm['type'] ?? '') !== 'text') continue;
+                            $htext = trim($hm['text']['body'] ?? '');
+                            if ($htext === '') continue;
+                            $hfrom = waNormNum($hm['from'] ?? '');
+                            $hts   = !empty($hm['timestamp']) ? date('Y-m-d H:i:s', (int)$hm['timestamp']) : date('Y-m-d H:i:s');
+                            $outbound = ($hfrom !== '' && $hfrom !== $hnum); // dari nomor bisnis -> balasan
+                            array_unshift($hlogs, [
+                                'ts' => $hts,
+                                'q' => $outbound ? '' : $htext,
+                                'a' => $outbound ? $htext : '',
+                                'ip' => $hnum, 'channel' => 'whatsapp',
+                                'dir' => $outbound ? 'manual' : 'in', 'src' => 'history',
+                                'utm_source' => 'whatsapp', 'utm_medium' => 'history', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
+                            ]);
+                        }
+                        writeJson(LOG_FILE, array_slice($hlogs, 0, max($logLimit, 2000)));
+                    }
+                }
             }
         }
         if (!$earlyAck) { echo 'EVENT_RECEIVED'; }
