@@ -426,6 +426,7 @@
       <button data-tab="reports"  data-role="super_admin,admin" data-icon="bar-chart-3"><span class="ic"></span> Laporan &amp; Log</button>
       <button data-tab="wachat"   data-role="super_admin,admin,wa_agent" data-icon="message-circle"><span class="ic"></span> Percakapan WA</button>
       <button data-tab="webchat"  data-role="super_admin,admin,wa_agent" data-icon="monitor-smartphone"><span class="ic"></span> Percakapan Web</button>
+      <button data-tab="blast"    data-role="super_admin,admin" data-icon="send"><span class="ic"></span> Blast WA</button>
       <button data-tab="leads"    data-role="super_admin,admin,wa_agent" data-icon="target"><span class="ic"></span> Leads</button>
       <button data-tab="kontak"   data-role="super_admin,admin,wa_agent" data-icon="users"><span class="ic"></span> Kontak</button>
       <button data-tab="kb"       data-role="super_admin,admin" data-icon="book-open"><span class="ic"></span> Knowledge Base</button>
@@ -588,6 +589,51 @@
             <div class="wachat-thead" id="webThreadHead"><span style="color:var(--muted)">← Pilih percakapan.</span></div>
             <div class="wachat-body" id="webThreadBody"></div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BLAST WA (v1.2.47) -->
+    <section class="panel" id="panel-blast">
+      <div class="ph"><h2>Blast WA</h2><p>Kirim pesan template resmi (Meta Cloud API) ke banyak kontak sekaligus. Hanya ke kontak yang sudah opt-in & template yang sudah disetujui Meta.</p></div>
+      <div class="grid2" style="align-items:start;gap:18px">
+        <div class="card">
+          <h3 style="margin:0 0 12px">Buat Blast Baru</h3>
+          <div class="row"><label class="fl">Template</label>
+            <div style="display:flex;gap:8px">
+              <select id="blastTemplate" style="flex:1"><option value="">— Pilih template —</option></select>
+              <button class="btn ghost sm" id="blastReloadTpl" title="Muat ulang template dari Meta"><span data-ico="rotate-cw" data-ico-size="14"></span></button>
+            </div>
+            <div class="help" id="blastTplHint">Klik muat ulang untuk menarik daftar template dari Meta.</div>
+          </div>
+          <div id="blastPreview" style="display:none;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;margin:6px 0;font-size:13.5px;white-space:pre-wrap"></div>
+          <div id="blastVars"></div>
+          <div class="row"><label class="fl">Penerima</label>
+            <select id="blastSource">
+              <option value="contacts">Dari Kontak WA (opt-in)</option>
+              <option value="csv">Upload / tempel nomor (CSV)</option>
+            </select>
+          </div>
+          <div class="row" id="blastStageRow"><label class="fl">Filter tag kontak (opsional)</label>
+            <select id="blastStage"><option value="">Semua kontak</option></select>
+          </div>
+          <div class="row" id="blastCsvRow" style="display:none"><label class="fl">Nomor (satu per baris / pisah koma)</label>
+            <textarea id="blastCsv" rows="5" class="mono" placeholder="628123456789&#10;628987654321"></textarea>
+            <div class="help">Format internasional tanpa +. Pastikan mereka sudah setuju dikirimi pesan.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+            <button class="btn" id="blastSendBtn"><span data-ico="send" data-ico-size="15"></span> Kirim Blast</button>
+            <span id="blastCount" style="color:var(--muted);font-size:13px"></span>
+          </div>
+          <div class="help" style="margin-top:10px">Tip: pakai <code>{nama}</code> di isian variabel untuk otomatis diganti nama kontak.</div>
+          <div id="blastProgress" style="display:none;margin-top:14px">
+            <div style="height:10px;background:var(--line);border-radius:6px;overflow:hidden"><div id="blastBar" style="height:100%;width:0;background:var(--brand);transition:width .3s"></div></div>
+            <div id="blastProgressText" style="font-size:13px;color:var(--muted);margin-top:6px"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 12px">Riwayat Blast</h3>
+          <div id="blastHistory"><div style="color:var(--muted);font-size:13px">Belum ada blast.</div></div>
         </div>
       </div>
     </section>
@@ -935,6 +981,7 @@
         <div class="row wa-meta-only"><label class="fl">Access Token (Permanent)</label><input type="text" id="wa_token" class="mono" placeholder="EAAG..."><div class="help">Token dari Meta for Developers › WhatsApp › API Setup. Disimpan terenkripsi-tampilan; kosongkan untuk tidak mengubah.</div></div>
         <div class="grid2">
           <div class="row wa-meta-only"><label class="fl">Phone Number ID</label><input type="text" id="wa_pnid" class="mono" placeholder="1234567890"><div class="help">Bukan nomor telepon — ID dari halaman API Setup.</div></div>
+          <div class="row wa-meta-only"><label class="fl">WhatsApp Business Account ID (WABA ID)</label><input type="text" id="wa_waba" class="mono" placeholder="1234567890"><div class="help">Untuk fitur Blast (tarik template). Dari Meta Business Settings › WhatsApp Accounts.</div></div>
           <div class="row wa-meta-only"><label class="fl">Verify Token</label><input type="text" id="wa_verify" class="mono" placeholder="buat-token-rahasia-bebas"><div class="help">Token bebas buatan Anda, dipakai saat mendaftarkan webhook.</div></div>
           <div class="row wa-meta-only"><label class="fl">App Secret</label><input type="text" id="wa_secret" class="mono" placeholder="(opsional, untuk verifikasi tanda tangan)"><div class="help">Dari Meta App › Settings › Basic. Disarankan untuk keamanan; kosongkan untuk tidak mengubah.</div></div>
           <div class="row"><label class="fl">Rate Limit (per nomor / jam)</label><input type="number" id="wa_rate" placeholder="20"></div>
@@ -1069,6 +1116,6 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.46-3"></script>
+<script src="app.js?v=1.2.47"></script>
 </body>
 </html>

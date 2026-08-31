@@ -45,6 +45,7 @@
   /* v1.2.26: ikon tambahan. Ditaruh di objek TERPISAH lalu digabungkan,
      supaya peta ICONS asli tidak perlu disentuh. */
   var ICONS_EXTRA = {
+    'send':              '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
     'monitor-smartphone': '<path d="M18 8V5a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9"/><path d="M7 19h5"/><path d="M10 16v3"/><rect width="6" height="10" x="16" y="11" rx="2"/>',
     'target':            '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
     'user':              '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
@@ -1258,6 +1259,7 @@
       $('#wa_token').value = wa.access_token || '';   // masked from server
       $('#wa_token').placeholder = wa.token_is_set ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'EAAG...';
       $('#wa_pnid').value = wa.phone_number_id || '';
+      $('#wa_waba').value = wa.waba_id || '';
       $('#wa_verify').value = wa.verify_token || '';
       $('#wa_secret').value = wa.app_secret || '';     // masked from server
       $('#wa_rate').value = wa.rate_limit_per_number || 20;
@@ -1314,6 +1316,7 @@
     var waBlock = {
       enabled: $('#wa_enabled').checked,
       phone_number_id: $('#wa_pnid').value.trim(),
+      waba_id: $('#wa_waba').value.trim(),
       verify_token: $('#wa_verify').value.trim(),
       keep_context: $('#wa_ctx').checked,
       rate_limit_per_number: +$('#wa_rate').value || 20,
@@ -1624,6 +1627,139 @@
 
   /* ---- Web Conversations (v1.2.45) ---- */
   var webState = { convs: [], current: null, timer: null };
+
+  /* ---- Blast WA (v1.2.47) ---- */
+  var blastState = { templates: [], current: null, sending: false };
+
+  function loadBlast() {
+    // filter tag dari kontak
+    var stageSel = $('#blastStage');
+    if (stageSel && stageSel.options.length <= 1) {
+      [['','Semua kontak'],['new','Baru'],['warm','Warm'],['hot','Hot'],['active_customer','Pelanggan'],['lost','Lost']].forEach(function(o){
+        if (o[0]==='') return;
+        var op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; stageSel.appendChild(op);
+      });
+    }
+    if ($('#blastSource') && !$('#blastSource').dataset.wired) {
+      $('#blastSource').dataset.wired='1';
+      $('#blastSource').onchange=function(){
+        var csv=this.value==='csv';
+        $('#blastCsvRow').style.display=csv?'':'none';
+        $('#blastStageRow').style.display=csv?'none':'';
+      };
+    }
+    if ($('#blastReloadTpl') && !$('#blastReloadTpl').dataset.wired) {
+      $('#blastReloadTpl').dataset.wired='1';
+      $('#blastReloadTpl').onclick=fetchBlastTemplates;
+    }
+    if ($('#blastTemplate') && !$('#blastTemplate').dataset.wired) {
+      $('#blastTemplate').dataset.wired='1';
+      $('#blastTemplate').onchange=renderBlastTemplate;
+    }
+    if ($('#blastSendBtn') && !$('#blastSendBtn').dataset.wired) {
+      $('#blastSendBtn').dataset.wired='1';
+      $('#blastSendBtn').onclick=startBlast;
+    }
+    if (!blastState.templates.length) fetchBlastTemplates();
+    loadBlastHistory();
+  }
+
+  function fetchBlastTemplates() {
+    var hint=$('#blastTplHint');
+    if (hint) hint.textContent='Memuat template dari Meta…';
+    api('wa_templates').then(function(res){
+      if (!res.ok) { if(hint) hint.textContent = res.error || 'Gagal memuat template.'; return; }
+      blastState.templates = (res.templates||[]).filter(function(t){ return (t.status||'').toUpperCase()==='APPROVED'; });
+      var sel=$('#blastTemplate');
+      sel.innerHTML='<option value="">— Pilih template —</option>';
+      blastState.templates.forEach(function(t,i){
+        var op=document.createElement('option'); op.value=String(i);
+        op.textContent=t.name+'  ('+(t.language||'')+' · '+(t.category||'')+')';
+        sel.appendChild(op);
+      });
+      if (hint) hint.textContent = blastState.templates.length ? (blastState.templates.length+' template approved.') : 'Tidak ada template approved. Buat & submit dulu di Meta.';
+    }).catch(function(){ if(hint) hint.textContent='Gagal memuat template.'; });
+  }
+
+  function renderBlastTemplate() {
+    var i=$('#blastTemplate').value;
+    var t=blastState.templates[+i];
+    blastState.current=t||null;
+    var prev=$('#blastPreview'), vars=$('#blastVars');
+    if (!t) { prev.style.display='none'; vars.innerHTML=''; return; }
+    prev.style.display='block'; prev.textContent=t.body||'(template tanpa body text)';
+    var n=t.var_count||0;
+    var h='';
+    for (var k=1;k<=n;k++){
+      h+='<div class="row"><label class="fl">Variabel {{'+k+'}}</label><input type="text" id="blastVar'+k+'" placeholder="isi untuk {{'+k+'}} — boleh pakai {nama}"></div>';
+    }
+    vars.innerHTML=h;
+  }
+
+  function startBlast() {
+    if (blastState.sending) return;
+    var t=blastState.current;
+    if (!t) { toast('Pilih template dulu.', true); return; }
+    var vars=[];
+    for (var k=1;k<=(t.var_count||0);k++){ vars.push(($('#blastVar'+k)||{}).value||''); }
+    var source=$('#blastSource').value;
+    var body={ template_name:t.name, language:t.language||'id', vars:vars, source:source };
+    if (source==='csv') {
+      var raw=$('#blastCsv').value||'';
+      var nums=raw.split(/[\s,;]+/).map(function(x){return x.replace(/[^0-9]/g,'');}).filter(function(x){return x.length>=8;});
+      if (!nums.length) { toast('Isi nomor dulu.', true); return; }
+      body.numbers=nums;
+    } else {
+      body.stage=$('#blastStage').value;
+    }
+    if (!confirm('Kirim blast template "'+t.name+'"? Pastikan penerima sudah opt-in.')) return;
+    blastState.sending=true; $('#blastSendBtn').disabled=true;
+    $('#blastProgress').style.display='block';
+    setBlastBar(0,0,0,'Menyiapkan…');
+    api('wa_blast_start',{method:'POST',body:body}).then(function(res){
+      if (!res.ok) { toast(res.error||'Gagal mulai blast.', true); blastState.sending=false; $('#blastSendBtn').disabled=false; return; }
+      runBlastLoop(res.job_id, res.total);
+    }).catch(function(){ blastState.sending=false; $('#blastSendBtn').disabled=false; toast('Gagal mulai blast.', true); });
+  }
+
+  function runBlastLoop(jobId, total) {
+    function step() {
+      api('wa_blast_run',{method:'POST',body:{job_id:jobId,size:10}}).then(function(res){
+        if (!res.ok) { toast(res.error||'Blast terhenti.', true); blastState.sending=false; $('#blastSendBtn').disabled=false; return; }
+        var done=res.sent+res.failed;
+        setBlastBar(res.sent, res.failed, total, done+' / '+total+' terkirim ('+res.failed+' gagal)');
+        if (res.done) {
+          toast('Blast selesai: '+res.sent+' terkirim, '+res.failed+' gagal.');
+          blastState.sending=false; $('#blastSendBtn').disabled=false;
+          loadBlastHistory();
+        } else {
+          setTimeout(step, 300);
+        }
+      }).catch(function(){ blastState.sending=false; $('#blastSendBtn').disabled=false; toast('Blast terputus.', true); });
+    }
+    step();
+  }
+
+  function setBlastBar(sent, failed, total, text) {
+    var pct = total ? Math.round((sent+failed)/total*100) : 0;
+    var bar=$('#blastBar'); if (bar) bar.style.width=pct+'%';
+    var tx=$('#blastProgressText'); if (tx) tx.textContent=text;
+  }
+
+  function loadBlastHistory() {
+    api('wa_blast_history').then(function(res){
+      if (!res.ok) return;
+      var el=$('#blastHistory');
+      if (!res.blasts || !res.blasts.length) { el.innerHTML='<div style="color:var(--muted);font-size:13px">Belum ada blast.</div>'; return; }
+      el.innerHTML=res.blasts.map(function(b){
+        var st=b.status==='done'?'<span class="tag" style="background:#dcfce7;color:#14532d;padding:2px 8px;font-size:11px">selesai</span>':'<span class="tag" style="background:#fef9c3;color:#92400e;padding:2px 8px;font-size:11px">jalan</span>';
+        return '<div style="padding:10px 0;border-bottom:1px solid var(--line)">'+
+          '<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:13.5px">'+esc(b.template_name)+'</b>'+st+'</div>'+
+          '<div style="font-size:12px;color:var(--muted);margin-top:3px">'+esc(b.created_at)+' · '+b.sent+'/'+b.total+' terkirim'+(b.failed?(' · '+b.failed+' gagal'):'')+'</div>'+
+        '</div>';
+      }).join('');
+    });
+  }
 
   function loadWebchat() {
     var wrap = document.querySelector('#panel-webchat .wachat-wrap');
@@ -3153,6 +3289,7 @@
     reports: function () { initReportsControls(); loadUsageCard(); loadReports(); },
     wachat: loadWachat,
     webchat: loadWebchat,
+    blast: loadBlast,
     leads: loadLeads,
     kontak: loadKontak,
     kb: loadKb,

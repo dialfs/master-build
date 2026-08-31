@@ -1458,6 +1458,82 @@ function waSend($wa, $to, $text) {
 }
 
 /* ============================================================
+ * v1.2.47: Blast WA — template message via WhatsApp Cloud API resmi
+ * ============================================================ */
+if (!defined('WA_BLASTS_FILE')) define('WA_BLASTS_FILE', DATA_DIR . '/wa-blasts.json');
+
+// Ambil daftar template dari Meta (butuh waba_id + access_token).
+function waFetchTemplates($wa) {
+    $token = $wa['access_token'] ?? '';
+    $waba  = $wa['waba_id'] ?? '';
+    if ($token === '' || $waba === '') {
+        return ['ok' => false, 'error' => 'WABA ID atau Access Token belum diisi di menu Widget & API.'];
+    }
+    $url = 'https://graph.facebook.com/v21.0/' . rawurlencode($waba) . '/message_templates?fields=name,status,language,category,components&limit=250';
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token]]);
+    $raw = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($code < 200 || $code >= 300) {
+        $err = json_decode($raw, true);
+        return ['ok' => false, 'error' => 'Gagal ambil template (HTTP ' . $code . '): ' . ($err['error']['message'] ?? 'unknown')];
+    }
+    $d = json_decode($raw, true);
+    return ['ok' => true, 'templates' => $d['data'] ?? []];
+}
+
+// Hitung jumlah variabel {{n}} pada BODY template.
+function waTemplateVarCount($tmpl) {
+    foreach (($tmpl['components'] ?? []) as $comp) {
+        if (strtoupper($comp['type'] ?? '') === 'BODY') {
+            preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $comp['text'] ?? '', $m);
+            return !empty($m[1]) ? max(array_map('intval', $m[1])) : 0;
+        }
+    }
+    return 0;
+}
+
+// Kirim satu template message. $vars index 0 => {{1}}.
+function waSendTemplate($wa, $to, $name, $lang, $vars = []) {
+    $token = $wa['access_token'] ?? '';
+    $pnid  = $wa['phone_number_id'] ?? '';
+    if ($token === '' || $pnid === '') return ['ok' => false, 'error' => 'token/phone_number_id kosong'];
+    $payload = [
+        'messaging_product' => 'whatsapp',
+        'to'                => $to,
+        'type'              => 'template',
+        'template'          => ['name' => $name, 'language' => ['code' => $lang ?: 'id']],
+    ];
+    if (!empty($vars)) {
+        $params = [];
+        foreach ($vars as $v) $params[] = ['type' => 'text', 'text' => (string)$v];
+        $payload['template']['components'] = [['type' => 'body', 'parameters' => $params]];
+    }
+    $url = 'https://graph.facebook.com/v21.0/' . rawurlencode($pnid) . '/messages';
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 20,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE)]);
+    $raw = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($code >= 200 && $code < 300) return ['ok' => true];
+    $err = json_decode($raw, true);
+    return ['ok' => false, 'error' => ($err['error']['message'] ?? ('HTTP ' . $code))];
+}
+
+function waBlastReadAll() { $b = readJson(WA_BLASTS_FILE, []); return is_array($b) ? $b : []; }
+function waBlastWrite($b) { writeJson(WA_BLASTS_FILE, $b); }
+function waBlastGenId() { return 'blast_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)); }
+function waBlastFind($all, $id) {
+    foreach ($all as $i => $b) { if (($b['id'] ?? '') === $id) return $i; }
+    return -1;
+}
+// Ganti token {nama}/{name} di nilai variabel dengan nama kontak.
+function waBlastFillVar($v, $name) {
+    $name = $name !== '' ? $name : 'Kak';
+    return str_ireplace(['{nama}', '{name}'], $name, (string)$v);
+}
+
+/* ============================================================
  * v1.2.36: alur pemrosesan pesan WA masuk — dipakai SEMUA penyedia
  * ============================================================ */
 // Dipisahkan supaya penyedia kedua (Fonnte) tidak perlu menyalin alur ini.
@@ -2310,6 +2386,150 @@ switch ($action) {
         webConvWrite($convs);
         @file_put_contents($markerFile, date('Y-m-d H:i:s') . " migrated=$created\n");
         jsonOut(['ok' => true, 'migrated' => $created, 'total_conversations' => count($convs)]);
+        break;
+    }
+
+    /* ---------- ADMIN: Blast WA (v1.2.47) ---------- */
+    case 'wa_templates': {
+        requireAuth(['super_admin', 'admin']);
+        $wa = waConf(getSettings());
+        if (($wa['provider'] ?? 'meta') !== 'meta') {
+            jsonOut(['ok' => false, 'error' => 'Blast template hanya untuk penyedia Meta Cloud API resmi.'], 400);
+        }
+        $res = waFetchTemplates($wa);
+        if (!$res['ok']) jsonOut($res, 502);
+        $out = [];
+        foreach ($res['templates'] as $t) {
+            $body = '';
+            foreach (($t['components'] ?? []) as $comp) {
+                if (strtoupper($comp['type'] ?? '') === 'BODY') { $body = $comp['text'] ?? ''; break; }
+            }
+            $out[] = [
+                'name'     => $t['name'] ?? '',
+                'language' => $t['language'] ?? '',
+                'status'   => $t['status'] ?? '',
+                'category' => $t['category'] ?? '',
+                'body'     => $body,
+                'var_count'=> waTemplateVarCount($t),
+            ];
+        }
+        jsonOut(['ok' => true, 'templates' => $out]);
+        break;
+    }
+
+    case 'wa_blast_start': {
+        $u = requireAuth(['super_admin', 'admin']);
+        $wa = waConf(getSettings());
+        if (($wa['provider'] ?? 'meta') !== 'meta') jsonOut(['ok' => false, 'error' => 'Hanya untuk Meta Cloud API resmi.'], 400);
+        $in = bodyInput();
+        $tmpl = trim($in['template_name'] ?? '');
+        $lang = trim($in['language'] ?? 'id');
+        $vars = is_array($in['vars'] ?? null) ? array_values($in['vars']) : [];
+        $source = $in['source'] ?? 'contacts';   // contacts | csv
+        if ($tmpl === '') jsonOut(['ok' => false, 'error' => 'Template belum dipilih.'], 400);
+
+        // Bangun daftar penerima
+        $recips = [];
+        if ($source === 'csv') {
+            $nums = is_array($in['numbers'] ?? null) ? $in['numbers'] : [];
+            $contacts = waGetContacts();
+            foreach ($nums as $n) {
+                $num = waNormNum($n);
+                if (strlen($num) < 8) continue;
+                $recips[$num] = waContactName($num, $contacts);
+            }
+        } else {
+            $stage = trim($in['stage'] ?? '');   // filter opsional
+            $contacts = waGetContacts();
+            foreach ($contacts as $num => $meta) {
+                $num = waNormNum($num);
+                if (strlen($num) < 8) continue;
+                if ($stage !== '' && (($meta['stage'] ?? '') !== $stage)) continue;
+                $recips[$num] = waContactName($num, $contacts);
+            }
+        }
+        if (empty($recips)) jsonOut(['ok' => false, 'error' => 'Tidak ada penerima yang valid.'], 400);
+
+        $rows = [];
+        foreach ($recips as $num => $nm) {
+            $rows[] = ['num' => $num, 'name' => $nm, 'status' => 'pending', 'error' => ''];
+        }
+        $job = [
+            'id'            => waBlastGenId(),
+            'created_at'    => date('Y-m-d H:i:s'),
+            'by'            => $u['username'] ?? '',
+            'template_name' => $tmpl,
+            'language'      => $lang,
+            'vars'          => $vars,
+            'source'        => $source,
+            'total'         => count($rows),
+            'sent'          => 0,
+            'failed'        => 0,
+            'status'        => 'running',
+            'recipients'    => $rows,
+        ];
+        $all = waBlastReadAll();
+        array_unshift($all, $job);
+        // simpan maksimal 100 blast terakhir
+        $all = array_slice($all, 0, 100);
+        waBlastWrite($all);
+        jsonOut(['ok' => true, 'job_id' => $job['id'], 'total' => $job['total']]);
+        break;
+    }
+
+    case 'wa_blast_run': {
+        requireAuth(['super_admin', 'admin']);
+        $wa = waConf(getSettings());
+        $in = bodyInput();
+        $jobId = trim($in['job_id'] ?? '');
+        $size  = max(1, min(20, (int)($in['size'] ?? 10)));
+        $all = waBlastReadAll();
+        $idx = waBlastFind($all, $jobId);
+        if ($idx < 0) jsonOut(['ok' => false, 'error' => 'Blast tidak ditemukan.'], 404);
+        $job = $all[$idx];
+
+        $done = 0;
+        for ($i = 0; $i < count($job['recipients']) && $done < $size; $i++) {
+            if (($job['recipients'][$i]['status'] ?? '') !== 'pending') continue;
+            $row = $job['recipients'][$i];
+            $vars = array_map(function ($v) use ($row) { return waBlastFillVar($v, $row['name']); }, $job['vars']);
+            $r = waSendTemplate($wa, $row['num'], $job['template_name'], $job['language'], $vars);
+            if ($r['ok']) { $job['recipients'][$i]['status'] = 'sent'; $job['sent']++; }
+            else { $job['recipients'][$i]['status'] = 'failed'; $job['recipients'][$i]['error'] = mb_substr($r['error'] ?? '', 0, 160); $job['failed']++; }
+            $done++;
+            usleep(200000); // 0.2s jeda antar kirim
+        }
+        $remaining = 0;
+        foreach ($job['recipients'] as $rr) if (($rr['status'] ?? '') === 'pending') $remaining++;
+        if ($remaining === 0) $job['status'] = 'done';
+        $all[$idx] = $job;
+        waBlastWrite($all);
+        jsonOut(['ok' => true, 'sent' => $job['sent'], 'failed' => $job['failed'], 'remaining' => $remaining, 'total' => $job['total'], 'done' => $remaining === 0]);
+        break;
+    }
+
+    case 'wa_blast_history': {
+        requireAuth(['super_admin', 'admin']);
+        $all = waBlastReadAll();
+        $out = [];
+        foreach ($all as $b) {
+            $out[] = [
+                'id' => $b['id'], 'created_at' => $b['created_at'], 'by' => $b['by'] ?? '',
+                'template_name' => $b['template_name'], 'total' => $b['total'],
+                'sent' => $b['sent'], 'failed' => $b['failed'], 'status' => $b['status'],
+            ];
+        }
+        jsonOut(['ok' => true, 'blasts' => array_slice($out, 0, 50)]);
+        break;
+    }
+
+    case 'wa_blast_get': {
+        requireAuth(['super_admin', 'admin']);
+        $jobId = trim($_GET['job_id'] ?? '');
+        $all = waBlastReadAll();
+        $idx = waBlastFind($all, $jobId);
+        if ($idx < 0) jsonOut(['ok' => false, 'error' => 'Blast tidak ditemukan.'], 404);
+        jsonOut(['ok' => true, 'blast' => $all[$idx]]);
         break;
     }
 
