@@ -1634,18 +1634,26 @@
     if ($('#webImportBtn') && !$('#webImportBtn').dataset.wired) {
       $('#webImportBtn').dataset.wired = '1';
       $('#webImportBtn').onclick = function () {
-        if (!confirm('Impor chat lama (channel web) dari Log jadi percakapan? Dikelompokkan per IP per hari. Aman dijalankan sekali.')) return;
+        if (!confirm('Impor chat lama (channel web) dari Log jadi percakapan? Dikelompokkan per IP per hari.')) return;
         var btn = $('#webImportBtn');
-        btn.disabled = true;
-        api('web_conv_migrate', { method: 'POST' }).then(function (res) {
-          btn.disabled = false;
-          if (res.ok) {
-            toast('Impor selesai: ' + res.migrated + ' percakapan ditambahkan.');
-            fetchWebConvs();
-          } else {
-            toast(res.error || 'Gagal impor.', true);
-          }
-        }).catch(function () { btn.disabled = false; toast('Gagal impor.', true); });
+        function runMigrate(force) {
+          btn.disabled = true;
+          var q = force ? '&force=1' : '';
+          return api('web_conv_migrate', { method: 'POST', query: q }).then(function (res) {
+            btn.disabled = false;
+            if (res.ok) {
+              toast('Impor selesai: ' + res.migrated + ' percakapan.');
+              fetchWebConvs();
+            } else if ((res.error || '').indexOf('sudah pernah') !== -1) {
+              if (confirm('Impor sudah pernah dijalankan. Bangun ULANG (hapus hasil impor lama, buat lagi pakai IP + kota)?')) {
+                runMigrate(true);
+              }
+            } else {
+              toast(res.error || 'Gagal impor.', true);
+            }
+          }).catch(function () { btn.disabled = false; toast('Gagal impor.', true); });
+        }
+        runMigrate(false);
       };
     }
     if (webState.timer) clearInterval(webState.timer);

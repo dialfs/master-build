@@ -2261,6 +2261,19 @@ switch ($action) {
         }
 
         $convs = webConvReadAll();
+        // v1.2.46: kalau force -> buang hasil impor lama (migrated) + file sesinya,
+        // supaya rebuild memakai judul baru (IP+kota) tanpa duplikat.
+        if ($force) {
+            $kept = [];
+            foreach ($convs as $cv) {
+                if (!empty($cv['migrated'])) {
+                    @unlink(webConvSessionFile($cv['id']));
+                } else {
+                    $kept[] = $cv;
+                }
+            }
+            $convs = $kept;
+        }
         $created = 0;
         foreach ($groups as $key => $entries) {
             // log tersimpan terbaru-dulu; urutkan menaik berdasarkan waktu
