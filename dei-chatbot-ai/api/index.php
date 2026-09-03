@@ -685,7 +685,76 @@ function recordUsage($usage) {
     writeJson($path, $all);
 }
 
+/* v1.2.49: OpenRouter (OpenAI-compatible) — 1 API key untuk Gemini/GPT/Claude/Qwen/DeepSeek. */
+function callOpenRouter($settings, $systemBlocks, $messages) {
+    $key = $settings['api']['openrouter_api_key'] ?? '';
+    if (!$key) return [false, 'OpenRouter API key belum dikonfigurasi di dashboard.', []];
+
+    // Ratakan system blocks (format Anthropic) menjadi satu string sistem.
+    $sys = '';
+    if (is_array($systemBlocks)) {
+        foreach ($systemBlocks as $b) { $sys .= (is_array($b) ? ($b['text'] ?? '') : (string)$b) . "\n"; }
+    } else { $sys = (string)$systemBlocks; }
+    $sys = trim($sys);
+
+    $msgs = [];
+    if ($sys !== '') $msgs[] = ['role' => 'system', 'content' => $sys];
+    foreach ($messages as $m) {
+        $content = $m['content'] ?? '';
+        if (is_array($content)) {
+            $t = '';
+            foreach ($content as $cb) { $t .= is_array($cb) ? ($cb['text'] ?? '') : (string)$cb; }
+            $content = $t;
+        }
+        $msgs[] = ['role' => ($m['role'] ?? 'user'), 'content' => (string)$content];
+    }
+
+    $payload = [
+        'model'      => $settings['api']['openrouter_model'] ?? 'google/gemini-2.0-flash-001',
+        'max_tokens' => (int)($settings['api']['max_tokens'] ?? 400),
+        'messages'   => $msgs,
+    ];
+    $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_TIMEOUT        => 45,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $key,
+            'X-Title: DEI Chatbot',
+        ],
+        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
+    ]);
+    $res  = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+
+    if ($res === false) return [false, 'Gagal terhubung ke OpenRouter: ' . $err, []];
+    $data = json_decode($res, true);
+    if ($code !== 200) {
+        $msg = $data['error']['message'] ?? ('HTTP ' . $code);
+        return [false, 'AI error: ' . $msg, []];
+    }
+    $answer = $data['choices'][0]['message']['content'] ?? '';
+    if (is_array($answer)) { // beberapa model balas array segmen
+        $t=''; foreach ($answer as $seg){ $t .= is_array($seg)?($seg['text']??''):(string)$seg; } $answer=$t;
+    }
+    $usage = [
+        'input_tokens'                => (int)($data['usage']['prompt_tokens']     ?? 0),
+        'output_tokens'               => (int)($data['usage']['completion_tokens'] ?? 0),
+        'cache_creation_input_tokens' => 0,
+        'cache_read_input_tokens'     => 0,
+    ];
+    return [true, trim($answer), $usage];
+}
+
 function callClaude($settings, $systemBlocks, $messages) {
+    // v1.2.49: pilih penyedia AI. 'openrouter' -> 1 API key, banyak model.
+    if (($settings['api']['provider'] ?? 'anthropic') === 'openrouter') {
+        return callOpenRouter($settings, $systemBlocks, $messages);
+    }
     $key = $settings['api']['claude_api_key'] ?? '';
     if (!$key) return [false, 'API key belum dikonfigurasi di dashboard.', []];
 
@@ -2900,8 +2969,10 @@ switch ($action) {
         $num = preg_replace('/\D/', '', (string)($in['number'] ?? ''));
         if ($num === '') jsonOut(['ok' => false, 'error' => 'Nomor tidak valid.'], 400);
         $s = getSettings();
-        if (empty($s['api']['claude_api_key'])) {
-            jsonOut(['ok' => false, 'error' => 'API key Claude belum dikonfigurasi.'], 400);
+        $aiProv = $s['api']['provider'] ?? 'anthropic';
+        $aiKeyEmpty = ($aiProv === 'openrouter') ? empty($s['api']['openrouter_api_key']) : empty($s['api']['claude_api_key']);
+        if ($aiKeyEmpty) {
+            jsonOut(['ok' => false, 'error' => 'API key AI belum dikonfigurasi.'], 400);
         }
         $done = leadAnalyzeNumber($s, $num, null, true);
         if (!$done) jsonOut(['ok' => false, 'error' => 'Analisa gagal atau percakapan kosong.'], 500);
@@ -3237,6 +3308,9 @@ switch ($action) {
         // mask the API key
         $s['api']['claude_api_key'] = maskKey($raw['api']['claude_api_key'] ?? '');
         $s['api']['key_is_set'] = !empty($raw['api']['claude_api_key']);
+        // v1.2.49: OpenRouter key (rahasia)
+        $s['api']['openrouter_api_key'] = maskKey($raw['api']['openrouter_api_key'] ?? '');
+        $s['api']['openrouter_key_is_set'] = !empty($raw['api']['openrouter_api_key']);
         // mask WhatsApp secrets
         if (isset($s['whatsapp_api']) && is_array($s['whatsapp_api'])) {
             $s['whatsapp_api']['access_token'] = maskKey($raw['whatsapp_api']['access_token'] ?? '');
@@ -3279,6 +3353,13 @@ switch ($action) {
                 $v = $incoming['api']['claude_api_key'];
                 if (strpos($v, '•') !== false || $v === '') {
                     $incoming['api']['claude_api_key'] = $current['api']['claude_api_key'] ?? '';
+                }
+            }
+            // v1.2.49: preserve OpenRouter key kalau masked/empty
+            if (isset($incoming['api']['openrouter_api_key'])) {
+                $v = $incoming['api']['openrouter_api_key'];
+                if (strpos($v, '•') !== false || $v === '') {
+                    $incoming['api']['openrouter_api_key'] = $current['api']['openrouter_api_key'] ?? '';
                 }
             }
             // Preserve WhatsApp secrets when masked/empty.
@@ -3519,8 +3600,10 @@ switch ($action) {
         // Satu panggilan untuk seluruh daftar (bukan per baris).
         requireAuth(['super_admin', 'admin']);
         $s = getSettings();
-        if (empty($s['api']['claude_api_key'])) {
-            jsonOut(['ok' => false, 'error' => 'API key Claude belum dikonfigurasi.'], 400);
+        $aiProv = $s['api']['provider'] ?? 'anthropic';
+        $aiKeyEmpty = ($aiProv === 'openrouter') ? empty($s['api']['openrouter_api_key']) : empty($s['api']['claude_api_key']);
+        if ($aiKeyEmpty) {
+            jsonOut(['ok' => false, 'error' => 'API key AI belum dikonfigurasi.'], 400);
         }
         $in = bodyInput();
         $items = is_array($in['items'] ?? null) ? $in['items'] : [];
@@ -4401,7 +4484,7 @@ switch ($action) {
                 'cost_this_month_usd'   => $monthStats['cost_this_month_usd'],
             ],
             'health' => [
-                'claude_key_set' => !empty($s['api']['claude_api_key'] ?? ''),
+                'claude_key_set' => (($s['api']['provider'] ?? 'anthropic') === 'openrouter') ? !empty($s['api']['openrouter_api_key'] ?? '') : !empty($s['api']['claude_api_key'] ?? ''),
                 'wa_enabled'     => !empty($s['whatsapp_api']['enabled'] ?? false),
                 'wa_responding'  => !empty($s['whatsapp_api']['access_token'] ?? '') && !empty($s['whatsapp_api']['phone_number_id'] ?? ''),
             ],

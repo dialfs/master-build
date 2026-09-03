@@ -1253,6 +1253,13 @@
       $('#a_rate').value = a.rate_limit || 20;
       $('#a_kbmax').value = a.kb_max_results || 5;
       $('#a_loglimit').value = a.log_limit || 500;
+      // v1.2.49: provider AI + OpenRouter
+      $('#a_provider').value = a.provider || 'anthropic';
+      $('#a_or_key').value = a.openrouter_api_key || '';
+      $('#a_or_key').placeholder = a.openrouter_key_is_set ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'sk-or-...';
+      $('#a_or_model').value = a.openrouter_model || 'google/gemini-2.5-flash';
+      wireAiProvider();
+      toggleAiProvider();
 
       var wa = s.whatsapp_api || {};
       $('#wa_enabled').checked = wa.enabled === true;
@@ -1301,17 +1308,33 @@
       catch (e) { toast('Salin manual: ' + f.value); }
     };
   }
+  function toggleAiProvider() {
+    var p = $('#a_provider') ? $('#a_provider').value : 'anthropic';
+    document.querySelectorAll('.ai-anthropic').forEach(function(el){ el.style.display = (p==='anthropic')?'':'none'; });
+    document.querySelectorAll('.ai-openrouter').forEach(function(el){ el.style.display = (p==='openrouter')?'':'none'; });
+  }
+  function wireAiProvider() {
+    if ($('#a_provider') && !$('#a_provider').dataset.wired) {
+      $('#a_provider').dataset.wired='1';
+      $('#a_provider').onchange = toggleAiProvider;
+    }
+  }
+
   function saveWidget() {
     var keyField = $('#a_key').value.trim();
     var apiBlock = {
+      provider: $('#a_provider') ? $('#a_provider').value : 'anthropic',
       model: $('#a_model').value,
+      openrouter_model: $('#a_or_model') ? $('#a_or_model').value.trim() : '',
       max_tokens: +$('#a_maxtok').value || 400,
       rate_limit: +$('#a_rate').value || 20,
       kb_max_results: +$('#a_kbmax').value || 5,
       log_limit: +$('#a_loglimit').value || 500
     };
-    // Only send key if user typed a fresh one (not the masked bullet value)
+    // Only send keys if user typed a fresh one (not the masked bullet value)
     if (keyField && keyField.indexOf('•') === -1) apiBlock.claude_api_key = keyField;
+    var orKeyField = $('#a_or_key') ? $('#a_or_key').value.trim() : '';
+    if (orKeyField && orKeyField.indexOf('•') === -1) apiBlock.openrouter_api_key = orKeyField;
 
     var waBlock = {
       enabled: $('#wa_enabled').checked,
