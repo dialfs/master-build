@@ -930,15 +930,19 @@ function deiKonteksWaktu() {
     $tanggalIndo = $hari_id[$now->format('l')] . ', ' . $now->format('j') . ' '
                  . $bulan_id[$now->format('F')] . ' ' . $now->format('Y');
     $th = $now->format('Y');
-    return "KONTEKS WAKTU (WAJIB DIINGAT):\n"
-        . "Hari ini adalah {$tanggalIndo} (Waktu Indonesia Barat / WIB).\n"
-        . "Tahun sekarang adalah {$th}.\n"
-        . "Jika user menyebut tanggal tanpa bulan/tahun (misal: '21-22' atau '5 Agustus'), "
-        . "JANGAN bertanya bulan atau tahunnya. Asumsikan bulan berjalan dan tahun {$th}. "
-        . "Kalau tanggal itu sudah lewat di bulan berjalan, asumsikan bulan berikutnya.\n"
-        . "WAJIB konfirmasi tanggal lengkap ke user setelah dia sebut tanggal, misal: "
-        . "'Baik, jadi check-in 21 " . $bulan_id[$now->format('F')] . " {$th} ya, Bapak/Ibu?' sebelum lanjut proses.\n"
-        . "JANGAN PERNAH pakai tahun sebelum {$th} dalam booking/reservasi.";
+    $iso = $now->format('Y-m-d');
+    $jam = $now->format('H:i');
+    $blnIni = $bulan_id[$now->format('F')];
+    $thDepan = (string)((int)$th + 1);
+    return "KONTEKS WAKTU (WAJIB DIINGAT, INI SUMBER KEBENARAN TANGGAL):\n"
+        . "Hari ini: {$tanggalIndo}, pukul {$jam} WIB. (Format ISO: {$iso}.)\n"
+        . "Tahun sekarang: {$th}. Bulan sekarang: {$blnIni} {$th}.\n"
+        . "Abaikan pengetahuan tanggalmu sendiri — pakai HANYA tanggal di atas sebagai 'hari ini'.\n"
+        . "ATURAN TANGGAL:\n"
+        . "1) Jika user menyebut tanggal tanpa bulan/tahun (mis. '21-22' atau '5 Agustus'), asumsikan bulan berjalan & tahun {$th}; JANGAN tanya tahun.\n"
+        . "2) Jika tanggal yang disebut SUDAH LEWAT dibanding hari ini ({$iso}) — termasuk jika user menyebut tahun yang sudah lewat — JANGAN langsung proses. Konfirmasi dulu, mis.: 'Tanggal itu sudah lewat, Bapak/Ibu. Apakah maksudnya {$thDepan}?' \n"
+        . "3) Untuk booking/reservasi, tanggal check-in HARUS hari ini atau setelahnya. JANGAN PERNAH memproses reservasi dengan tanggal/tahun yang sudah lewat.\n"
+        . "4) WAJIB konfirmasi tanggal lengkap (tanggal + bulan + tahun) setelah user menyebut tanggal, mis.: 'Baik, jadi check-in 21 {$blnIni} {$th} ya, Bapak/Ibu?' sebelum lanjut proses.";
 }
 
 /* ============================================================
