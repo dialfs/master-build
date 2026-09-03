@@ -1257,8 +1257,9 @@
       $('#a_provider').value = a.provider || 'anthropic';
       $('#a_or_key').value = a.openrouter_api_key || '';
       $('#a_or_key').placeholder = a.openrouter_key_is_set ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'sk-or-...';
-      $('#a_or_model').value = a.openrouter_model || 'google/gemini-2.5-flash';
+      setOrModel(a.openrouter_model || 'google/gemini-2.5-flash');
       wireAiProvider();
+      wireOrModel();
       toggleAiProvider();
 
       var wa = s.whatsapp_api || {};
@@ -1320,12 +1321,34 @@
     }
   }
 
+  function setOrModel(val) {
+    var sel=$('#a_or_model_sel'), cust=$('#a_or_model');
+    if (!sel || !cust) return;
+    var found=false;
+    for (var i=0;i<sel.options.length;i++){ if (sel.options[i].value===val){ found=true; break; } }
+    if (found && val!=='__custom__') { sel.value=val; cust.style.display='none'; cust.value=''; }
+    else { sel.value='__custom__'; cust.style.display='block'; cust.value=val||''; }
+  }
+  function getOrModel() {
+    var sel=$('#a_or_model_sel'), cust=$('#a_or_model');
+    if (!sel) return '';
+    if (sel.value==='__custom__') return (cust?cust.value.trim():'') || 'google/gemini-2.5-flash';
+    return sel.value;
+  }
+  function wireOrModel() {
+    var sel=$('#a_or_model_sel'), cust=$('#a_or_model');
+    if (sel && !sel.dataset.wired) {
+      sel.dataset.wired='1';
+      sel.onchange=function(){ if (cust) cust.style.display=(this.value==='__custom__')?'block':'none'; };
+    }
+  }
+
   function saveWidget() {
     var keyField = $('#a_key').value.trim();
     var apiBlock = {
       provider: $('#a_provider') ? $('#a_provider').value : 'anthropic',
       model: $('#a_model').value,
-      openrouter_model: $('#a_or_model') ? $('#a_or_model').value.trim() : '',
+      openrouter_model: getOrModel(),
       max_tokens: +$('#a_maxtok').value || 400,
       rate_limit: +$('#a_rate').value || 20,
       kb_max_results: +$('#a_kbmax').value || 5,

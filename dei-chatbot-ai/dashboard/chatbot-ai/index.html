@@ -975,18 +975,29 @@
         <div class="ai-openrouter">
           <div class="row"><label class="fl">OpenRouter API Key</label><input type="text" id="a_or_key" class="mono" placeholder="sk-or-..."><div class="help">Dari openrouter.ai/keys. Disimpan terenkripsi-tampilan; kosongkan untuk tidak mengubah.</div></div>
           <div class="row"><label class="fl">Model</label>
-            <input type="text" id="a_or_model" class="mono" list="orModels" placeholder="google/gemini-2.5-flash">
-            <datalist id="orModels">
-              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash — cepat &amp; murah</option>
-              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro — pintar</option>
-              <option value="openai/gpt-4o-mini">GPT-4o mini — murah</option>
-              <option value="openai/gpt-4o">GPT-4o</option>
-              <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
-              <option value="anthropic/claude-3.7-sonnet">Claude 3.7 Sonnet</option>
-              <option value="qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B</option>
-              <option value="deepseek/deepseek-chat">DeepSeek V3</option>
-            </datalist>
-            <div class="help">Ketik/pilih slug model. Daftar lengkap &amp; harga: openrouter.ai/models</div>
+            <select id="a_or_model_sel">
+              <optgroup label="Google Gemini">
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash — cepat &amp; murah</option>
+                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro — pintar</option>
+              </optgroup>
+              <optgroup label="OpenAI GPT">
+                <option value="openai/gpt-4o-mini">GPT-4o mini — murah</option>
+                <option value="openai/gpt-4o">GPT-4o</option>
+              </optgroup>
+              <optgroup label="Anthropic Claude">
+                <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
+                <option value="anthropic/claude-3.7-sonnet">Claude 3.7 Sonnet</option>
+              </optgroup>
+              <optgroup label="Qwen">
+                <option value="qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B</option>
+              </optgroup>
+              <optgroup label="DeepSeek">
+                <option value="deepseek/deepseek-chat">DeepSeek V3</option>
+              </optgroup>
+              <option value="__custom__">Model lain (ketik manual)…</option>
+            </select>
+            <input type="text" id="a_or_model" class="mono" placeholder="mis. mistralai/mistral-large" style="margin-top:8px;display:none">
+            <div class="help">Daftar lengkap &amp; harga: openrouter.ai/models</div>
           </div>
         </div>
         <div class="grid2">
@@ -1142,6 +1153,6 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.49"></script>
+<script src="app.js?v=1.2.49-2"></script>
 </body>
 </html>
