@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.44');
+define('DEI_VERSION', 'v1.2.52');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -4420,6 +4420,179 @@ switch ($action) {
         ];
         writeJson(SETTINGS_FILE, $s);
         jsonOut(['ok' => true]);
+        break;
+    }
+
+    /* ---------- v1.2.48: tarikan statistik oleh server pusat (AdInsight) ----
+     * Server-to-server, dipanggil terjadwal oleh pusat. TIDAK memakai sesi
+     * login: pusat membuktikan diri dengan tenant_id + license_key yang sama
+     * persis dengan yang tersimpan di settings.central_server.
+     *
+     * Yang dikirim HANYA agregat: jumlah chat per hari, pengunjung unik,
+     * rincian UTM, dan kartu lead. Token dan biaya API sengaja TIDAK ikut,
+     * itu angka internal dan bukan konsumsi tenant.
+     *
+     * Kenapa mengirim deret harian, bukan potret hari ini saja: chatbot-log
+     * dipangkas ke log_limit entri terakhir, jadi riwayat lama hilang di sini.
+     * Pusat yang jadi arsipnya. Dengan deret harian, pusat bisa upsert per
+     * tanggal sehingga sync yang terlewat sehari otomatis tertambal pada
+     * panggilan berikutnya, dan panggilan berulang tidak menggandakan angka.
+     * -------------------------------------------------------------------- */
+    case 'stats_pull': {
+        $s  = getSettings();
+        $cs = $s['central_server'] ?? [];
+        $tidWant = (string)($cs['tenant_id']   ?? '');
+        $licWant = (string)($cs['license_key'] ?? '');
+        if ($tidWant === '' || $licWant === '') {
+            jsonOut(['ok' => false, 'error' => 'Server pusat belum dikonfigurasi.'], 403);
+        }
+
+        // Kredensial lewat header (disarankan, tidak nyangkut di access log)
+        // atau query string sebagai cadangan.
+        $tidGot = (string)($_SERVER['HTTP_X_TENANT_ID']   ?? ($_GET['tenant_id']   ?? ''));
+        $licGot = (string)($_SERVER['HTTP_X_LICENSE_KEY'] ?? ($_GET['license_key'] ?? ''));
+        // hash_equals: pembandingan waktu-tetap supaya kunci tidak bisa
+        // ditebak per karakter lewat pengukuran waktu respons.
+        $okTid = hash_equals($tidWant, strtolower(trim($tidGot)));
+        $okLic = hash_equals($licWant, trim($licGot));
+        if (!$okTid || !$okLic) {
+            jsonOut(['ok' => false, 'error' => 'Kredensial pusat tidak cocok.'], 401);
+        }
+
+        // Rentang tanggal dalam WIB. Default 90 hari terakhir.
+        $to   = substr((string)($_GET['to']   ?? ''), 0, 10);
+        $from = substr((string)($_GET['from'] ?? ''), 0, 10);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to))   $to   = wibToday();
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = wibDate('Y-m-d', time() - 89 * 86400);
+        if ($from > $to) { $swapD = $from; $from = $to; $to = $swapD; }
+
+        $logs = readJson(LOG_FILE, []);
+        if (!is_array($logs)) $logs = [];
+
+        $daily = [];   // tanggal => pencacah
+        $utmAgg = [];  // kunci gabungan => pencacah
+        $ipsD = [];    // tanggal => [ip => 1], untuk pengunjung unik
+        $ipsU = [];    // kunci utm => [ip => 1]
+
+        foreach ($logs as $l) {
+            if (!is_array($l)) continue;
+            // balasan manual agent bukan percakapan bot, jangan dihitung
+            if (($l['dir'] ?? '') === 'manual') continue;
+            $d = substr((string)($l['ts'] ?? ''), 0, 10);
+            if ($d === '' || $d < $from || $d > $to) continue;
+
+            $ch = ((string)($l['channel'] ?? '')) !== '' ? (string)$l['channel'] : 'web';
+            $ip = (string)($l['ip'] ?? '');
+
+            if (!isset($daily[$d])) {
+                $daily[$d] = ['chats_total' => 0, 'chats_web' => 0, 'chats_wa' => 0, 'ai_errors' => 0];
+                $ipsD[$d] = [];
+            }
+            $daily[$d]['chats_total']++;
+            if ($ch === 'whatsapp') $daily[$d]['chats_wa']++;
+            else                    $daily[$d]['chats_web']++;
+            if (!empty($l['ai_error'])) $daily[$d]['ai_errors']++;
+            if ($ip !== '') $ipsD[$d][$ip] = 1;
+
+            $src = ((string)($l['utm_source']   ?? '')) !== '' ? (string)$l['utm_source']   : '(direct)';
+            $med = ((string)($l['utm_medium']   ?? '')) !== '' ? (string)$l['utm_medium']   : '(none)';
+            $cmp = ((string)($l['utm_campaign'] ?? '')) !== '' ? (string)$l['utm_campaign'] : '(none)';
+            // Channel ikut jadi dimensi: tiap chat WhatsApp otomatis diberi
+            // utm_source=whatsapp/utm_medium=chat yang sintetis, bukan
+            // atribusi kampanye sungguhan. Tanpa penanda ini pusat tidak bisa
+            // memisahkan UTM asli dari widget web dan tabel atribusinya jadi
+            // didominasi baris yang tidak berarti.
+            // Pemisah unit (0x1F) supaya nilai UTM yang mengandung tanda baca
+            // biasa tidak bisa menabrak batas kunci.
+            $k = $d . "\x1F" . $ch . "\x1F" . $src . "\x1F" . $med . "\x1F" . $cmp;
+            if (!isset($utmAgg[$k])) {
+                $utmAgg[$k] = ['date' => $d, 'channel' => $ch, 'source' => $src, 'medium' => $med, 'campaign' => $cmp, 'chats' => 0, 'users' => 0];
+                $ipsU[$k] = [];
+            }
+            $utmAgg[$k]['chats']++;
+            if ($ip !== '') $ipsU[$k][$ip] = 1;
+        }
+
+        ksort($daily);
+        $dailyOut = [];
+        foreach ($daily as $d => $row) {
+            $dailyOut[] = [
+                'date'            => $d,
+                'chats_total'     => $row['chats_total'],
+                'chats_web'       => $row['chats_web'],
+                'chats_wa'        => $row['chats_wa'],
+                'unique_visitors' => count($ipsD[$d]),
+                'ai_errors'       => $row['ai_errors'],
+            ];
+        }
+
+        ksort($utmAgg);
+        $utmOut = [];
+        foreach ($utmAgg as $k => $row) {
+            $row['users'] = count($ipsU[$k]);
+            $utmOut[] = $row;
+        }
+
+        // Kartu lead hasil analisa AI. Saat ini analisa hanya berjalan untuk
+        // percakapan WhatsApp (lihat LEAD_TRIGGER_MSGS), chat widget web
+        // belum menghasilkan lead. Ditandai eksplisit di field channel supaya
+        // pusat tidak salah menyimpulkan web tidak menghasilkan prospek.
+        $leadsOut = [];
+        foreach (leadsGetAll() as $num => $ld) {
+            if (!is_array($ld)) continue;
+            // Disaring dengan created_at ATAU updated_at: lead lama yang
+            // status follow-up nya baru diubah agent harus tetap terkirim,
+            // kalau tidak perubahan status itu tidak akan pernah sampai ke
+            // pusat. Untuk tarikan pertama, pusat cukup meminta rentang lebar
+            // supaya seluruh kartu lead ikut terbawa sekali jalan.
+            $ldC = substr((string)($ld['created_at'] ?? ''), 0, 10);
+            $ldU = substr((string)($ld['updated_at'] ?? ''), 0, 10);
+            $ldNewest = ($ldU > $ldC) ? $ldU : $ldC;
+            if ($ldNewest !== '' && ($ldNewest < $from || $ldC > $to)) continue;
+            $ex = (isset($ld['extracted']) && is_array($ld['extracted'])) ? $ld['extracted'] : [];
+            $leadsOut[] = [
+                'key'        => (string)($ld['number'] ?? $num),
+                'name'       => (string)($ld['name'] ?? ''),
+                'channel'    => 'whatsapp',
+                'status'     => (string)($ld['status'] ?? 'baru'),
+                'nama'       => (string)($ex['nama']      ?? ''),
+                'kebutuhan'  => (string)($ex['kebutuhan'] ?? ''),
+                'waktu'      => (string)($ex['waktu']     ?? ''),
+                'anggaran'   => (string)($ex['anggaran']  ?? ''),
+                'ringkasan'  => (string)($ex['ringkasan'] ?? ''),
+                'created_at' => (string)($ld['created_at'] ?? ''),
+                'updated_at' => (string)($ld['updated_at'] ?? ''),
+            ];
+        }
+
+        // log_window: entri terlama yang MASIH tersisa di log. Pusat memakai
+        // ini untuk tahu sampai mana angka harian boleh dipercaya. Tanggal
+        // sebelum oldest_ts sudah terpangkas log_limit, jadi kalau pusat
+        // belum pernah menyimpannya, angka hari itu memang tidak lengkap dan
+        // tidak akan pernah bisa direkonstruksi dari sini.
+        $oldest = '';
+        foreach ($logs as $l) {
+            if (!is_array($l)) continue;
+            $t = substr((string)($l['ts'] ?? ''), 0, 10);
+            if ($t === '') continue;
+            if ($oldest === '' || $t < $oldest) $oldest = $t;
+        }
+
+        jsonOut([
+            'ok'           => true,
+            'tenant_id'    => $tidWant,
+            'code_version' => defined('DEI_VERSION') ? DEI_VERSION : '',
+            'generated_at' => wibDate('Y-m-d H:i:s'),
+            'range'        => ['from' => $from, 'to' => $to],
+            'log_window'   => [
+                'oldest_ts' => $oldest,
+                'entries'   => count($logs),
+                'limit'     => (int)($s['api']['log_limit'] ?? 500),
+            ],
+            'daily' => $dailyOut,
+            'utm'   => $utmOut,
+            'leads' => $leadsOut,
+        ]);
         break;
     }
 
