@@ -1,4 +1,4 @@
-/* DEI AI Chat Widget v1.2.45 — Multi-Conversation (WhatsApp-style)
+/* DEI AI Chat Widget v1.2.53 — Multi-Conversation + Form Data Pengunjung
  * Loaded via Google Tag Manager (or direct <script>).
  * All appearance/behaviour comes from the dashboard via ?action=bootstrap.
  */
@@ -64,6 +64,22 @@
   }
   function setVisitorId(id) {
     try { localStorage.setItem('dei_visitor_id', id); } catch (e) {}
+  }
+
+  /* ---- data pengunjung (lead) tersimpan di localStorage -------------- */
+  function getStoredLead() {
+    try {
+      var raw = localStorage.getItem('dei_lead');
+      if (!raw) return null;
+      var v = JSON.parse(raw);
+      return (v && typeof v === 'object') ? v : null;
+    } catch (e) { return null; }
+  }
+  function setStoredLead(lead) {
+    try { localStorage.setItem('dei_lead', JSON.stringify(lead)); } catch (e) {}
+  }
+  function clearStoredLead() {
+    try { localStorage.removeItem('dei_lead'); } catch (e) {}
   }
 
   /* v1.1.9: 12 Lucide avatar icons (matches dashboard hybrid picker) */
@@ -189,6 +205,22 @@
       '.dch-typing span{width:7px;height:7px;border-radius:50%;background:#bbb;animation:dei-bounce 1.2s infinite}',
       '.dch-typing span:nth-child(2){animation-delay:.2s}.dch-typing span:nth-child(3){animation-delay:.4s}',
       '@keyframes dei-bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}',
+      /* form data pengunjung (lead) */
+      '.dei-lead{flex:1;overflow-y:auto;background:#f5f6fa;padding:20px 18px}',
+      '.dei-lf-title{font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:6px}',
+      '.dei-lf-sub{font-size:13px;color:#666;line-height:1.5;margin-bottom:18px}',
+      '.dei-lf-l{display:block;font-size:12.5px;font-weight:600;color:#444;margin:0 0 6px}',
+      '.dei-lf-i{width:100%;border:1px solid #ddd;border-radius:10px;padding:11px 13px;font-size:14px;outline:none;background:#fff;margin-bottom:14px}',
+      '.dei-lf-i:focus{border-color:' + color + '}',
+      '.dei-lf-i.dei-lf-bad{border-color:#d33;background:#fff6f6}',
+      '.dei-lf-c{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:#555;line-height:1.45;margin-bottom:14px;cursor:pointer}',
+      '.dei-lf-c input{margin:2px 0 0;flex-shrink:0;width:15px;height:15px;accent-color:' + color + '}',
+      '.dei-lf-err{font-size:12.5px;color:#d33;margin:-6px 0 12px;min-height:0;display:none}',
+      '.dei-lf-err.on{display:block}',
+      '.dei-lf-btn{width:100%;background:' + color + ';color:#fff;border:none;border-radius:22px;padding:12px;font-size:14px;font-weight:600;cursor:pointer}',
+      '.dei-lf-btn:hover{opacity:.92}',
+      '.dei-lf-btn[disabled]{opacity:.6;cursor:default}',
+      '.dei-lf-skip{width:100%;background:none;border:none;color:#888;font-size:13px;padding:12px;cursor:pointer;text-decoration:underline}',
       /* WA button */
       '#dei-wa-btn{position:fixed;bottom:' + ob + 'px;' + side + ':' + (or_ + (cfg.chatbot_enabled ? 72 : 0)) + 'px;width:56px;height:56px;border-radius:50%;background:#25d366;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.22);z-index:2147482999;display:flex;align-items:center;justify-content:center}',
       '#dei-wa-btn svg{width:30px;height:30px;fill:#fff}'
@@ -222,6 +254,8 @@
           '</div>' +
           /* -- conversation list view -- */
           '<div class="dei-conv-list" id="dei-conv-list"></div>' +
+          /* -- form data pengunjung (hidden initially) -- */
+          '<div class="dei-lead" id="dei-lead" style="display:none"></div>' +
           /* -- thread view (hidden initially) -- */
           '<div class="dch-body" id="dei-body" style="display:none"></div>' +
           '<div class="dch-quick" id="dei-quick" style="display:none"></div>' +
@@ -236,6 +270,7 @@
 
       var hdr = win.querySelector('#dei-hdr');
       var convListEl = win.querySelector('#dei-conv-list');
+      var leadEl = win.querySelector('#dei-lead');
       var body = win.querySelector('#dei-body');
       var quick = win.querySelector('#dei-quick');
       var foot = win.querySelector('#dei-foot');
@@ -266,12 +301,20 @@
         if (view === 'list') {
           setHeaderList();
           convListEl.style.display = '';
+          leadEl.style.display = 'none';
           body.style.display = 'none';
           quick.style.display = 'none';
           foot.style.display = 'none';
           loadConversationList();
+        } else if (view === 'lead') {
+          convListEl.style.display = 'none';
+          leadEl.style.display = '';
+          body.style.display = 'none';
+          quick.style.display = 'none';
+          foot.style.display = 'none';
         } else {
           convListEl.style.display = 'none';
+          leadEl.style.display = 'none';
           body.style.display = '';
           quick.style.display = '';
           foot.style.display = '';
@@ -304,7 +347,7 @@
             '<div class="dei-conv-new-text">Percakapan Baru</div>' +
           '</div>'
         );
-        newBtn.onclick = function () { createNewConversation(); };
+        newBtn.onclick = function () { startNewConversation(); };
         convListEl.appendChild(newBtn);
 
         if (list.length === 0) {
@@ -331,6 +374,124 @@
         });
       }
 
+      /* ---- gerbang: form data pengunjung sebelum percakapan baru ---- */
+      var LF = cfg.lead_form || {};
+
+      /* Sudah boleh lanjut chat? true kalau form mati, sudah diisi,
+       * atau pernah dilewati (hanya kalau melewati memang diizinkan). */
+      function leadSatisfied() {
+        if (!LF.enabled) return true;
+        var v = getStoredLead();
+        if (!v) return false;
+        if (v.phone) return true;
+        return !!(v.skipped && LF.allow_skip);
+      }
+
+      function startNewConversation(initialMessage) {
+        if (leadSatisfied()) { createNewConversation(initialMessage); return; }
+        showLeadForm(initialMessage);
+      }
+
+      function showLeadForm(initialMessage) {
+        showView('lead');
+        setHeaderThread(bot.bot_name || 'Chat');   /* judul form ada di badan, jangan diulang di header */
+        leadEl.innerHTML =
+          '<div class="dei-lf-title"></div>' +
+          '<div class="dei-lf-sub"></div>' +
+          '<label class="dei-lf-l" for="dei-lf-name"></label>' +
+          '<input class="dei-lf-i" id="dei-lf-name" type="text" autocomplete="name" maxlength="100">' +
+          '<label class="dei-lf-l" for="dei-lf-phone"></label>' +
+          '<input class="dei-lf-i" id="dei-lf-phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="08xxxxxxxxxx">' +
+          (LF.consent_enabled ? '<label class="dei-lf-c"><input type="checkbox" id="dei-lf-consent"><span id="dei-lf-consent-tx"></span></label>' : '') +
+          '<div class="dei-lf-err" id="dei-lf-err"></div>' +
+          '<button class="dei-lf-btn" id="dei-lf-go"></button>' +
+          (LF.allow_skip ? '<button class="dei-lf-skip" id="dei-lf-skip"></button>' : '');
+
+        /* teks lewat textContent -> aman dari HTML injeksi lewat pengaturan */
+        leadEl.querySelector('.dei-lf-title').textContent = LF.title || 'Sebelum mulai chat';
+        leadEl.querySelector('.dei-lf-sub').textContent = LF.subtitle || '';
+        var labels = leadEl.querySelectorAll('.dei-lf-l');
+        labels[0].textContent = LF.name_label || 'Nama';
+        labels[1].textContent = LF.phone_label || 'No. HP / WhatsApp';
+        var goBtn = leadEl.querySelector('#dei-lf-go');
+        goBtn.textContent = LF.submit_text || 'Mulai Chat';
+        var nameI = leadEl.querySelector('#dei-lf-name');
+        var phoneI = leadEl.querySelector('#dei-lf-phone');
+        var consentI = leadEl.querySelector('#dei-lf-consent');
+        var errEl = leadEl.querySelector('#dei-lf-err');
+        var cTx = leadEl.querySelector('#dei-lf-consent-tx');
+        if (cTx) cTx.textContent = LF.consent_text || 'Saya bersedia dihubungi melalui WhatsApp.';
+        var skipBtn = leadEl.querySelector('#dei-lf-skip');
+        if (skipBtn) skipBtn.textContent = LF.skip_text || 'Lewati';
+
+        /* isi ulang kalau pengunjung sempat mengetik sebagian */
+        var prev = getStoredLead();
+        if (prev && !prev.skipped) {
+          nameI.value = prev.name || '';
+          phoneI.value = prev.phone ? ('+' + prev.phone) : '';
+        }
+
+        function showErr(msg, field) {
+          errEl.textContent = msg;
+          errEl.className = 'dei-lf-err on';
+          nameI.classList.remove('dei-lf-bad');
+          phoneI.classList.remove('dei-lf-bad');
+          if (field === 'name') nameI.classList.add('dei-lf-bad');
+          if (field === 'phone') phoneI.classList.add('dei-lf-bad');
+        }
+        function clearErr() { errEl.className = 'dei-lf-err'; nameI.classList.remove('dei-lf-bad'); phoneI.classList.remove('dei-lf-bad'); }
+
+        function submitLead() {
+          clearErr();
+          var nm = nameI.value.trim();
+          var ph = phoneI.value.trim();
+          if (!nm) { showErr('Nama wajib diisi.', 'name'); nameI.focus(); return; }
+          if (ph.replace(/\D/g, '').length < 9) { showErr('Nomor HP/WhatsApp tidak valid.', 'phone'); phoneI.focus(); return; }
+          if (consentI && !consentI.checked) { showErr('Centang persetujuan untuk melanjutkan.'); return; }
+          goBtn.disabled = true;
+          goBtn.textContent = 'Menyimpan...';
+          fetch(API + '?action=web_lead_save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              visitor_id: visitorId,
+              name: nm,
+              phone: ph,
+              consent: consentI ? !!consentI.checked : false,
+              page: window.location.pathname
+            })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+              goBtn.disabled = false;
+              goBtn.textContent = LF.submit_text || 'Mulai Chat';
+              if (res && res.ok) {
+                if (res.visitor_id) { visitorId = res.visitor_id; setVisitorId(visitorId); }
+                setStoredLead({ name: res.lead.name, phone: res.lead.phone, consent: !!res.lead.consent });
+                createNewConversation(initialMessage);
+              } else {
+                showErr((res && res.error) || 'Gagal menyimpan data. Coba lagi.', res && res.field);
+              }
+            })
+            .catch(function () {
+              goBtn.disabled = false;
+              goBtn.textContent = LF.submit_text || 'Mulai Chat';
+              showErr('Koneksi bermasalah. Coba lagi.');
+            });
+        }
+
+        goBtn.onclick = submitLead;
+        phoneI.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitLead(); });
+        nameI.addEventListener('keydown', function (e) { if (e.key === 'Enter') phoneI.focus(); });
+        if (skipBtn) {
+          skipBtn.onclick = function () {
+            setStoredLead({ skipped: true });
+            createNewConversation(initialMessage);
+          };
+        }
+        setTimeout(function () { nameI.focus(); }, 60);
+      }
+
       /* ---- create new conversation ---- */
       function createNewConversation(initialMessage) {
         fetch(API + '?action=web_conv_new', {
@@ -340,6 +501,12 @@
         })
           .then(function (r) { return r.json(); })
           .then(function (res) {
+            /* data lead di server hilang (mis. data dibersihkan) -> minta ulang */
+            if (res && !res.ok && res.code === 'lead_required') {
+              clearStoredLead();
+              showLeadForm(initialMessage);
+              return;
+            }
             if (res && res.ok) {
               if (!visitorId) {
                 visitorId = res.visitor_id;
@@ -503,7 +670,7 @@
           hideTeaser(true);
           toggleWindow(true);
           /* Create a new conversation and send the quick-reply */
-          createNewConversation(q);
+          startNewConversation(q);
         };
         tzq.appendChild(b);
       });

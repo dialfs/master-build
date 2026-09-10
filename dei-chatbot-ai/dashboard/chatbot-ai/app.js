@@ -1246,6 +1246,19 @@
       $('#w_whatsapp').checked = w.whatsapp_enabled !== false;
       $('#w_wa_number').value = w.whatsapp_number || '';
       $('#w_wa_msg').value = w.whatsapp_message || '';
+      // v1.2.53: Form Data Pengunjung
+      var lf = w.lead_form || {};
+      $('#lf_enabled').checked         = lf.enabled === true;
+      $('#lf_allow_skip').checked      = lf.allow_skip === true;
+      $('#lf_consent_enabled').checked = lf.consent_enabled !== false;
+      $('#lf_save_contact').checked    = lf.save_contact !== false;
+      $('#lf_title').value        = lf.title        || '';
+      $('#lf_subtitle').value     = lf.subtitle     || '';
+      $('#lf_name_label').value   = lf.name_label   || '';
+      $('#lf_phone_label').value  = lf.phone_label  || '';
+      $('#lf_submit_text').value  = lf.submit_text  || '';
+      $('#lf_skip_text').value    = lf.skip_text    || '';
+      $('#lf_consent_text').value = lf.consent_text || '';
       $('#a_key').value = a.claude_api_key || '';       // masked from server
       $('#a_key').placeholder = a.key_is_set ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'sk-ant-...';
       $('#a_model').value = a.model || 'claude-haiku-4-5-20251001';
@@ -1395,7 +1408,21 @@
         chatbot_enabled: $('#w_chatbot').checked,
         whatsapp_enabled: $('#w_whatsapp').checked,
         whatsapp_number: $('#w_wa_number').value.trim(),
-        whatsapp_message: $('#w_wa_msg').value
+        whatsapp_message: $('#w_wa_msg').value,
+        // v1.2.53: Form Data Pengunjung
+        lead_form: {
+          enabled:         $('#lf_enabled').checked,
+          allow_skip:      $('#lf_allow_skip').checked,
+          consent_enabled: $('#lf_consent_enabled').checked,
+          save_contact:    $('#lf_save_contact').checked,
+          title:        $('#lf_title').value.trim()        || 'Sebelum mulai chat',
+          subtitle:     $('#lf_subtitle').value.trim()     || 'Isi data singkat berikut supaya kami bisa membantu Anda lebih baik.',
+          name_label:   $('#lf_name_label').value.trim()   || 'Nama',
+          phone_label:  $('#lf_phone_label').value.trim()  || 'No. HP / WhatsApp',
+          submit_text:  $('#lf_submit_text').value.trim()  || 'Mulai Chat',
+          skip_text:    $('#lf_skip_text').value.trim()    || 'Lewati',
+          consent_text: $('#lf_consent_text').value.trim() || 'Saya bersedia dihubungi melalui WhatsApp.'
+        }
       },
       api: apiBlock,
       whatsapp_api: waBlock,

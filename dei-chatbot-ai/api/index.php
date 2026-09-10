@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.52');
+define('DEI_VERSION', 'v1.2.53');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -33,12 +33,13 @@ define('WA_SESSIONS_DIR', DATA_DIR . '/wa-sessions');
 define('WA_MODES_FILE', DATA_DIR . '/wa-modes.json');
 define('WEB_CONV_FILE', DATA_DIR . '/web-conversations.json');  // v1.2.45: percakapan web per-sesi
 define('WEB_SESSIONS_DIR', DATA_DIR . '/web-sessions');          // v1.2.45: riwayat pesan per conversation_id
+define('WEB_VISITORS_FILE', DATA_DIR . '/web-visitors.json');   // v1.2.53: data lead pengunjung web (nama + no HP)
 
 /* ----------------------------------------------------------------------------
  *  CORS — the widget runs on the client's site (loaded via GTM) so public
  *  endpoints must allow cross-origin requests.
  * ------------------------------------------------------------------------- */
-$PUBLIC_ACTIONS = ['bootstrap', 'chat', 'web_conv_list', 'web_conv_thread', 'web_conv_new'];
+$PUBLIC_ACTIONS = ['bootstrap', 'chat', 'web_conv_list', 'web_conv_thread', 'web_conv_new', 'web_lead_save'];   // v1.2.53
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 if (in_array($action, $PUBLIC_ACTIONS, true)) {
@@ -359,6 +360,34 @@ function roleCanEditHandoff($role)   { return in_array($role, ['super_admin', 'a
  * ------------------------------------------------------------------------- */
 function getSettings() {
     return readJson(SETTINGS_FILE, []);
+}
+
+/* ============================================================
+ * v1.2.53: penggabung settings yang benar.
+ *
+ * array_replace_recursive() menggabung array BERINDEKS per-indeks, bukan
+ * mengganti. Akibatnya daftar tidak pernah bisa menyusut: hapus 1 bahasa
+ * atau 1 saran cepat, lalu simpan -> item lama muncul lagi dari $current.
+ *
+ * Aturan di sini: array asosiatif digabung rekursif (perilaku lama,
+ * supaya rahasia yang tidak dikirim tetap aman), sedangkan array
+ * berindeks (daftar) dan skalar DIGANTI UTUH oleh nilai baru.
+ * ============================================================ */
+function deiIsList($a) {
+    if (!is_array($a)) return false;
+    if ($a === []) return true;   // daftar kosong = pengosongan yang disengaja
+    return array_keys($a) === range(0, count($a) - 1);
+}
+function deiMergeSettings($current, $incoming) {
+    if (!is_array($current)) return $incoming;
+    foreach ($incoming as $k => $v) {
+        if (is_array($v) && !deiIsList($v) && isset($current[$k]) && is_array($current[$k]) && !deiIsList($current[$k])) {
+            $current[$k] = deiMergeSettings($current[$k], $v);
+        } else {
+            $current[$k] = $v;   // daftar & skalar: ganti utuh
+        }
+    }
+    return $current;
 }
 
 function maskKey($key) {
@@ -2055,6 +2084,79 @@ define('WEB_CONV_LIMIT_PER_VISITOR', 50);
 // Limit total percakapan di file (auto-prune yang paling lama)
 define('WEB_CONV_LIMIT_TOTAL', 2000);
 
+/* ============================================================
+ * v1.2.53: Form Data Pengunjung (lead capture sebelum chat)
+ * ============================================================ */
+
+/* Normalisasi no HP -> digit saja, nomor Indonesia dijadikan format 62xxx.
+ * Nomor luar negeri dibiarkan apa adanya asal panjangnya masuk akal.
+ * Mengembalikan '' kalau tidak valid. */
+function deiNormalizePhone($raw) {
+    $d = preg_replace('/\D/', '', (string)$raw);
+    if ($d === '') return '';
+    if (strpos($d, '620') === 0)      $d = '62' . substr($d, 3);   // 62 0812... (salah ketik umum)
+    elseif (strpos($d, '0') === 0)    $d = '62' . substr($d, 1);   // 0812...
+    elseif (strpos($d, '8') === 0)    $d = '62' . $d;              // 812...
+    $len = strlen($d);
+    if ($len < 9 || $len > 15) return '';
+    return $d;
+}
+
+/* Label percakapan web dari data lead: "Nama - +62xxx". */
+function deiWebLeadLabel($name, $phone) {
+    $name  = trim((string)$name);
+    $phone = trim((string)$phone);
+    if ($name === '' && $phone === '') return '';
+    if ($name === '')  return '+' . $phone;
+    if ($phone === '') return $name;
+    return $name . " \xC2\xB7 +" . $phone;   // \xC2\xB7 = titik tengah (butuh kutip ganda)
+}
+
+function webVisitorReadAll() {
+    $d = readJson(WEB_VISITORS_FILE, []);
+    return is_array($d) ? $d : [];
+}
+function webVisitorGetLead($visitorId) {
+    $visitorId = trim((string)$visitorId);
+    if ($visitorId === '') return null;
+    $all = webVisitorReadAll();
+    $v = $all[$visitorId] ?? null;
+    return (is_array($v) && !empty($v['phone'])) ? $v : null;
+}
+function webVisitorSaveLead($visitorId, $lead) {
+    $visitorId = trim((string)$visitorId);
+    if ($visitorId === '') return false;
+    $all = webVisitorReadAll();
+    // auto-prune supaya file flat tidak membengkak tanpa batas
+    if (!isset($all[$visitorId]) && count($all) >= WEB_VISITOR_LIMIT) {
+        uasort($all, function ($a, $b) { return strcmp((string)($a['ts'] ?? ''), (string)($b['ts'] ?? '')); });
+        $all = array_slice($all, (int)(WEB_VISITOR_LIMIT / 4), null, true);
+    }
+    $all[$visitorId] = $lead;
+    writeJson(WEB_VISITORS_FILE, $all);
+    return true;
+}
+
+/* Konfigurasi form (dengan nilai bawaan) — dipakai bootstrap & validasi. */
+function deiLeadFormConfig($s) {
+    $lf = (isset($s['widget']['lead_form']) && is_array($s['widget']['lead_form'])) ? $s['widget']['lead_form'] : [];
+    return [
+        'enabled'         => (bool)($lf['enabled'] ?? false),
+        'allow_skip'      => (bool)($lf['allow_skip'] ?? false),
+        'consent_enabled' => (bool)($lf['consent_enabled'] ?? true),
+        'save_contact'    => (bool)($lf['save_contact'] ?? true),
+        'title'           => (string)($lf['title']        ?? 'Sebelum mulai chat'),
+        'subtitle'        => (string)($lf['subtitle']     ?? 'Isi data singkat berikut supaya kami bisa membantu Anda lebih baik.'),
+        'name_label'      => (string)($lf['name_label']   ?? 'Nama'),
+        'phone_label'     => (string)($lf['phone_label']  ?? 'No. HP / WhatsApp'),
+        'submit_text'     => (string)($lf['submit_text']  ?? 'Mulai Chat'),
+        'skip_text'       => (string)($lf['skip_text']    ?? 'Lewati'),
+        'consent_text'    => (string)($lf['consent_text'] ?? 'Saya bersedia dihubungi melalui WhatsApp.'),
+    ];
+}
+
+define('WEB_VISITOR_LIMIT', 5000);
+
 switch ($action) {
 
     /* ---------- PUBLIC: widget bootstrap (no secrets) ---------- */
@@ -2067,6 +2169,7 @@ switch ($action) {
                 'whatsapp_enabled' => (bool)($s['widget']['whatsapp_enabled'] ?? true),
                 'whatsapp_number'  => $s['widget']['whatsapp_number'] ?? '',
                 'whatsapp_message' => $s['widget']['whatsapp_message'] ?? '',
+                'lead_form'        => deiLeadFormConfig($s),   // v1.2.53
                 'bot' => [
                     'bot_name'      => $s['bot']['bot_name'] ?? 'Assistant',
                     'greeting'      => $s['bot']['greeting'] ?? 'Halo!',
@@ -2198,7 +2301,9 @@ switch ($action) {
                 $convs[$idx]['message_count'] = count($convMsgs);
                 // v1.2.46: ID percakapan = IP + kota (bukan teks pesan).
                 // Isi kalau belum ada, atau kalau masih judul lama berbasis pesan.
-                $needLabel = empty($convs[$idx]['ip']) || ($convs[$idx]['title'] ?? '') === 'Percakapan baru';
+                // v1.2.53: judul hasil Form Data Pengunjung tidak boleh ditimpa label IP
+                $needLabel = empty($convs[$idx]['lead_phone'])
+                    && (empty($convs[$idx]['ip']) || ($convs[$idx]['title'] ?? '') === 'Percakapan baru');
                 if ($needLabel) {
                     $ipC = $convs[$idx]['ip'] ?? clientIp();
                     $cityC = $convs[$idx]['city'] ?? deiGeoCity($ipC);
@@ -2247,6 +2352,14 @@ switch ($action) {
             $visitorId = webConvGenVisitor();
         }
 
+        // v1.2.53: kalau Form Data Pengunjung wajib, percakapan baru hanya boleh
+        // dibuat setelah lead tersimpan di server (localStorage widget bisa hilang).
+        $lfNew = deiLeadFormConfig($s);
+        $leadNew = webVisitorGetLead($visitorId);
+        if ($lfNew['enabled'] && !$lfNew['allow_skip'] && !$leadNew) {
+            jsonOut(['ok' => false, 'code' => 'lead_required', 'error' => 'Lengkapi data diri terlebih dahulu.'], 403);
+        }
+
         // Enforce limits
         $convs = webConvReadAll();
         if (count($convs) >= WEB_CONV_LIMIT_TOTAL) {
@@ -2268,12 +2381,18 @@ switch ($action) {
         $ipConv = clientIp();
         $cityConv = deiGeoCity($ipConv);
         $title = deiWebConvLabel($ipConv, $cityConv);
+        // v1.2.53: kalau pengunjung sudah mengisi form, pakai "Nama - +62xxx" sebagai judul
+        $leadTitle = $leadNew ? deiWebLeadLabel($leadNew['name'] ?? '', $leadNew['phone'] ?? '') : '';
+        if ($leadTitle !== '') $title = $leadTitle;
 
         // Create metadata entry
         $convs[] = [
             'id'            => $convId,
             'visitor_id'    => $visitorId,
             'title'         => mb_substr($title, 0, 120),
+            'lead_name'     => (string)($leadNew['name'] ?? ''),    // v1.2.53
+            'lead_phone'    => (string)($leadNew['phone'] ?? ''),   // v1.2.53
+            'lead_consent'  => (bool)($leadNew['consent'] ?? false),// v1.2.53
             'ip'            => $ipConv,
             'city'          => $cityConv,
             'created_at'    => $now,
@@ -2294,6 +2413,110 @@ switch ($action) {
             'conversation_id' => $convId,
             'visitor_id'      => $visitorId,
             'greeting'        => $greeting,
+        ]);
+        break;
+    }
+
+    /* ---------- PUBLIC: simpan data pengunjung sebelum chat (v1.2.53) ---------- */
+    case 'web_lead_save': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonOut(['ok' => false, 'error' => 'Method not allowed'], 405);
+        $s = getSettings();
+        if (!($s['widget']['chatbot_enabled'] ?? true)) {
+            jsonOut(['ok' => false, 'error' => 'Chatbot sedang dinonaktifkan.'], 403);
+        }
+        $lf = deiLeadFormConfig($s);
+        if (!$lf['enabled']) {
+            jsonOut(['ok' => false, 'error' => 'Form data pengunjung tidak aktif.'], 403);
+        }
+
+        // Endpoint publik -> pakai rate limit yang sama dengan chat.
+        $ipLead = clientIp();
+        if (!checkRateLimit($ipLead, (int)($s['api']['rate_limit'] ?? 20))) {
+            jsonOut(['ok' => false, 'error' => 'Terlalu banyak permintaan. Coba lagi nanti.'], 429);
+        }
+
+        $in = bodyInput();
+        $visitorId = trim((string)($in['visitor_id'] ?? ''));
+        if ($visitorId === '' || !preg_match('/^wv_[a-f0-9]{8,64}$/', $visitorId)) {
+            $visitorId = webConvGenVisitor();
+        }
+
+        $name = trim((string)($in['name'] ?? ''));
+        if ($name !== '') $name = mb_substr(preg_replace('/\s+/u', ' ', $name), 0, 100);
+        $phone   = deiNormalizePhone($in['phone'] ?? '');
+        $consent = !empty($in['consent']);
+
+        if ($name === '') {
+            jsonOut(['ok' => false, 'field' => 'name', 'error' => 'Nama wajib diisi.'], 400);
+        }
+        if ($phone === '') {
+            jsonOut(['ok' => false, 'field' => 'phone', 'error' => 'Nomor HP/WhatsApp tidak valid.'], 400);
+        }
+        if ($lf['consent_enabled'] && !$consent) {
+            jsonOut(['ok' => false, 'field' => 'consent', 'error' => 'Centang persetujuan untuk melanjutkan.'], 400);
+        }
+
+        $now  = date('Y-m-d H:i:s');
+        $lead = [
+            'name'    => $name,
+            'phone'   => $phone,
+            'consent' => $consent,
+            'ts'      => $now,
+            'ip'      => $ipLead,
+            'page'    => mb_substr((string)($in['page'] ?? ''), 0, 300),
+        ];
+        webVisitorSaveLead($visitorId, $lead);
+
+        // Masuk ke daftar Kontak supaya bisa di-follow up / blast WhatsApp.
+        if ($lf['save_contact']) {
+            try {
+                $allC = waGetContacts();
+                if (!isset($allC[$phone]) || !is_array($allC[$phone])) {
+                    $allC[$phone] = [
+                        'name_wa'    => '',
+                        'name_manual'=> '',
+                        'first_seen' => $now,
+                        'last_seen'  => $now,
+                        'stage'      => 'new',
+                    ];
+                }
+                // Koreksi manual agent tidak ditimpa.
+                if (trim((string)($allC[$phone]['name_manual'] ?? '')) === '') {
+                    $allC[$phone]['name_manual'] = $name;
+                }
+                $allC[$phone]['last_seen']   = $now;
+                $allC[$phone]['web_consent'] = $consent;
+                if (empty($allC[$phone]['source'])) $allC[$phone]['source'] = 'web_widget';
+                writeJson(CONTACTS_FILE, $allC);
+            } catch (\Throwable $e) { error_log('web_lead_save contact: ' . $e->getMessage()); }
+        }
+
+        // Kalau dikirim dari percakapan yang sudah berjalan, perbarui judulnya.
+        $convIdLead = trim((string)($in['conversation_id'] ?? ''));
+        if ($convIdLead !== '') {
+            $convsL = webConvReadAll();
+            $iL = webConvFind($convsL, $convIdLead);
+            if ($iL >= 0 && ($convsL[$iL]['visitor_id'] ?? '') === $visitorId) {
+                $convsL[$iL]['lead_name']    = $name;
+                $convsL[$iL]['lead_phone']   = $phone;
+                $convsL[$iL]['lead_consent'] = $consent;
+                $convsL[$iL]['title']        = mb_substr(deiWebLeadLabel($name, $phone), 0, 120);
+                webConvWrite($convsL);
+            }
+        }
+
+        // Notifikasi lead baru (Telegram, kalau notify_web aktif).
+        try {
+            $tgL = is_array($s['telegram'] ?? null) ? $s['telegram'] : [];
+            if (!empty($tgL['notify_web'])) {
+                tgNotify($s, "\xF0\x9F\x91\xA4 [Lead Web] " . $name . "\n+" . $phone);
+            }
+        } catch (\Throwable $e) { error_log('web_lead_save tg: ' . $e->getMessage()); }
+
+        jsonOut([
+            'ok'         => true,
+            'visitor_id' => $visitorId,
+            'lead'       => ['name' => $name, 'phone' => $phone, 'consent' => $consent],
         ]);
         break;
     }
@@ -3399,7 +3622,8 @@ switch ($action) {
                     $incoming['telegram']['bot_token'] = $current['telegram']['bot_token'] ?? '';
                 }
             }
-            $merged = array_replace_recursive($current, $incoming);
+            // v1.2.53: dulu array_replace_recursive() -> daftar tidak bisa menyusut
+            $merged = deiMergeSettings($current, $incoming);
         } else {
             // Admin: bot persona, appearance, widget toggles (non-secret), handoff. NO secrets / NO WA / NO Telegram.
             // v1.2.3: extend with structured form fields (additive, backward-compat)
@@ -3413,7 +3637,7 @@ switch ($action) {
                 $merged['appearance'] = array_replace($current['appearance'] ?? [], $incoming['appearance']);
             }
             // Widget toggles + WhatsApp floating button (non-secret). NOT whatsapp_api (Cloud API).
-            $allowedWidget = ['chatbot_enabled', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message'];
+            $allowedWidget = ['chatbot_enabled', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message', 'lead_form'];   // v1.2.53
             foreach ($allowedWidget as $f) {
                 if (isset($incoming['widget'][$f])) $merged['widget'][$f] = $incoming['widget'][$f];
             }
