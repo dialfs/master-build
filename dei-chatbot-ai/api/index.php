@@ -846,22 +846,9 @@ function buildStructuredPromptPrefix($bot) {
 
     // Identity — skip, already in existing system_prompt (v1.2.3 fix)
 
-    // Languages
-    $langs = $bot['languages'] ?? [];
-    if (is_array($langs) && count($langs) > 0) {
-        $langMap = ['id'=>'Bahasa Indonesia', 'en'=>'English', 'zh'=>'Mandarin', 'ar'=>'Arabic', 'ja'=>'Japanese'];
-        $langNames = [];
-        foreach ($langs as $l) $langNames[] = $langMap[$l] ?? $l;
-        if (count($langNames) > 1) {
-            $parts[] = "BAHASA: Anda mendukung " . implode(', ', $langNames) . ".";
-            $behavior = $bot['language_prompt_behavior'] ?? 'ask_user';
-            if ($behavior === 'ask_user') {
-                $parts[] = "Setelah greeting, tanyakan user ingin melanjutkan dalam bahasa apa.";
-            } elseif ($behavior === 'auto_detect') {
-                $parts[] = "Deteksi bahasa dari pesan user, respond dalam bahasa yang sama.";
-            }
-        }
-    }
+    // Languages — v1.2.53: dipindah ke deiAturanBahasa() yang ditempel PALING AKHIR.
+    // Dulu di sini, di posisi paling awal, jadi kalah oleh ~17 baris instruksi
+    // berbahasa Indonesia + persona + Knowledge Base yang semuanya Bahasa Indonesia.
 
     // User address
     $address = trim((string)($bot['user_address'] ?? ''));
@@ -901,6 +888,101 @@ function buildStructuredPromptPrefix($bot) {
     return implode("\n", $parts);
 }
 // === /v1.2.3 Structured prompt builder ===
+
+/* ============================================================
+ * v1.2.53: ATURAN BAHASA sebagai override terakhir.
+ *
+ * Masalah: seluruh system prompt (konteks waktu, field terstruktur,
+ * persona tenant, Knowledge Base) ditulis dalam Bahasa Indonesia.
+ * Satu baris "deteksi bahasa user" di posisi paling awal kalah telak,
+ * sehingga chat berbahasa Inggris/Mandarin tetap dibalas Bahasa Indonesia.
+ *
+ * Blok ini ditempel di URUTAN PALING AKHIR (setelah persona tenant),
+ * menegaskan bahwa Bahasa Indonesia di prompt adalah bahasa SUMBER,
+ * bukan bahasa jawaban, dan menyesuaikan sapaan hormat per bahasa.
+ * ============================================================ */
+/* v1.2.53: deteksi bahasa pesan tamu, deterministik (tanpa panggilan AI).
+ * Mengembalikan kode bahasa ('id','en','zh','ar','ja','ko') atau '' kalau
+ * tidak yakin. Sengaja konservatif: lebih baik mengembalikan '' dan
+ * menyerahkan ke model daripada memaksa bahasa yang salah. */
+function deiDeteksiBahasa($teks) {
+    $t = trim((string)$teks);
+    if ($t === '') return '';
+
+    // 1) Aksara non-Latin -> hampir pasti, tidak perlu tebak-tebakan.
+    //    Cek Jepang (kana) & Korea dulu: keduanya bisa memuat aksara Han.
+    if (preg_match('/[\x{3040}-\x{309F}\x{30A0}-\x{30FF}]/u', $t)) return 'ja';
+    if (preg_match('/[\x{AC00}-\x{D7AF}\x{1100}-\x{11FF}]/u', $t)) return 'ko';
+    if (preg_match('/[\x{4E00}-\x{9FFF}\x{3400}-\x{4DBF}]/u', $t)) return 'zh';
+    if (preg_match('/[\x{0600}-\x{06FF}\x{0750}-\x{077F}]/u', $t)) return 'ar';
+
+    // 2) Latin: bedakan Indonesia vs Inggris lewat kata fungsi.
+    //    Butuh kalimat, bukan sepatah kata -> pesan sangat pendek dilepas.
+    $low = ' ' . preg_replace('/[^a-z\s]/', ' ', mb_strtolower($t, 'UTF-8')) . ' ';
+    $kata = preg_split('/\s+/', trim($low), -1, PREG_SPLIT_NO_EMPTY);
+    if (count($kata) < 3) return '';   // "hi", "halo", "ok" -> biar model yang menilai
+
+    $id = ['yang','dan','di','ke','dari','untuk','dengan','tidak','ada','saya','anda','kamu',
+           'bisa','mau','ingin','berapa','apakah','bagaimana','kapan','dimana','harga','kamar',
+           'sudah','belum','juga','atau','kalau','karena','pak','bu','mas','mbak','nya','itu','ini'];
+    $en = ['the','and','is','are','do','does','you','your','can','could','would','what','when',
+           'where','how','how much','price','room','have','has','need','want','please','thanks',
+           'there','with','for','from','about','book','booking','available','a','an','of','to','my'];
+    $skorId = 0; $skorEn = 0;
+    foreach ($kata as $w) {
+        if (in_array($w, $id, true)) $skorId++;
+        if (in_array($w, $en, true)) $skorEn++;
+    }
+    // butuh selisih jelas, bukan menang tipis
+    if ($skorId >= 2 && $skorId > $skorEn)      return 'id';
+    if ($skorEn >= 2 && $skorEn > $skorId)      return 'en';
+    return '';
+}
+
+function deiAturanBahasa($bot, $bahasaTerdeteksi = '') {
+    $langs = $bot['languages'] ?? [];
+    if (!is_array($langs) || count($langs) < 2) return '';   // 1 bahasa: tidak perlu
+    $langMap = ['id'=>'Bahasa Indonesia', 'en'=>'English', 'zh'=>'Mandarin', 'ar'=>'Arabic', 'ja'=>'Japanese'];
+    $sapaan  = ['id'=>'Bapak/Ibu', 'en'=>'Sir/Madam', 'zh'=>"\xE5\x85\x88\xE7\x94\x9F/\xE5\xA5\xB3\xE5\xA3\xAB",
+                'ar'=>'sayyidi/sayyidati', 'ja'=>"\xE3\x81\x8A\xE5\xAE\xA2\xE6\xA7\x98"];
+    $names = []; $sap = [];
+    foreach ($langs as $l) {
+        $nm = $langMap[$l] ?? $l;
+        $names[] = $nm;
+        if (isset($sapaan[$l])) $sap[] = $sapaan[$l] . ' untuk ' . $nm;
+    }
+    $behavior = $bot['language_prompt_behavior'] ?? 'ask_user';
+
+    $o  = "=== ATURAN BAHASA (PALING UTAMA \xE2\x80\x94 MENGALAHKAN SEMUA ATURAN DI ATAS) ===\n";
+    $o .= "Bahasa yang didukung: " . implode(', ', $names) . ".\n";
+    // v1.2.53: kalau server sudah yakin bahasanya, sebut eksplisit — jauh lebih
+    // patuh daripada menyuruh model mendeteksi sendiri.
+    if ($bahasaTerdeteksi !== '' && isset($langMap[$bahasaTerdeteksi])) {
+        $o .= "1. Pesan tamu ditulis dalam " . $langMap[$bahasaTerdeteksi] . ". "
+            . "WAJIB tulis SELURUH jawaban dalam " . $langMap[$bahasaTerdeteksi] . ", "
+            . "tanpa mencampur bahasa lain. JANGAN menanyakan tamu ingin memakai bahasa apa.\n";
+    } elseif ($behavior === 'ask_user') {
+        $o .= "1. HANYA pada pesan pertama percakapan, tanyakan tamu ingin memakai bahasa apa. "
+            . "Setelah tamu menjawab (atau kalau bahasa pesannya sudah jelas), JANGAN bertanya lagi.\n";
+    } else {
+        $o .= "1. Kenali bahasa dari pesan TERAKHIR tamu, lalu tulis SELURUH jawaban dalam bahasa itu. "
+            . "JANGAN PERNAH menanyakan tamu ingin memakai bahasa apa.\n";
+    }
+    $o .= "2. Instruksi di atas, contoh-contoh kalimatnya, dan seluruh Knowledge Base ditulis dalam "
+        . "Bahasa Indonesia. Itu bahasa SUMBER, BUKAN bahasa jawaban. Terjemahkan isinya ke bahasa tamu \xE2\x80\x94 "
+        . "jangan menyalin kalimat Bahasa Indonesia apa adanya.\n";
+    if (!empty($sap)) {
+        $o .= "3. Sapaan hormat mengikuti bahasa jawaban: " . implode(', ', $sap) . ". "
+            . "JANGAN memakai sapaan Bahasa Indonesia ketika menjawab dalam bahasa lain.";
+        if ($bahasaTerdeteksi !== '' && isset($sapaan[$bahasaTerdeteksi])) {
+            $o .= " Untuk jawaban ini pakai \"" . $sapaan[$bahasaTerdeteksi] . "\".";
+        }
+        $o .= "\n";
+    }
+    $o .= "4. Kalau tamu berganti bahasa di tengah percakapan, ikut berganti mulai jawaban berikutnya.\n";
+    $o .= "5. Nama tempat, nama menu, dan tautan tetap ditulis apa adanya, tidak diterjemahkan.\n";
+    return $o;
+}
 
 /* ============================================================
  * v1.2.5: Strip markdown formatting auto — post-process AI response
@@ -1393,6 +1475,13 @@ function generateAnswer($s, $message, $history = []) {
     $structuredPrefix = buildStructuredPromptPrefix($s['bot'] ?? []);
     if ($structuredPrefix !== '') {
         $persona = $structuredPrefix . "\n\n=== INSTRUKSI TAMBAHAN ===\n" . $persona;
+    }
+    // v1.2.53: aturan bahasa ditempel PALING AKHIR supaya jadi instruksi terakhir
+    // yang dibaca model — mengalahkan prefix terstruktur DAN persona tenant.
+    $deiBahasaUser = deiDeteksiBahasa($message);   // v1.2.53: deterministik, tanpa panggilan AI
+    $deiAturanBhs = deiAturanBahasa($s['bot'] ?? [], $deiBahasaUser);
+    if ($deiAturanBhs !== '') {
+        $persona .= "\n\n" . $deiAturanBhs;
     }
     $kbAll       = readJson(KB_FILE, []);
     $kbHitsUsed  = count($kbAll);

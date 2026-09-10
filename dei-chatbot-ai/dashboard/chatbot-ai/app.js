@@ -1150,17 +1150,7 @@
     var data = collectContent();
     var b = data.bot;
     var parts = [];
-    // Languages
-    if (b.languages && b.languages.length > 1) {
-      var langMap = {id:'Bahasa Indonesia', en:'English', zh:'Mandarin', ar:'Arabic', ja:'Japanese'};
-      var names = b.languages.map(function(l){return langMap[l]||l;});
-      parts.push("BAHASA: Anda mendukung " + names.join(', ') + ".");
-      if (b.language_prompt_behavior === 'ask_user') {
-        parts.push("Setelah greeting, tanyakan user ingin melanjutkan dalam bahasa apa.");
-      } else if (b.language_prompt_behavior === 'auto_detect') {
-        parts.push("Deteksi bahasa dari pesan user, respond dalam bahasa yang sama.");
-      }
-    }
+    // v1.2.53: aturan bahasa tidak lagi di sini — ditempel PALING AKHIR (lihat ekorPrompt di bawah)
     if (b.user_address) parts.push('Sapa user dengan "' + b.user_address + '".');
     var styleMap = {formal:'Gunakan bahasa formal profesional.', semi_formal:'Gunakan bahasa semi-formal, ramah namun tetap profesional.', casual:'Gunakan bahasa casual friendly, seperti teman.', enthusiastic:'Gunakan bahasa antusias dengan energy tinggi.'};
     if (styleMap[b.language_style]) parts.push(styleMap[b.language_style]);
@@ -1177,15 +1167,38 @@
     };
     if (fallMap[b.fallback_behavior]) parts.push(fallMap[b.fallback_behavior]);
 
+    // v1.2.53: cermin deiAturanBahasa() di backend — ditempel paling akhir (SETELAH persona)
+    var ekorBahasa = "";
+    if (b.languages && b.languages.length > 1) {
+      var lmap = {id:'Bahasa Indonesia', en:'English', zh:'Mandarin', ar:'Arabic', ja:'Japanese'};
+      var smap = {id:'Bapak/Ibu', en:'Sir/Madam', zh:'\u5148\u751F/\u5973\u58EB', ar:'sayyidi/sayyidati', ja:'\u304A\u5BA2\u69D8'};
+      var nms = b.languages.map(function(l){return lmap[l]||l;});
+      var sps = b.languages.filter(function(l){return smap[l];}).map(function(l){return smap[l]+' untuk '+(lmap[l]||l);});
+      var t = "=== ATURAN BAHASA (PALING UTAMA \u2014 MENGALAHKAN SEMUA ATURAN DI ATAS) ===\n";
+      t += "Bahasa yang didukung: " + nms.join(', ') + ".\n";
+      if (b.language_prompt_behavior === 'ask_user') {
+        t += "1. HANYA pada pesan pertama percakapan, tanyakan tamu ingin memakai bahasa apa. Setelah tamu menjawab (atau kalau bahasa pesannya sudah jelas), JANGAN bertanya lagi.\n";
+      } else {
+        t += "1. Kenali bahasa dari pesan TERAKHIR tamu, lalu tulis SELURUH jawaban dalam bahasa itu. JANGAN PERNAH menanyakan tamu ingin memakai bahasa apa.\n";
+      }
+      t += "2. Instruksi di atas, contoh-contoh kalimatnya, dan seluruh Knowledge Base ditulis dalam Bahasa Indonesia. Itu bahasa SUMBER, BUKAN bahasa jawaban. Terjemahkan isinya ke bahasa tamu \u2014 jangan menyalin kalimat Bahasa Indonesia apa adanya.\n";
+      if (sps.length) t += "3. Sapaan hormat mengikuti bahasa jawaban: " + sps.join(', ') + ". JANGAN memakai sapaan Bahasa Indonesia ketika menjawab dalam bahasa lain.\n";
+      t += "4. Kalau tamu berganti bahasa di tengah percakapan, ikut berganti mulai jawaban berikutnya.\n";
+      t += "5. Nama tempat, nama menu, dan tautan tetap ditulis apa adanya, tidak diterjemahkan.\n";
+      ekorBahasa = t;
+    }
+
     var prefix = parts.join("\n");
     var persona = b.system_prompt || '';
     var final = prefix ? (prefix + "\n\n=== INSTRUKSI TAMBAHAN ===\n" + persona) : persona;
+    if (ekorBahasa) final += "\n\n" + ekorBahasa;   // v1.2.53: urutan persis seperti generateAnswer()
 
     if (!prefix) {
       alert('Struktur kosong — sistem akan pakai Persona/Instruksi AI existing di textarea.\n\nPreview persona sekarang:\n\n' + (persona.slice(0, 500) + (persona.length > 500 ? '...(truncated)' : '')));
     } else {
-      alert('=== GENERATED PROMPT PREVIEW ===\n\n' + final.slice(0, 1500) + (final.length > 1500 ? '\n\n...(truncated for preview)' : ''));
+      alert('=== GENERATED PROMPT PREVIEW ===\n\n' + final.slice(0, 4000) + (final.length > 4000 ? '\n\n...(dipotong untuk pratinjau)' : ''));
     }
+
   }
 
   function saveContent() {
