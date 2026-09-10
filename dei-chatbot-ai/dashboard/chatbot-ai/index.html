@@ -752,7 +752,7 @@
       <!-- v1.2.3: Konfigurasi Terstruktur -->
       <div class="card">
         <h3>Konfigurasi Terstruktur <span style="color:var(--muted);font-weight:normal;font-size:12px">(v1.2.3)</span></h3>
-        <div class="desc">Field terstruktur untuk quick setup. Kalau kosong, sistem pakai <em>Persona / Instruksi AI</em> di bawah.</div>
+        <div class="desc">Field terstruktur untuk quick setup. Isian di sini <strong>selalu digabung</strong> dengan <em>Persona / Instruksi AI</em> di bawah &mdash; bukan salah satu saja. Persona ditempel di bagian akhir, jadi kalau isinya bertentangan dengan field di atas, <strong>persona yang menang</strong>. Contoh: kalau Behavior Awal diset Auto-detect tapi persona menyuruh menanyakan pilihan bahasa, bot tetap akan bertanya. Jangan mengulang instruksi yang sudah diatur lewat field di atas.</div>
 
         <div class="grid2">
           <div class="row">
@@ -945,6 +945,27 @@
           <label class="switch"><input type="checkbox" id="w_chatbot"><span class="sl"></span></label></div>
         <div class="toggle-row"><div><div class="tt">WhatsApp Floating Button</div><div class="td">Tampilkan tombol WhatsApp di website.</div></div>
           <label class="switch"><input type="checkbox" id="w_whatsapp"><span class="sl"></span></label></div>
+      </div>
+      <div class="card">
+        <h3>Form Data Pengunjung</h3>
+        <div class="desc">Minta nama &amp; nomor HP/WhatsApp sebelum pengunjung mulai chat. Data tersimpan otomatis ke halaman Kontak dan jadi judul percakapan di Percakapan Web.</div>
+        <div class="toggle-row"><div><div class="tt">Aktifkan Form</div><div class="td">Tampilkan form isian sebelum percakapan baru dimulai.</div></div>
+          <label class="switch"><input type="checkbox" id="lf_enabled"><span class="sl"></span></label></div>
+        <div class="toggle-row"><div><div class="tt">Izinkan Lewati</div><div class="td">Beri tombol "Lewati" agar pengunjung tetap bisa chat tanpa mengisi data.</div></div>
+          <label class="switch"><input type="checkbox" id="lf_allow_skip"><span class="sl"></span></label></div>
+        <div class="toggle-row"><div><div class="tt">Minta Persetujuan</div><div class="td">Centang persetujuan dihubungi via WhatsApp wajib dicentang sebelum lanjut.</div></div>
+          <label class="switch"><input type="checkbox" id="lf_consent_enabled"><span class="sl"></span></label></div>
+        <div class="toggle-row"><div><div class="tt">Simpan ke Kontak</div><div class="td">Nomor yang masuk otomatis ditambahkan ke daftar Kontak dengan tag "new".</div></div>
+          <label class="switch"><input type="checkbox" id="lf_save_contact"><span class="sl"></span></label></div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Judul Form</label><input type="text" id="lf_title" placeholder="Sebelum mulai chat"></div>
+          <div class="row"><label class="fl">Teks Tombol Kirim</label><input type="text" id="lf_submit_text" placeholder="Mulai Chat"></div>
+          <div class="row"><label class="fl">Label Nama</label><input type="text" id="lf_name_label" placeholder="Nama"></div>
+          <div class="row"><label class="fl">Label No. HP</label><input type="text" id="lf_phone_label" placeholder="No. HP / WhatsApp"></div>
+          <div class="row"><label class="fl">Teks Tombol Lewati</label><input type="text" id="lf_skip_text" placeholder="Lewati"></div>
+          <div class="row"><label class="fl">Teks Persetujuan</label><input type="text" id="lf_consent_text" placeholder="Saya bersedia dihubungi melalui WhatsApp."></div>
+        </div>
+        <div class="row"><label class="fl">Subjudul / Penjelasan</label><input type="text" id="lf_subtitle" placeholder="Isi data singkat berikut supaya kami bisa membantu Anda lebih baik."><div class="help">Nomor 08xx otomatis diubah ke format 62xx. Pengunjung hanya diminta sekali — percakapan berikutnya langsung masuk chat.</div></div>
       </div>
       <div class="card">
         <h3>WhatsApp</h3>
