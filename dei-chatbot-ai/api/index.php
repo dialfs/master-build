@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.53');
+define('DEI_VERSION', 'v1.2.54');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -3020,7 +3020,11 @@ switch ($action) {
                 }
 
                 /* v1.2.48: COEXISTENCE — sinkronisasi kontak dari app HP. */
-                foreach (($change['value']['smb_app_state_sync'] ?? []) as $sync) {
+                $syncList = array_merge(
+                    (array)($change['value']['smb_app_state_sync'] ?? []),
+                    (array)($change['value']['state_sync'] ?? [])
+                );
+                foreach ($syncList as $sync) {
                     $cn  = waNormNum($sync['contact']['phone_number'] ?? ($sync['wa_id'] ?? ($sync['phone_number'] ?? '')));
                     $cnm = trim((string)($sync['contact']['full_name'] ?? ($sync['full_name'] ?? ($sync['name'] ?? ''))));
                     if ($cn !== '') { try { waSaveContact($cn, $cnm); } catch (\Throwable $e) {} }
@@ -3745,6 +3749,80 @@ switch ($action) {
         }
         writeJson(SETTINGS_FILE, $merged);
         jsonOut(['ok' => true]);
+        break;
+    }
+
+    /* ---------- v1.2.54: Embedded Signup coexistence — tukar code jadi token ---------- */
+    case 'wa_es_exchange': {
+        requireAuth(['super_admin']);
+        $in   = bodyInput();
+        $code = trim((string)($in['code'] ?? ''));
+        $pnid = preg_replace('/\D/', '', (string)($in['phone_number_id'] ?? ''));
+        $waba = preg_replace('/\D/', '', (string)($in['waba_id'] ?? ''));
+        if ($code === '') jsonOut(['ok' => false, 'error' => 'code kosong'], 400);
+
+        $cur    = getSettings();
+        $wa     = is_array($cur['whatsapp_api'] ?? null) ? $cur['whatsapp_api'] : [];
+        $appId  = trim((string)($wa['es_app_id'] ?? ''));
+        $secret = (string)($wa['app_secret'] ?? '');
+        $ver    = trim((string)($wa['es_graph_version'] ?? '')) ?: 'v21.0';
+        if ($appId === '' || $secret === '') {
+            jsonOut(['ok' => false, 'error' => 'App ID / App Secret belum diisi di pengaturan WhatsApp.'], 400);
+        }
+
+        // 1) Tukar authorization code -> access token bisnis (long-lived dari Embedded Signup).
+        $exUrl = 'https://graph.facebook.com/' . rawurlencode($ver) . '/oauth/access_token?'
+               . http_build_query(['client_id' => $appId, 'client_secret' => $secret, 'code' => $code]);
+        $ch   = curl_init($exUrl);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25]);
+        $resp = curl_exec($ch);
+        $hc   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $d     = json_decode((string)$resp, true);
+        $token = is_array($d) ? (string)($d['access_token'] ?? '') : '';
+        if ($hc < 200 || $hc >= 300 || $token === '') {
+            error_log('wa_es_exchange tukar token gagal HTTP ' . $hc . ': ' . mb_substr((string)$resp, 0, 300));
+            $emsg = (is_array($d) && isset($d['error']['message'])) ? (string)$d['error']['message'] : 'Tukar token gagal.';
+            jsonOut(['ok' => false, 'error' => $emsg], 502);
+        }
+
+        // 2) Langganan app ke WABA supaya webhook (termasuk echo/sync coexistence) mengalir.
+        $subMsg = '';
+        if ($waba !== '') {
+            $subUrl = 'https://graph.facebook.com/' . rawurlencode($ver) . '/' . rawurlencode($waba) . '/subscribed_apps';
+            $ch2 = curl_init($subUrl);
+            curl_setopt_array($ch2, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_TIMEOUT        => 25,
+                CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $token],
+                CURLOPT_POSTFIELDS     => '',
+            ]);
+            $sresp = curl_exec($ch2);
+            $shc   = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+            curl_close($ch2);
+            if ($shc < 200 || $shc >= 300) {
+                error_log('wa_es_exchange subscribed_apps HTTP ' . $shc . ': ' . mb_substr((string)$sresp, 0, 300));
+                $subMsg = 'Token tersimpan, tetapi subscribe app ke WABA gagal — subscribe manual di Meta lalu ulangi.';
+            }
+        }
+
+        // 3) Simpan kredensial + aktifkan provider Meta.
+        $cur['whatsapp_api'] = array_merge($wa, [
+            'provider'        => 'meta',
+            'enabled'         => true,
+            'access_token'    => $token,
+            'phone_number_id' => ($pnid !== '' ? $pnid : ($wa['phone_number_id'] ?? '')),
+            'waba_id'         => ($waba !== '' ? $waba : ($wa['waba_id'] ?? '')),
+        ]);
+        writeJson(SETTINGS_FILE, $cur);
+
+        jsonOut([
+            'ok'              => true,
+            'phone_number_id' => $cur['whatsapp_api']['phone_number_id'],
+            'waba_id'         => $cur['whatsapp_api']['waba_id'],
+            'warning'         => $subMsg,
+        ]);
         break;
     }
 

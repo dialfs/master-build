@@ -1036,6 +1036,19 @@
         </select><div class="help">Fonnte memakai jalur tidak resmi: nomor tetap bisa dipakai di HP, tetapi berisiko diblokir WhatsApp. Cocok untuk uji coba atau klien yang belum siap mengganti nomor.</div></div>
         <div class="toggle-row"><div><div class="tt">Aktifkan Bot WhatsApp</div><div class="td">Balas otomatis pesan WhatsApp yang masuk.</div></div>
           <label class="switch"><input type="checkbox" id="wa_enabled"><span class="sl"></span></label></div>
+        <div class="row wa-meta-only" style="border:1px dashed var(--line,#d0d0d0);border-radius:8px;padding:12px;margin:8px 0">
+          <label class="fl" style="font-weight:600">Coexistence — hubungkan nomor WA Business yang sudah ada</label>
+          <div class="help" style="margin-bottom:8px">Onboarding resmi Meta: nomor tetap hidup di HP (WA Business App) sekaligus dijawab bot. Isi App ID &amp; Config ID dari Meta App Anda, klik Hubungkan, lalu konfirmasi di HP nomor tersebut.</div>
+          <div class="grid2">
+            <div class="row"><label class="fl">Meta App ID</label><input type="text" id="es_app_id" class="mono" placeholder="1234567890"><div class="help">Meta App › Settings › Basic › App ID.</div></div>
+            <div class="row"><label class="fl">Embedded Signup Config ID</label><input type="text" id="es_config_id" class="mono" placeholder="1234567890"><div class="help">Facebook Login for Business › Configurations (fitur coexistence).</div></div>
+          </div>
+          <div class="row" style="flex-direction:row;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn" id="btnEsConnect" type="button">Hubungkan WhatsApp (Coexistence)</button>
+            <span id="es_status" class="help" style="margin:0"></span>
+          </div>
+          <div class="help" style="margin-top:6px">Butuh App Secret (di bawah) terisi untuk tukar token — tidak dibagikan ke browser. Setelah terhubung, subscribe field <code>messages</code>, <code>smb_message_echoes</code>, <code>smb_app_state_sync</code>, <code>history</code> di webhook Meta.</div>
+        </div>
         <div class="row wa-meta-only"><label class="fl">Access Token (Permanent)</label><input type="text" id="wa_token" class="mono" placeholder="EAAG..."><div class="help">Token dari Meta for Developers › WhatsApp › API Setup. Disimpan terenkripsi-tampilan; kosongkan untuk tidak mengubah.</div></div>
         <div class="grid2">
           <div class="row wa-meta-only"><label class="fl">Phone Number ID</label><input type="text" id="wa_pnid" class="mono" placeholder="1234567890"><div class="help">Bukan nomor telepon — ID dari halaman API Setup.</div></div>

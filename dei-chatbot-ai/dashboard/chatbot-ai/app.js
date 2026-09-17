@@ -1251,6 +1251,52 @@
     $$('.wa-meta-only').forEach(function (el)   { el.style.display = meta ? '' : 'none'; });
     $$('.wa-fonnte-only').forEach(function (el) { el.style.display = meta ? 'none' : ''; });
   }
+
+  // v1.2.54: Embedded Signup coexistence (WA Business App + Cloud API di satu nomor)
+  var _esCaptured = { phone_number_id: '', waba_id: '' };
+  function esSessionInfoListener(event) {
+    if (typeof event.data !== 'string') return;
+    if (event.origin && event.origin.indexOf('facebook.com') === -1) return;
+    var data; try { data = JSON.parse(event.data); } catch (e) { return; }
+    if (!data || data.type !== 'WA_EMBEDDED_SIGNUP') return;
+    if (data.data) {
+      _esCaptured.phone_number_id = data.data.phone_number_id || _esCaptured.phone_number_id;
+      _esCaptured.waba_id        = data.data.waba_id || _esCaptured.waba_id;
+    }
+  }
+  function esLoadSdk(appId, version) {
+    if (window.FB) { try { FB.init({ appId: appId, autoLogAppEvents: true, xfbml: false, version: version }); } catch (e) {} return; }
+    window.fbAsyncInit = function () { try { FB.init({ appId: appId, autoLogAppEvents: true, xfbml: false, version: version }); } catch (e) {} };
+    if (!document.getElementById('facebook-jssdk')) {
+      var js = document.createElement('script');
+      js.id = 'facebook-jssdk'; js.src = 'https://connect.facebook.net/en_US/sdk.js'; js.async = true; js.defer = true; js.crossOrigin = 'anonymous';
+      document.head.appendChild(js);
+    }
+  }
+  function esWire(version) {
+    var btn = $('#btnEsConnect'); if (!btn) return;
+    if (!window._esListenerAdded) { window.addEventListener('message', esSessionInfoListener); window._esListenerAdded = true; }
+    var appId = ($('#es_app_id') && $('#es_app_id').value.trim()) || '';
+    if (appId) esLoadSdk(appId, version);
+    btn.onclick = function () {
+      var aid = $('#es_app_id').value.trim(), cid = $('#es_config_id').value.trim();
+      if (!aid || !cid) { toast('Isi App ID dan Config ID dulu.'); return; }
+      if (!window.FB) { esLoadSdk(aid, version); toast('SDK Facebook belum siap — coba klik lagi sebentar.'); return; }
+      _esCaptured = { phone_number_id: '', waba_id: '' };
+      var st = $('#es_status'); if (st) { st.textContent = 'Membuka Embedded Signup…'; st.style.color = ''; }
+      FB.login(function (response) {
+        var code = response && response.authResponse && response.authResponse.code;
+        if (!code) { if (st) { st.textContent = 'Dibatalkan / gagal.'; st.style.color = '#b42318'; } return; }
+        if (st) st.textContent = 'Menukar token…';
+        api('wa_es_exchange', { method: 'POST', body: { code: code, phone_number_id: _esCaptured.phone_number_id, waba_id: _esCaptured.waba_id } }).then(function (r) {
+          if (!r || !r.ok) { if (st) { st.textContent = 'Gagal: ' + ((r && r.error) || 'tidak diketahui'); st.style.color = '#b42318'; } return; }
+          if (st) { st.textContent = 'Terhubung: ' + (r.phone_number_id || _esCaptured.phone_number_id || '(nomor tersimpan)'); st.style.color = '#1a7f37'; }
+          if (r.warning) toast(r.warning);
+          if (typeof loadWidget === 'function') loadWidget();
+        });
+      }, { config_id: cid, response_type: 'code', override_default_response_type: true, extras: { featureType: 'whatsapp_business_app_onboarding' } });
+    };
+  }
   function loadWidget() {
     api('get_settings').then(function (res) {
       if (!res.ok) return;
@@ -1315,6 +1361,15 @@
         var f = $('#fon_webhook_url'); f.select();
         copyText(f.value, 'Webhook Fonnte disalin.');
       };
+      // v1.2.54: Embedded Signup coexistence
+      $('#es_app_id').value    = wa.es_app_id || '';
+      $('#es_config_id').value = wa.es_config_id || '';
+      (function () {
+        var pnid = (wa.provider === 'meta' && wa.phone_number_id && String(wa.phone_number_id).indexOf('•') === -1) ? wa.phone_number_id : '';
+        var st = $('#es_status');
+        if (st) { st.textContent = pnid ? ('Terhubung: ' + pnid) : 'Belum terhubung.'; st.style.color = pnid ? '#1a7f37' : ''; }
+      })();
+      esWire(wa.es_graph_version || 'v21.0');
 
       var tg = s.telegram || {};
       $('#tg_enabled').checked = tg.enabled === true;
@@ -1394,6 +1449,9 @@
       rate_limit_per_number: +$('#wa_rate').value || 20,
       provider: $('#wa_provider').value,                                          // v1.2.36
       fonnte_device: $('#fon_device').value.trim(),
+      es_app_id: ($('#es_app_id') ? $('#es_app_id').value.trim() : ''),
+      es_config_id: ($('#es_config_id') ? $('#es_config_id').value.trim() : ''),
+      es_graph_version: 'v21.0',
       // tersamar atau kosong -> kirim kosong; backend mempertahankan nilai lama
       fonnte_token: ($('#fon_token').value.indexOf('•') !== -1) ? '' : $('#fon_token').value.trim()
     };
