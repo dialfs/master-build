@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.54');
+define('DEI_VERSION', 'v1.2.55');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -1623,9 +1623,11 @@ function waSendFonnte($wa, $to, $text) {
 function waSend($wa, $to, $text) {
     // v1.2.36: pilih penyedia. Bawaan 'meta' supaya tenant lama tidak berubah.
     if (($wa['provider'] ?? 'meta') === 'fonnte') return waSendFonnte($wa, $to, $text);
+    $GLOBALS['wa_last_error'] = '';
     $token = $wa['access_token'] ?? '';
     $pnid  = $wa['phone_number_id'] ?? '';
-    if ($token === '' || $pnid === '') return false;
+    if ($token === '') { $GLOBALS['wa_last_error'] = 'Access Token WhatsApp kosong — belum diisi atau terhapus. Hubungkan ulang di Pengaturan.'; return false; }
+    if ($pnid === '')  { $GLOBALS['wa_last_error'] = 'Phone Number ID kosong.'; return false; }
     $url = 'https://graph.facebook.com/v21.0/' . rawurlencode($pnid) . '/messages';
     $payload = [
         'messaging_product' => 'whatsapp',
@@ -1642,10 +1644,21 @@ function waSend($wa, $to, $text) {
         CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
         CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
     ]);
-    curl_exec($ch);
+    $resp = curl_exec($ch);
+    $cerr = curl_error($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    return $code >= 200 && $code < 300;
+    if ($code >= 200 && $code < 300) return true;
+    $msg = '';
+    $d = json_decode((string)$resp, true);
+    if (is_array($d) && isset($d['error'])) {
+        $e = $d['error'];
+        $msg = trim(($e['message'] ?? '') . (isset($e['code']) ? ' (code ' . $e['code'] . ')' : ''));
+    }
+    if ($msg === '') $msg = $cerr !== '' ? $cerr : ('HTTP ' . $code);
+    $GLOBALS['wa_last_error'] = $msg;
+    error_log('waSend Meta HTTP ' . $code . ': ' . mb_substr((string)$resp, 0, 300));
+    return false;
 }
 
 /* ============================================================
@@ -3530,7 +3543,10 @@ switch ($action) {
         }
 
         if (!waSend($wa, $num, $text)) {
-            jsonOut(['ok' => false, 'error' => 'Gagal mengirim via WhatsApp. Cek Access Token / Phone Number ID.'], 502);
+            $wr = trim((string)($GLOBALS['wa_last_error'] ?? ''));
+            $emsg = ($wr !== '') ? ('Gagal mengirim via WhatsApp: ' . $wr)
+                                 : 'Gagal mengirim via WhatsApp. Cek Access Token / Phone Number ID.';
+            jsonOut(['ok' => false, 'error' => $emsg], 502);
         }
         waSetMode($num, 'human'); // replying manually = taking over
         if ($wa['keep_context'] ?? true) {
