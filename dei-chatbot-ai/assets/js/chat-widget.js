@@ -590,11 +590,40 @@
         }
       }
 
+      /* ---- v1.2.56: auto-closing -------------------------------------
+       * N menit tanpa aktivitas setelah balasan bot -> minta teks closing ke
+       * server (server yang memutuskan bahasa & mencatat ke riwayat). Tamu
+       * yang mengetik me-reset timer; sekali per balasan bot. */
+      var acCfg = cfg.auto_closing || {};
+      var acTimer = null, acConv = '';
+      function clearClosing() { if (acTimer) { clearTimeout(acTimer); acTimer = null; } }
+      function scheduleClosing() {
+        clearClosing();
+        if (!acCfg.enabled || !currentConvId) return;
+        acConv = currentConvId;
+        acTimer = setTimeout(fireClosing, Math.max(1, +acCfg.minutes || 10) * 60000);
+      }
+      function fireClosing() {
+        acTimer = null;
+        var convAtFire = acConv;
+        fetch(API + '?action=web_closing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: convAtFire, visitor_id: visitorId })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res && res.ok && res.text && currentConvId === convAtFire && currentView === 'thread') addMsg('bot', res.text);
+          })
+          .catch(function () {});
+      }
+
       /* ---- send message ---- */
       function send(text) {
         text = (text || input.value).trim();
         if (!text || sending) return;
         if (!currentConvId) return;
+        clearClosing();   /* v1.2.56: tamu membalas -> batalkan closing */
         input.value = '';
         quick.innerHTML = '';
         addMsg('user', text);
@@ -621,6 +650,7 @@
             sending = false;
             if (res && res.ok) {
               addMsg('bot', res.answer);
+              scheduleClosing();   /* v1.2.56 */
               /* update title in header if this was first message */
               if (isFirstUserMsg) {
                 var shortTitle = text.length > 40 ? text.substring(0, 40) + '...' : text;
@@ -644,6 +674,7 @@
       win.querySelector('.dch-x').onclick = function () { toggleWindow(false); };
       win.querySelector('.dch-send').onclick = function () { send(); };
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
+      input.addEventListener('input', function () { if (acTimer) scheduleClosing(); });   /* v1.2.56: masih mengetik -> tunda */
 
       /* ---- attention teaser ---- */
       var qreplies = (bot.quick_replies || []).filter(function (q) { return String(q).trim() !== ''; });

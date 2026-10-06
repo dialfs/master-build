@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.55');
+define('DEI_VERSION', 'v1.2.57');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -39,8 +39,15 @@ define('WEB_VISITORS_FILE', DATA_DIR . '/web-visitors.json');   // v1.2.53: data
  *  CORS — the widget runs on the client's site (loaded via GTM) so public
  *  endpoints must allow cross-origin requests.
  * ------------------------------------------------------------------------- */
-$PUBLIC_ACTIONS = ['bootstrap', 'chat', 'web_conv_list', 'web_conv_thread', 'web_conv_new', 'web_lead_save'];   // v1.2.53
+$PUBLIC_ACTIONS = ['bootstrap', 'chat', 'web_conv_list', 'web_conv_thread', 'web_conv_new', 'web_lead_save', 'web_closing'];   // v1.2.56
 $action = isset($_GET['action']) ? $_GET['action'] : '';
+// v1.2.56: mode CLI untuk cron cPanel per tenant: php api/index.php action=cron_tick
+if (PHP_SAPI === 'cli' && $action === '' && !empty($argv[1])) {
+    parse_str(implode('&', array_slice($argv, 1)), $deiCliArgs);
+    $_GET = array_merge($_GET, $deiCliArgs);
+    $action = (string)($_GET['action'] ?? '');
+    if (!in_array($action, ['cron_tick'], true)) { fwrite(STDERR, "CLI hanya untuk action=cron_tick\n"); exit(1); }
+}
 
 if (in_array($action, $PUBLIC_ACTIONS, true)) {
     header('Access-Control-Allow-Origin: *');
@@ -490,7 +497,7 @@ function getCapStatus($settings, $forceRefresh = false) {
         ];
     }
     // Stale or missing → refresh by calling update_check (lightweight; same path license uses)
-    $stats = computeMonthStats();
+    $stats = deiCollectStats();   // v1.2.57: kirim lengkap supaya pusat ikut segar
     $url = rtrim($cs['url'], '/') . '/backend/index.php?action=check_update';
     $payload = json_encode([
         'tenant_id'   => $cs['tenant_id'],
@@ -538,6 +545,77 @@ function getCapStatus($settings, $forceRefresh = false) {
 }
 
 /* Compute chat count + cost for current WIB month from data/usage.json */
+/* v1.2.57: pencacah pesan WA keluar via Meta Cloud API (per bulan WIB).
+ * Meta: tiap nomor dapat 1.000 service message gratis/bulan sejak 1 Okt 2026;
+ * template (marketing/utility/auth) selalu berbayar. Fonnte tidak dihitung. */
+if (!defined('WA_OUT_FILE')) define('WA_OUT_FILE', DATA_DIR . '/wa-out.json');
+if (!defined('WA_FREE_SERVICE_QUOTA')) define('WA_FREE_SERVICE_QUOTA', 1000);
+function waOutCount($kind) {
+    try {
+        $fp = @fopen(WA_OUT_FILE, 'c+');
+        if (!$fp) return;
+        @flock($fp, LOCK_EX);
+        $raw = stream_get_contents($fp);
+        $all = json_decode((string)$raw, true);
+        if (!is_array($all)) $all = [];
+        $m = wibDate('Y-m');
+        if (!isset($all[$m]) || !is_array($all[$m])) $all[$m] = ['service' => 0, 'template' => 0];
+        $k = ($kind === 'template') ? 'template' : 'service';
+        $all[$m][$k] = (int)($all[$m][$k] ?? 0) + 1;
+        ksort($all);
+        if (count($all) > 13) $all = array_slice($all, -13, null, true);
+        ftruncate($fp, 0); rewind($fp);
+        fwrite($fp, json_encode($all, JSON_PRETTY_PRINT));
+        fflush($fp); @flock($fp, LOCK_UN); fclose($fp);
+    } catch (\Throwable $e) { error_log('waOutCount: ' . $e->getMessage()); }
+}
+function waOutMonth($monthKey = null) {
+    $all = readJson(WA_OUT_FILE, []);
+    $r = is_array($all[$monthKey ?? wibDate('Y-m')] ?? null) ? $all[$monthKey ?? wibDate('Y-m')] : [];
+    return ['service' => (int)($r['service'] ?? 0), 'template' => (int)($r['template'] ?? 0)];
+}
+
+/* v1.2.57: satu sumber statistik untuk report_back, check_update & cron_tick
+ * (sebelumnya hanya tombol cek update manual yang mengirim, jadi angka di pusat basi). */
+function deiCollectStats() {
+    $logs = readJson(LOG_FILE, []);
+    if (!is_array($logs)) $logs = [];
+    $kb = readJson(KB_FILE, []);
+    $today = wibToday();
+    $chats_today = 0; $chats_total = 0; $wa_chats_today = 0; $visitors_today = [];
+    foreach ($logs as $l) {
+        if (!is_array($l)) continue;
+        if (in_array(($l['dir'] ?? ''), ['manual', 'closing'], true)) continue;
+        $chats_total++;
+        if (strpos((string)($l['ts'] ?? ''), $today) === 0) {
+            $chats_today++;
+            if (($l['channel'] ?? '') === 'whatsapp') $wa_chats_today++;
+            if (!empty($l['ip'])) $visitors_today[$l['ip']] = 1;
+        }
+    }
+    $usage = readJson(DATA_DIR . '/usage.json', []);
+    $u = array_merge(['calls' => 0, 'input' => 0, 'output' => 0, 'cache_write' => 0, 'cache_read' => 0], (array)($usage[$today] ?? []));
+    $cost_today = round(($u['input']/1e6 * 1.00) + ($u['output']/1e6 * 5.00) + ($u['cache_write']/1e6 * 1.25) + ($u['cache_read']/1e6 * 0.10), 5);
+    $month = computeMonthStats();
+    $wo = waOutMonth();
+    return [
+        'chats_today'           => $chats_today,
+        'chats_total'           => $chats_total,
+        'wa_chats_today'        => $wa_chats_today,
+        'kb_entries'            => is_array($kb) ? count($kb) : 0,
+        'unique_visitors_today' => count($visitors_today),
+        'tokens_in_today'       => (int)$u['input'],
+        'tokens_out_today'      => (int)$u['output'],
+        'cache_write_today'     => (int)$u['cache_write'],
+        'cache_read_today'      => (int)$u['cache_read'],
+        'cost_today_usd'        => $cost_today,
+        'chats_this_month'      => $month['chats_this_month'],
+        'cost_this_month_usd'   => $month['cost_this_month_usd'],
+        'wa_out_service_month'  => $wo['service'],
+        'wa_out_template_month' => $wo['template'],
+    ];
+}
+
 function computeMonthStats() {
     $usage = readJson(DATA_DIR . '/usage.json', []);
     $monthKey = wibDate('Y-m');
@@ -589,6 +667,7 @@ function getLicenseStatus($settings, $forceRefresh = false) {
         'tenant_id'   => $cs['tenant_id'],
         'license_key' => $cs['license_key'],
         'current'     => readJson(DATA_DIR . '/version.json', [])['version'] ?? 'v1.1.3',
+        'stats'       => deiCollectStats(),   // v1.2.57
     ]);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -1648,7 +1727,7 @@ function waSend($wa, $to, $text) {
     $cerr = curl_error($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if ($code >= 200 && $code < 300) return true;
+    if ($code >= 200 && $code < 300) { waOutCount('service'); return true; }   // v1.2.57
     $msg = '';
     $d = json_decode((string)$resp, true);
     if (is_array($d) && isset($d['error'])) {
@@ -1719,7 +1798,7 @@ function waSendTemplate($wa, $to, $name, $lang, $vars = []) {
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
         CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE)]);
     $raw = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-    if ($code >= 200 && $code < 300) return ['ok' => true];
+    if ($code >= 200 && $code < 300) { waOutCount('template'); return ['ok' => true]; }   // v1.2.57
     $err = json_decode($raw, true);
     return ['ok' => false, 'error' => ($err['error']['message'] ?? ('HTTP ' . $code))];
 }
@@ -1791,6 +1870,7 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
         waClaimAutoProcess();
         waModeSweepIdle();
     } catch (\Throwable $e) { error_log('sapu mode/claim: ' . $e->getMessage()); }
+    convGuestMsg($from, $text);   // v1.2.56: jejak untuk auto-closing & eskalasi
 
     // --- Handoff logic ---
     $ho = is_array($s['handoff'] ?? null) ? $s['handoff'] : [];
@@ -1832,7 +1912,7 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     $lic = getLicenseStatus($s);
     if ($lic['status'] === 'suspended') {
         $answer = $lic['message'] ?: LIC_DEFAULT_SUSPEND_MSG;
-        waSend($wa, $from, $answer);
+        if (waSend($wa, $from, $answer)) convReply($from, 'system');   // v1.2.56
         $logs = readJson(LOG_FILE, []);
         array_unshift($logs, array_merge($logBase, ['a' => $answer, 'suspended' => true]));
         writeJson(LOG_FILE, array_slice($logs, 0, $logLimit));
@@ -1842,7 +1922,7 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     $cap = getCapStatus($s);
     if ($cap['reached'] || $cap['warning']) {
         $answer = $cap['message'] ?: CAP_DEFAULT_MSG;
-        waSend($wa, $from, $answer);
+        if (waSend($wa, $from, $answer)) convReply($from, 'system');   // v1.2.56
         $logs = readJson(LOG_FILE, []);
         array_unshift($logs, array_merge($logBase, ['a' => $answer, 'cap_reached' => true]));
         writeJson(LOG_FILE, array_slice($logs, 0, $logLimit));
@@ -1859,7 +1939,8 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     } else {
         recordUsage($usage);
     }
-    waSend($wa, $from, $answer);
+    $deiSent = waSend($wa, $from, $answer);
+    if ($deiSent && !$deiAiError) convReply($from, 'bot');   // v1.2.56
 
     if ($keepCtx) {
         $history[] = ['role' => 'user', 'content' => $text];
@@ -2142,6 +2223,443 @@ function tgNotify($s, $text) {
 }
 
 /* ============================================================================
+ *  v1.2.56: AUTO-CLOSING + SOP ESKALASI (Emergency Response)
+ *
+ *  conv-state.json  : jejak pesan terakhir per nomor WA — siapa (guest/bot/
+ *                     agent/system/closing) dan kapan. Terpisah dari
+ *                     wa-sessions karena sesi itu kedaluwarsa 6 jam & tidak
+ *                     ada sama sekali kalau keep_context dimatikan.
+ *  escalations.json : insiden eskalasi + token "Saya tangani" + rate limit.
+ *  cron_tick        : dipanggil dei-pusat tiap menit (atau CLI) dan
+ *                     menjalankan sweep di bawah. Tanpa ini tidak ada yang
+ *                     "bangun" saat tamu/bot diam.
+ * ========================================================================= */
+define('CONV_STATE_FILE', DATA_DIR . '/conv-state.json');
+define('ESC_FILE', DATA_DIR . '/escalations.json');
+define('DEI_AC_TEXT_ID', "Apakah ada lagi yang bisa kami bantu? Jika ada, silakan sampaikan di sini, atau hubungi Call Center kami di {telepon} untuk respon lebih cepat. Terima kasih \xF0\x9F\x99\x8F");
+define('DEI_AC_TEXT_EN', "Is there anything else we can help you with? Feel free to reply here, or call our Call Center at {telepon} for a faster response. Thank you \xF0\x9F\x99\x8F");
+
+function deiAcConf($s) {
+    $c = is_array($s['auto_closing'] ?? null) ? $s['auto_closing'] : [];
+    $tid = trim((string)($c['text_id'] ?? ''));
+    $ten = trim((string)($c['text_en'] ?? ''));
+    return [
+        'enabled' => !empty($c['enabled']),
+        'minutes' => max(1, (int)($c['minutes'] ?? 10)),
+        'phone'   => trim((string)($c['phone'] ?? '')),
+        'text_id' => $tid !== '' ? $tid : DEI_AC_TEXT_ID,
+        'text_en' => $ten !== '' ? $ten : DEI_AC_TEXT_EN,
+        'hours'   => trim((string)($c['hours'] ?? '')),
+    ];
+}
+function deiAcText($ac, $lang) {
+    $t = ($lang === 'en') ? $ac['text_en'] : $ac['text_id'];
+    $tel = $ac['phone'] !== '' ? $ac['phone'] : '-';
+    return str_replace(['{telepon}', '{phone}'], $tel, $t);
+}
+
+function deiEscContact($x) {
+    if (!is_array($x)) return null;
+    $c = [
+        'name'     => trim((string)($x['name'] ?? '')),
+        'wa'       => deiNormalizePhone($x['wa'] ?? '') ?: waNormNum($x['wa'] ?? ''),   // 0812.. -> 62812..
+        'pushover' => trim((string)($x['pushover'] ?? '')),
+        'ntfy'     => trim((string)($x['ntfy'] ?? '')),
+    ];
+    if ($c['wa'] === '' && $c['pushover'] === '' && $c['ntfy'] === '') return null;
+    if ($c['name'] === '') $c['name'] = $c['wa'] !== '' ? ('+' . $c['wa']) : 'Kontak';
+    return $c;
+}
+function deiEscConf($s) {
+    $c = is_array($s['escalation'] ?? null) ? $s['escalation'] : [];
+    $l1 = []; $l2 = [];
+    foreach ((array)($c['l1_contacts'] ?? []) as $x) { $k = deiEscContact($x); if ($k) $l1[] = $k; }
+    foreach ((array)($c['l2_contacts'] ?? []) as $x) { $k = deiEscContact($x); if ($k) $l2[] = $k; }
+    $m1 = max(1, (int)($c['l1_minutes'] ?? 5));
+    $m2 = max($m1 + 1, (int)($c['l2_minutes'] ?? 10));
+    $srv = trim((string)($c['ntfy_server'] ?? ''));
+    $tl  = trim((string)($c['wa_template_lang'] ?? ''));
+    return [
+        'enabled'          => !empty($c['enabled']),
+        'hours'            => trim((string)($c['hours'] ?? '')),
+        'l1_minutes'       => $m1,
+        'l2_minutes'       => $m2,
+        'l1'               => $l1,
+        'l2'               => $l2,
+        'pushover_token'   => trim((string)($c['pushover_app_token'] ?? '')),
+        'ntfy_server'      => rtrim($srv !== '' ? $srv : 'https://ntfy.sh', '/'),
+        'wa_template'      => trim((string)($c['wa_template'] ?? '')),
+        'wa_template_lang' => $tl !== '' ? $tl : 'id',
+    ];
+}
+
+// "08:00-22:00" (WIB). Kosong = 24 jam. Mendukung rentang lewat tengah malam.
+function deiInHours($range, $ts = null) {
+    $range = trim((string)$range);
+    if ($range === '') return true;
+    if (!preg_match('/^(\d{1,2})[:.](\d{2})\s*-\s*(\d{1,2})[:.](\d{2})$/', $range, $m)) return true;
+    $a = (int)$m[1] * 60 + (int)$m[2];
+    $b = (int)$m[3] * 60 + (int)$m[4];
+    $now = (int)wibDate('G', $ts) * 60 + (int)wibDate('i', $ts);
+    if ($a === $b) return true;
+    return ($a < $b) ? ($now >= $a && $now < $b) : ($now >= $a || $now < $b);
+}
+
+// Ucapan penutup dari tamu ("ok makasih", "thanks", 👍). Dipakai untuk:
+// (1) tidak mengirim closing ke tamu yang sudah pamit, (2) tidak membuka
+// insiden eskalasi hanya karena tamu bilang "ok".
+function deiIsClosingPhrase($t) {
+    $t = mb_strtolower(trim((string)$t), 'UTF-8');
+    if ($t === '') return true;
+    if (!preg_match('/[\p{L}\p{N}]/u', $t)) return true;            // hanya emoji / tanda baca
+    $t = trim(preg_replace('/\s+/u', ' ', preg_replace('/[^\p{L}\s]/u', ' ', $t)));
+    $inti = '(ok|oke|okey|okay|okeh|okee+|okok|sip|siap|baik|baiklah|noted|mantap|mantab|thanks?|thank you|thankyou|thx|tq|ty|makasih|makasi|maksih|trims|terima ?kasih|terimakasih|sama ?sama)';
+    $ekor = '( (ya|yah|kak|ka|kk|min|mas|mbak|mba|pak|bu|bang|banyak|sekali|so much|a lot|very much|' . $inti . '))*';
+    return (bool)preg_match('/^' . $inti . $ekor . '$/u', $t);
+}
+
+/* ---------- conv-state: baca-ubah-tulis di bawah satu kunci ---------- */
+function convStateMutate($fn) {
+    $lock = @fopen(DATA_DIR . '/conv-state.lock', 'c');
+    if ($lock) @flock($lock, LOCK_EX);
+    $res = null;
+    try {
+        $all = readJson(CONV_STATE_FILE, []);
+        if (!is_array($all)) $all = [];
+        $res = $fn($all);
+        $batas = time() - 3 * 86400;                                 // pangkas yang diam > 3 hari
+        foreach ($all as $k => $v) { if ((int)($v['last_at'] ?? 0) < $batas) unset($all[$k]); }
+        writeJson(CONV_STATE_FILE, $all);
+    } finally {
+        if ($lock) { @flock($lock, LOCK_UN); @fclose($lock); }
+    }
+    return $res;
+}
+
+// Pesan masuk dari tamu (WA).
+function convGuestMsg($num, $text) {
+    $num = waNormNum($num);
+    if ($num === '') return;
+    $lang = deiDeteksiBahasa($text);
+    $bye  = deiIsClosingPhrase($text);
+    try {
+        convStateMutate(function (&$all) use ($num, $text, $lang, $bye) {
+            $now = time();
+            $st = is_array($all[$num] ?? null) ? $all[$num] : [];
+            $wasWaiting = !empty($st['guest_waiting_since']);
+            $st['last_from'] = 'guest';
+            $st['last_at']   = $now;
+            // Ucapan penutup tidak MEMULAI masa tunggu; tapi kalau tamu memang
+            // sudah menunggu, masa tunggunya tetap berjalan.
+            if (!$wasWaiting) {
+                $st['guest_waiting_since'] = $bye ? 0 : $now;
+                $st['esc_level'] = 0; $st['esc_inc'] = ''; $st['esc_acked'] = 0;
+            }
+            $st['guest_bye'] = $bye ? 1 : 0;
+            if ($lang === 'id' || $lang === 'en') $st['lang'] = $lang;
+            $st['closing_sent_at'] = 0;
+            $st['last_guest_text'] = mb_substr((string)$text, 0, 160);
+            $all[$num] = $st;
+        });
+    } catch (\Throwable $e) { error_log('convGuestMsg: ' . $e->getMessage()); }
+}
+
+// Balasan keluar. $who: bot | agent | system (pesan lisensi/kuota)
+function convReply($num, $who) {
+    $num = waNormNum($num);
+    if ($num === '') return;
+    try {
+        $inc = convStateMutate(function (&$all) use ($num, $who) {
+            $st = is_array($all[$num] ?? null) ? $all[$num] : [];
+            $inc = (string)($st['esc_inc'] ?? '');
+            $st['last_from'] = $who;
+            $st['last_at']   = time();
+            $st['guest_waiting_since'] = 0;
+            $st['esc_level'] = 0; $st['esc_inc'] = ''; $st['esc_acked'] = 0;
+            $st['closing_sent_at'] = 0;
+            $all[$num] = $st;
+            return $inc;
+        });
+        if ($inc !== '' && $inc !== null) escResolve($inc, $who);
+    } catch (\Throwable $e) { error_log('convReply: ' . $e->getMessage()); }
+}
+
+/* ---------- escalations.json ---------- */
+function escMutate($fn) {
+    $lock = @fopen(DATA_DIR . '/escalations.lock', 'c');
+    if ($lock) @flock($lock, LOCK_EX);
+    $res = null;
+    try {
+        $db = readJson(ESC_FILE, []);
+        if (!is_array($db)) $db = [];
+        foreach (['incidents', 'tokens', 'rate'] as $k) if (!is_array($db[$k] ?? null)) $db[$k] = [];
+        $res = $fn($db);
+        $batas = time() - 90 * 86400;                                // insiden disimpan 90 hari
+        foreach ($db['incidents'] as $id => $inc) {
+            if ((int)($inc['opened_at'] ?? 0) < $batas) unset($db['incidents'][$id]);
+        }
+        foreach ($db['tokens'] as $t => $v) {
+            if ((int)($v['exp'] ?? 0) < time() - 86400) unset($db['tokens'][$t]);
+        }
+        writeJson(ESC_FILE, $db);
+    } finally {
+        if ($lock) { @flock($lock, LOCK_UN); @fclose($lock); }
+    }
+    return $res;
+}
+function escResolve($incId, $by) {
+    escMutate(function (&$db) use ($incId, $by) {
+        if (!isset($db['incidents'][$incId])) return;
+        if (!empty($db['incidents'][$incId]['resolved_at'])) return;
+        $db['incidents'][$incId]['resolved_at'] = time();
+        $db['incidents'][$incId]['resolved_by'] = $by;
+    });
+}
+
+/* ---------- pengirim notifikasi ---------- */
+function escDry() { return !empty($GLOBALS['dei_dry']); }
+function escDryLog($row) { $GLOBALS['esc_dry_log'][] = $row; }
+
+function escSendPushover($token, $user, $title, $msg, $url) {
+    if ($token === '' || $user === '') return ['ok' => false, 'error' => 'Pushover app token / user key kosong'];
+    if (escDry()) { escDryLog(['via' => 'pushover', 'to' => $user, 'title' => $title, 'msg' => $msg, 'url' => $url]); return ['ok' => true, 'dry' => true]; }
+    $f = ['token' => $token, 'user' => $user, 'title' => $title, 'message' => $msg,
+          'priority' => 2, 'retry' => 60, 'expire' => 1800, 'sound' => 'siren'];
+    if ($url !== '') { $f['url'] = $url; $f['url_title'] = 'Saya tangani'; }
+    $ch = curl_init('https://api.pushover.net/1/messages.json');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 10,
+        CURLOPT_POSTFIELDS => http_build_query($f)]);
+    $r = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($code >= 200 && $code < 300) return ['ok' => true];
+    return ['ok' => false, 'error' => 'Pushover HTTP ' . $code . ' ' . mb_substr((string)$r, 0, 150)];
+}
+function escSendNtfy($server, $topic, $title, $msg, $url) {
+    if ($topic === '') return ['ok' => false, 'error' => 'topic ntfy kosong'];
+    if (escDry()) { escDryLog(['via' => 'ntfy', 'to' => $topic, 'title' => $title, 'msg' => $msg, 'url' => $url]); return ['ok' => true, 'dry' => true]; }
+    $h = ['Title: ' . preg_replace('/[^\x20-\x7E]/', '', $title), 'Priority: urgent', 'Tags: rotating_light'];
+    if ($url !== '') $h[] = 'Click: ' . $url;
+    $ch = curl_init($server . '/' . rawurlencode($topic));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 10,
+        CURLOPT_HTTPHEADER => $h, CURLOPT_POSTFIELDS => $msg]);
+    $r = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($code >= 200 && $code < 300) return ['ok' => true];
+    return ['ok' => false, 'error' => 'ntfy HTTP ' . $code . ' ' . mb_substr((string)$r, 0, 150)];
+}
+// WA ke Supervisor/Manager. Cloud API (Meta) di luar jendela 24 jam WAJIB
+// template; kalau template diisi, dipakai. Fonnte = teks bebas.
+function escSendWa($s, $ec, $to, $text, $vars) {
+    if ($to === '') return ['ok' => false, 'error' => 'nomor kosong'];
+    if (escDry()) { escDryLog(['via' => 'wa', 'to' => $to, 'msg' => $text]); return ['ok' => true, 'dry' => true]; }
+    $wa = waConf($s);
+    if (($wa['provider'] ?? 'meta') === 'meta' && $ec['wa_template'] !== '') {
+        return waSendTemplate($wa, $to, $ec['wa_template'], $ec['wa_template_lang'], $vars);
+    }
+    $GLOBALS['wa_last_error'] = '';
+    if (waSend($wa, $to, $text)) return ['ok' => true];
+    $e = trim((string)($GLOBALS['wa_last_error'] ?? ''));
+    return ['ok' => false, 'error' => $e !== '' ? $e : 'gagal kirim WA'];
+}
+
+function deiSelfApiUrl() {
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host === '') return '';
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    if (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') $scheme = 'https';
+    $uri = $_SERVER['REQUEST_URI'] ?? '';
+    $base = (($p = strpos($uri, '/api/')) !== false) ? substr($uri, 0, $p) : '';
+    return $scheme . '://' . $host . $base . '/api/index.php';
+}
+// URL API tenant diingat dari request HTTP (dashboard / cron pusat) supaya
+// cron CLI pun bisa membuat link "Saya tangani".
+function deiRememberApiUrl() {
+    $u = deiSelfApiUrl();
+    if ($u === '') return;
+    $f = DATA_DIR . '/self-url.txt';
+    if (@file_get_contents($f) !== $u) @file_put_contents($f, $u, LOCK_EX);
+}
+function deiRememberedApiUrl() {
+    return trim((string)@file_get_contents(DATA_DIR . '/self-url.txt'));
+}
+function deiTenantName($s) {
+    $n = trim((string)($s['bot']['persona_company'] ?? ''));
+    if ($n === '') $n = trim((string)($s['central_server']['tenant_id'] ?? ''));
+    return $n !== '' ? $n : 'DEI Chatbot';
+}
+
+// Kirim ke semua kontak satu level, dengan rate limit per kontak
+// (maks 10 alarm / 10 menit — mencegah badai notifikasi).
+function escNotifyContacts($s, $ec, $contacts, $title, $text, $vars, $incId, $infoOnly = false) {
+    $hasil = [];
+    foreach ($contacts as $c) {
+        $key = $c['wa'] . '|' . $c['pushover'] . '|' . $c['ntfy'];
+        $boleh = escMutate(function (&$db) use ($key) {
+            $now = time();
+            $list = array_values(array_filter((array)($db['rate'][$key] ?? []), function ($t) use ($now) { return $t > $now - 600; }));
+            if (count($list) >= 10) { $db['rate'][$key] = $list; return false; }
+            $list[] = $now; $db['rate'][$key] = $list; return true;
+        });
+        if (!$boleh) { $hasil[] = ['name' => $c['name'], 'suppressed' => true]; continue; }
+
+        $url = '';
+        if ($incId !== '' && !$infoOnly) {
+            $base = deiSelfApiUrl();
+            if ($base === '') $base = deiRememberedApiUrl();             // CLI: pakai URL yang pernah tercatat
+            if ($base !== '') {
+                $tok = bin2hex(random_bytes(12));
+                escMutate(function (&$db) use ($tok, $incId, $c) {
+                    $db['tokens'][$tok] = ['inc' => $incId, 'name' => $c['name'], 'exp' => time() + 6 * 3600];
+                });
+                $url = $base . '?action=esc_ack&t=' . $tok;
+            }
+        }
+        $msg = $text . ($url !== '' ? "\n\n\xF0\x9F\x91\x89 Saya tangani: " . $url : '');
+        $r = ['name' => $c['name']];
+        if ($c['wa'] !== '') {
+            $v = $vars; $v[] = ($url !== '' ? $url : '-');
+            $r['wa'] = escSendWa($s, $ec, $c['wa'], $msg, $v);
+        }
+        if (!$infoOnly) {
+            if ($c['pushover'] !== '') $r['pushover'] = escSendPushover($ec['pushover_token'], $c['pushover'], $title, $text, $url);
+            if ($c['ntfy'] !== '')     $r['ntfy']     = escSendNtfy($ec['ntfy_server'], $c['ntfy'], $title, $text, $url);
+        }
+        $hasil[] = $r;
+    }
+    return $hasil;
+}
+
+/* ---------- SWEEP 1: Auto-Closing WA ---------- */
+function autoClosingSweep($s) {
+    $ac = deiAcConf($s);
+    if (!$ac['enabled'] || !deiInHours($ac['hours'])) return [];
+    $wa = waConf($s);
+    if (!($wa['enabled'] ?? false)) return [];
+    $all = readJson(CONV_STATE_FILE, []);
+    if (!is_array($all) || empty($all)) return [];
+    $now = time();
+    $batas = $ac['minutes'] * 60;
+    $keepCtx = ($wa['keep_context'] ?? true);
+    $out = [];
+    foreach ($all as $num => $st) {
+        $num = (string)$num;
+        if (($st['last_from'] ?? '') !== 'bot') continue;
+        if (!empty($st['closing_sent_at']) || !empty($st['guest_bye'])) continue;
+        $lastAt = (int)($st['last_at'] ?? 0);
+        $age = $now - $lastAt;
+        if ($age < $batas || $age > 20 * 3600) continue;             // > 20 jam: basi / dekat batas 24 jam Meta
+        if (waGetMode($num) === 'human' || waClaimGet($num)) continue; // agent sedang pegang
+
+        // tandai dulu, baru kirim -> tick yang tumpang-tindih tidak mengirim dua kali
+        $klaim = convStateMutate(function (&$a) use ($num, $lastAt) {
+            if (($a[$num]['last_from'] ?? '') !== 'bot' || (int)($a[$num]['last_at'] ?? 0) !== $lastAt || !empty($a[$num]['closing_sent_at'])) return false;
+            $a[$num]['closing_sent_at'] = time();
+            return true;
+        });
+        if (!$klaim) continue;
+
+        $text = deiAcText($ac, (string)($st['lang'] ?? 'id'));
+        if (escDry()) { escDryLog(['via' => 'closing', 'to' => $num, 'msg' => $text]); $ok = true; }
+        else { $ok = waSend($wa, $num, $text); }
+        $out[] = ['number' => $num, 'ok' => (bool)$ok];
+        if (!$ok) continue;
+
+        if ($keepCtx) { $h = waLoadHistory($num); $h[] = ['role' => 'assistant', 'content' => $text]; waSaveHistory($num, $h); }
+        $logs = readJson(LOG_FILE, []);
+        array_unshift($logs, [
+            'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $text, 'ip' => $num,
+            'channel' => 'whatsapp', 'dir' => 'closing',
+            'utm_source' => 'whatsapp', 'utm_medium' => 'auto_closing', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
+        ]);
+        writeJson(LOG_FILE, array_slice($logs, 0, (int)($s['api']['log_limit'] ?? 500)));
+    }
+    return $out;
+}
+
+/* ---------- SWEEP 2: Eskalasi ---------- */
+function escReasonLabel($r) {
+    $m = ['claimed_unanswered' => 'sudah di-claim agent, belum dibalas',
+          'human_unanswered'   => 'mode manusia (handoff), belum ada agent membalas',
+          'bot_failed'         => 'bot/AI gagal membalas'];
+    return $m[$r] ?? $r;
+}
+function escBuildText($tenant, $menit, $kontak, $pesan, $reason, $L) {
+    $label = ($L === 1) ? 'Supervisor' : 'Manager';
+    return "\xF0\x9F\x9A\xA8 EMERGENCY \xE2\x80\x94 " . $tenant . "\n"
+         . "Tamu menunggu " . $menit . " menit tanpa balasan.\n"
+         . "Kontak: " . $kontak . "\n"
+         . ($pesan !== '' ? "Pesan: \"" . $pesan . "\"\n" : '')
+         . "Sebab: " . escReasonLabel($reason) . "\n"
+         . "Level " . $L . " \xE2\x86\x92 " . $label;
+}
+function escalationSweep($s) {
+    $ec = deiEscConf($s);
+    if (!$ec['enabled'] || !deiInHours($ec['hours'])) return [];
+    $all = readJson(CONV_STATE_FILE, []);
+    if (!is_array($all) || empty($all)) return [];
+    $now = time();
+    $out = [];
+    foreach ($all as $num => $st) {
+        $num = (string)$num;
+        $since = (int)($st['guest_waiting_since'] ?? 0);
+        if ($since <= 0 || !empty($st['esc_acked'])) continue;
+        $wait = $now - $since;
+        if ($wait > 12 * 3600) continue;                            // basi — jangan bangunkan orang untuk ini
+        $lvl = (int)($st['esc_level'] ?? 0);
+        $target = ($wait >= $ec['l2_minutes'] * 60) ? 2 : (($wait >= $ec['l1_minutes'] * 60) ? 1 : 0);
+        if ($target <= $lvl) continue;
+
+        $claim = waClaimGet($num);
+        $reason = $claim ? 'claimed_unanswered' : (waGetMode($num) === 'human' ? 'human_unanswered' : 'bot_failed');
+        $incId = (string)($st['esc_inc'] ?? '');
+        $baru = ($incId === '');
+        if ($baru) $incId = 'inc_' . wibDate('Ymd_His') . '_' . bin2hex(random_bytes(2));
+
+        $ok = convStateMutate(function (&$a) use ($num, $since, $target, $incId) {
+            if ((int)($a[$num]['guest_waiting_since'] ?? 0) !== $since) return false;   // sudah dibalas
+            if (!empty($a[$num]['esc_acked']) || (int)($a[$num]['esc_level'] ?? 0) >= $target) return false;
+            $a[$num]['esc_level'] = $target;
+            $a[$num]['esc_inc'] = $incId;
+            return true;
+        });
+        if (!$ok) continue;
+
+        $menit = (int)floor($wait / 60);
+        $nama = waContactName($num);
+        $kontak = '+' . $num . ($nama ? ' (' . $nama . ')' : '');
+        $pesan = (string)($st['last_guest_text'] ?? '');
+        $tenant = deiTenantName($s);
+        if ($baru) {
+            escMutate(function (&$db) use ($incId, $num, $since, $reason, $pesan) {
+                $db['incidents'][$incId] = ['channel' => 'wa', 'contact' => $num, 'opened_at' => $since,
+                    'reason' => $reason, 'message' => $pesan, 'level' => 0, 'notified' => [],
+                    'ack_by' => '', 'ack_at' => 0, 'resolved_at' => 0, 'resolved_by' => ''];
+            });
+        }
+        $notif = [];
+        $title = 'EMERGENCY - ' . $tenant;
+        $vars = [$tenant, (string)$menit, $kontak, $pesan !== '' ? $pesan : '-'];
+        for ($L = $lvl + 1; $L <= $target; $L++) {
+            $text = escBuildText($tenant, $menit, $kontak, $pesan, $reason, $L);
+            $contacts = ($L === 1) ? $ec['l1'] : $ec['l2'];
+            $notif['L' . $L] = escNotifyContacts($s, $ec, $contacts, $title, $text, $vars, $incId);
+            // naik ke Manager: Supervisor diberi kabar lewat WA (bukan alarm)
+            if ($L === 2 && !empty($ec['l1'])) {
+                $info = "\xE2\x9A\xA0\xEF\xB8\x8F Eskalasi naik ke Manager \xE2\x80\x94 " . $tenant . "\nKontak " . $kontak . " sudah menunggu " . $menit . " menit.";
+                $notif['L2_info_spv'] = escNotifyContacts($s, $ec, $ec['l1'], $title, $info, $vars, $incId, true);
+            }
+            if (!escDry()) tgNotify($s, $text);
+        }
+        escMutate(function (&$db) use ($incId, $target, $notif) {
+            if (!isset($db['incidents'][$incId])) return;
+            $db['incidents'][$incId]['level'] = $target;
+            $db['incidents'][$incId]['notified'][] = ['at' => time(), 'level' => $target, 'result' => $notif];
+        });
+        try { waAuditLog('escalation_L' . $target, 'system', $num, ['incident' => $incId, 'reason' => $reason, 'wait_min' => $menit]); } catch (\Throwable $e) {}
+        $out[] = ['number' => $num, 'incident' => $incId, 'level' => $target, 'reason' => $reason, 'notify' => $notif];
+    }
+    return $out;
+}
+
+/* ============================================================================
  *  ROUTER
  * ========================================================================= */
 
@@ -2272,6 +2790,7 @@ switch ($action) {
                 'whatsapp_number'  => $s['widget']['whatsapp_number'] ?? '',
                 'whatsapp_message' => $s['widget']['whatsapp_message'] ?? '',
                 'lead_form'        => deiLeadFormConfig($s),   // v1.2.53
+                'auto_closing'     => (function ($ac) { return ['enabled' => $ac['enabled'], 'minutes' => $ac['minutes']]; })(deiAcConf($s)),   // v1.2.56
                 'bot' => [
                     'bot_name'      => $s['bot']['bot_name'] ?? 'Assistant',
                     'greeting'      => $s['bot']['greeting'] ?? 'Halo!',
@@ -3027,6 +3546,7 @@ switch ($action) {
                             ]);
                             writeJson(LOG_FILE, array_slice($elogs, 0, $logLimit));
                             waSetMode($eto, 'human'); // agent balas dari HP = ambil alih -> bot mundur
+                            convReply($eto, 'agent');   // v1.2.56
                             if ($keepCtx) { $eh = waLoadHistory($eto); $eh[] = ['role' => 'assistant', 'content' => $etext]; waSaveHistory($eto, $eh); }
                         }
                     } catch (\Throwable $e) { error_log('wa echo: ' . $e->getMessage()); }
@@ -3549,6 +4069,7 @@ switch ($action) {
             jsonOut(['ok' => false, 'error' => $emsg], 502);
         }
         waSetMode($num, 'human'); // replying manually = taking over
+        convReply($num, 'agent');   // v1.2.56
         if ($wa['keep_context'] ?? true) {
             $h = waLoadHistory($num);
             $h[] = ['role' => 'assistant', 'content' => $text];
@@ -3640,6 +4161,7 @@ switch ($action) {
         $u = requireAuth(['super_admin', 'admin']);
         $role = $u['role'];
         $raw = getSettings();
+        deiRememberApiUrl();   // v1.2.56
         $s = $raw;
         // mask the API key
         $s['api']['claude_api_key'] = maskKey($raw['api']['claude_api_key'] ?? '');
@@ -3659,6 +4181,11 @@ switch ($action) {
         if (isset($s['telegram']) && is_array($s['telegram'])) {
             $s['telegram']['bot_token'] = maskKey($raw['telegram']['bot_token'] ?? '');
             $s['telegram']['token_is_set'] = !empty($raw['telegram']['bot_token']);
+        }
+        // v1.2.56: token aplikasi Pushover = rahasia
+        if (isset($s['escalation']) && is_array($s['escalation'])) {
+            $s['escalation']['pushover_app_token'] = maskKey($raw['escalation']['pushover_app_token'] ?? '');
+            $s['escalation']['pushover_token_is_set'] = !empty($raw['escalation']['pushover_app_token']);
         }
         // For admin (non super), also strip verify_token + phone_number_id values to placeholders
         // so the field can't be inspected even though Admin can't edit it.
@@ -3731,6 +4258,11 @@ switch ($action) {
                     $incoming['telegram']['bot_token'] = $current['telegram']['bot_token'] ?? '';
                 }
             }
+            // v1.2.56: token Pushover tersamar/kosong -> pertahankan yang lama
+            if (isset($incoming['escalation']['pushover_app_token'])) {
+                $v = (string)$incoming['escalation']['pushover_app_token'];
+                if (strpos($v, '•') !== false || $v === '') $incoming['escalation']['pushover_app_token'] = $current['escalation']['pushover_app_token'] ?? '';
+            }
             // v1.2.53: dulu array_replace_recursive() -> daftar tidak bisa menyusut
             $merged = deiMergeSettings($current, $incoming);
         } else {
@@ -3760,6 +4292,15 @@ switch ($action) {
             $allowedApi = ['model', 'max_tokens', 'rate_limit', 'kb_max_results', 'log_limit'];
             foreach ($allowedApi as $f) {
                 if (isset($incoming['api'][$f])) $merged['api'][$f] = $incoming['api'][$f];
+            }
+            // v1.2.56: Admin boleh atur Auto-Closing & Eskalasi (token Pushover tetap milik super_admin)
+            if (isset($incoming['auto_closing']) && is_array($incoming['auto_closing'])) {
+                $merged['auto_closing'] = deiMergeSettings($current['auto_closing'] ?? [], $incoming['auto_closing']);
+            }
+            if (isset($incoming['escalation']) && is_array($incoming['escalation'])) {
+                $escIn = $incoming['escalation'];
+                unset($escIn['pushover_app_token']);
+                $merged['escalation'] = deiMergeSettings($current['escalation'] ?? [], $escIn);
             }
             // EXPLICITLY ignore: api.claude_api_key, whatsapp_api.*, telegram.*
         }
@@ -3934,7 +4475,7 @@ switch ($action) {
         foreach (readJson(LOG_FILE, []) as $e) {
             // kegagalan SISTEM bukan lubang pengetahuan — jangan ikut dihitung
             if (!empty($e['cap_reached']) || !empty($e['suspended']) || !empty($e['ai_error'])) continue;
-            if (($e['dir'] ?? '') === 'manual') continue;   // balasan agent, bukan bot
+            if (in_array(($e['dir'] ?? ''), ['manual', 'closing'], true)) continue;   // balasan agent, bukan bot
 
             $q = trim((string)($e['q'] ?? ''));
             $a = mb_strtolower(trim((string)($e['a'] ?? '')));
@@ -4255,7 +4796,7 @@ switch ($action) {
         $daily = [];
 
         foreach ($logs as $l) {
-            if (($l['dir'] ?? '') === 'manual') continue;          // skip admin manual replies
+            if (in_array(($l['dir'] ?? ''), ['manual', 'closing'], true)) continue;          // skip admin manual replies
             $ts = (string)($l['ts'] ?? '');
             $d  = substr($ts, 0, 10);
             if ($from !== '' && $d !== '' && $d < $from) continue;  // date range
@@ -4766,7 +5307,11 @@ switch ($action) {
             'tier'           => $cap['tier'] ?? 'starter',
             'license_status' => $lic['status'] ?? 'active',
             'expires_at'     => $lic['expires_at'] ?? '',
-            'chats_used'     => $cap['used'] ?? $mCalls,
+            'chats_used'     => $mCalls,   // v1.2.57: hitungan langsung (cache cap bisa basi s/d 24 jam)
+            'wa_out'         => (function () { $s0 = getSettings(); $w = waConf($s0); $o = waOutMonth();
+                                    return ['enabled' => !empty($w['enabled']), 'provider' => $w['provider'] ?? 'meta',
+                                            'service' => $o['service'], 'template' => $o['template'],
+                                            'free_quota' => WA_FREE_SERVICE_QUOTA]; })(),
             'chat_cap'       => $cap['cap'] ?? 0,
             'usage_pct'      => $cap['pct'] ?? 0,
             'cap_reached'    => !empty($cap['reached']),
@@ -4884,7 +5429,7 @@ switch ($action) {
         foreach ($logs as $l) {
             if (!is_array($l)) continue;
             // balasan manual agent bukan percakapan bot, jangan dihitung
-            if (($l['dir'] ?? '') === 'manual') continue;
+            if (in_array(($l['dir'] ?? ''), ['manual', 'closing'], true)) continue;
             $d = substr((string)($l['ts'] ?? ''), 0, 10);
             if ($d === '' || $d < $from || $d > $to) continue;
 
@@ -5014,34 +5559,7 @@ switch ($action) {
         $ver = file_exists($vp) ? readJson($vp, []) : [];
         $current = $ver['version'] ?? 'v1.1.0';
 
-        // Gather aggregate stats for report-back
-        $logs = readJson(LOG_FILE, []);
-        $kb = readJson(KB_FILE, []);
-        $today = wibToday();    // v1.1.4: use WIB date for "today"
-        $chats_today = 0; $chats_total = 0; $wa_chats_today = 0; $visitors_today = [];
-        foreach ($logs as $l) {
-            if (($l['dir'] ?? '') === 'manual') continue;
-            $chats_total++;
-            if (strpos((string)($l['ts'] ?? ''), $today) === 0) {
-                $chats_today++;
-                if (($l['channel'] ?? '') === 'whatsapp') $wa_chats_today++;
-                if (!empty($l['ip'])) $visitors_today[$l['ip']] = 1;
-            }
-        }
-
-        // Load today's token usage for cost transparency
-        $usage = readJson(DATA_DIR . '/usage.json', []);
-        $u = $usage[$today] ?? ['calls' => 0, 'input' => 0, 'output' => 0, 'cache_write' => 0, 'cache_read' => 0];
-        // Estimated USD cost for Haiku 4.5: input $1/M, output $5/M, cache write 1.25x, cache read 0.10x
-        $cost_today = round(
-            ($u['input']/1e6 * 1.00) +
-            ($u['output']/1e6 * 5.00) +
-            ($u['cache_write']/1e6 * 1.25) +
-            ($u['cache_read']/1e6 * 0.10),
-        5);
-
-        // v1.1.4: monthly stats (WIB) for cap enforcement
-        $monthStats = computeMonthStats();
+        // v1.2.57: statistik dari deiCollectStats()
 
         $body = [
             'tenant_id'   => $cs['tenant_id'],
@@ -5052,21 +5570,8 @@ switch ($action) {
             // berbohong), berdampingan dengan 'current' dari version.json.
             // Pusat membandingkan keduanya: kalau beda -> update gagal senyap.
             'code_version' => defined('DEI_VERSION') ? DEI_VERSION : '',
-            'stats' => [
-                'chats_today'           => $chats_today,
-                'chats_total'           => $chats_total,
-                'wa_chats_today'        => $wa_chats_today,
-                'kb_entries'            => count($kb),
-                'unique_visitors_today' => count($visitors_today),
-                'tokens_in_today'       => $u['input'],
-                'tokens_out_today'      => $u['output'],
-                'cache_write_today'     => $u['cache_write'],
-                'cache_read_today'      => $u['cache_read'],
-                'cost_today_usd'        => $cost_today,
-                // v1.1.4: monthly (WIB calendar)
-                'chats_this_month'      => $monthStats['chats_this_month'],
-                'cost_this_month_usd'   => $monthStats['cost_this_month_usd'],
-            ],
+            'api_url'      => deiSelfApiUrl(),   // v1.2.56: dipakai pusat untuk cron_tick
+            'stats' => deiCollectStats(),
             'health' => [
                 'claude_key_set' => (($s['api']['provider'] ?? 'anthropic') === 'openrouter') ? !empty($s['api']['openrouter_api_key'] ?? '') : !empty($s['api']['claude_api_key'] ?? ''),
                 'wa_enabled'     => !empty($s['whatsapp_api']['enabled'] ?? false),
@@ -5363,6 +5868,160 @@ switch ($action) {
     /* ============================================================
      *  v1.2.0 WA CLAIM — Endpoints: claim, release, list v2
      * ============================================================ */
+
+    /* ---------- v1.2.56: CRON TICK (dipanggil dei-pusat tiap menit, atau CLI) ---------- */
+    case 'cron_tick': {
+        $s = getSettings();
+        if (PHP_SAPI !== 'cli') {
+            // kredensial sama dengan stats_pull: tenant_id + license_key pusat
+            $cs = $s['central_server'] ?? [];
+            $tidWant = (string)($cs['tenant_id']   ?? '');
+            $licWant = (string)($cs['license_key'] ?? '');
+            if ($tidWant === '' || $licWant === '') jsonOut(['ok' => false, 'error' => 'Server pusat belum dikonfigurasi.'], 403);
+            $tidGot = (string)($_SERVER['HTTP_X_TENANT_ID']   ?? ($_GET['tenant_id']   ?? ''));
+            $licGot = (string)($_SERVER['HTTP_X_LICENSE_KEY'] ?? ($_GET['license_key'] ?? ''));
+            if (!hash_equals($tidWant, strtolower(trim($tidGot))) || !hash_equals($licWant, trim($licGot))) {
+                jsonOut(['ok' => false, 'error' => 'Kredensial pusat tidak cocok.'], 401);
+            }
+        }
+        deiRememberApiUrl();
+        $cronLock = @fopen(DATA_DIR . '/cron.lock', 'c');
+        if ($cronLock && !@flock($cronLock, LOCK_EX | LOCK_NB)) {
+            jsonOut(['ok' => true, 'version' => DEI_VERSION, 'skipped' => 'tick lain masih berjalan']);
+        }
+        @ignore_user_abort(true);
+        @set_time_limit(55);
+        $t0 = microtime(true);
+        $GLOBALS['dei_dry'] = !empty($_GET['dry']);
+        $GLOBALS['esc_dry_log'] = [];
+        $r = ['ok' => true, 'version' => DEI_VERSION, 'dry' => $GLOBALS['dei_dry']];
+        try {
+            list($rel, $appr) = waClaimAutoProcess();
+            $r['claims_released'] = $rel;
+            $r['mode_swept'] = waModeSweepIdle();
+        } catch (\Throwable $e) { $r['err_sweep'] = $e->getMessage(); }
+        try { $r['closed'] = autoClosingSweep($s); }   catch (\Throwable $e) { $r['closed'] = []; $r['err_closing'] = $e->getMessage(); }
+        try { $r['escalated'] = escalationSweep($s); } catch (\Throwable $e) { $r['escalated'] = []; $r['err_escalation'] = $e->getMessage(); }
+        if ($GLOBALS['dei_dry']) $r['dry_log'] = $GLOBALS['esc_dry_log'];
+        try { $r['stats'] = deiCollectStats(); } catch (\Throwable $e) {}   // v1.2.57: pusat menyimpan sbg statistik terbaru
+        $r['ms'] = (int)round((microtime(true) - $t0) * 1000);
+        @file_put_contents(DATA_DIR . '/cron-last.json', json_encode([
+            'at' => time(), 'at_wib' => wibDate('Y-m-d H:i:s'), 'via' => PHP_SAPI === 'cli' ? 'cli' : 'http',
+            'closed' => count($r['closed']), 'escalated' => count($r['escalated']), 'ms' => $r['ms'], 'dry' => $r['dry'],
+        ]));
+        if ($cronLock) { @flock($cronLock, LOCK_UN); @fclose($cronLock); }
+        jsonOut($r);
+        break;
+    }
+
+    /* ---------- v1.2.56: link "Saya tangani" dari notifikasi darurat (publik, token sekali pakai) ---------- */
+    case 'esc_ack': {
+        $tok = preg_replace('/[^a-f0-9]/', '', (string)($_GET['t'] ?? ''));
+        $res = ($tok === '') ? null : escMutate(function (&$db) use ($tok) {
+            $t = $db['tokens'][$tok] ?? null;
+            if (!$t || (int)($t['exp'] ?? 0) < time()) return ['err' => 'Link sudah kedaluwarsa atau tidak valid.'];
+            $inc = $db['incidents'][$t['inc']] ?? null;
+            if (!$inc) return ['err' => 'Insiden tidak ditemukan.'];
+            if (!empty($inc['resolved_at'])) return ['done' => true, 'inc' => $inc, 'name' => $t['name'], 'already' => 'Percakapan ini sudah dibalas (' . ($inc['resolved_by'] ?? '-') . ').'];
+            if (!empty($inc['ack_at'])) return ['done' => true, 'inc' => $inc, 'name' => $t['name'], 'already' => 'Sudah ditangani oleh ' . $inc['ack_by'] . '.'];
+            $db['incidents'][$t['inc']]['ack_by'] = $t['name'];
+            $db['incidents'][$t['inc']]['ack_at'] = time();
+            return ['done' => true, 'inc' => $db['incidents'][$t['inc']], 'name' => $t['name'], 'incId' => $t['inc']];
+        });
+        $ok = is_array($res) && !empty($res['done']);
+        if ($ok && !empty($res['incId'])) {
+            $num = (string)$res['inc']['contact'];
+            // hentikan eskalasi; bot mundur supaya tidak menyela orang yang menangani
+            convStateMutate(function (&$a) use ($num) { if (isset($a[$num])) $a[$num]['esc_acked'] = 1; });
+            try { waSetMode($num, 'human'); } catch (\Throwable $e) {}
+            try { waAuditLog('escalation_ack', $res['name'], $num, ['incident' => $res['incId']]); } catch (\Throwable $e) {}
+        }
+        $dash = deiDashboardUrl();
+        header('Content-Type: text/html; charset=utf-8');
+        $h = function ($x) { return htmlspecialchars((string)$x, ENT_QUOTES, 'UTF-8'); };
+        echo '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Eskalasi</title>'
+           . '<body style="font-family:system-ui,sans-serif;max-width:480px;margin:40px auto;padding:0 16px;color:#1b1b1f">';
+        if (!$ok) {
+            echo '<h2>&#9888;&#65039; Tidak bisa diproses</h2><p>' . $h($res['err'] ?? 'Token tidak valid.') . '</p>';
+        } else {
+            $num = (string)$res['inc']['contact'];
+            echo '<h2>&#9989; ' . (!empty($res['already']) ? $h($res['already']) : 'Ditandai: ' . $h($res['name']) . ' menangani') . '</h2>'
+               . '<p>Kontak: <b>+' . $h($num) . '</b><br>Pesan: &ldquo;' . $h($res['inc']['message'] ?? '') . '&rdquo;</p>'
+               . '<p>Eskalasi dihentikan dan bot berhenti membalas nomor ini. Segera balas tamu lewat dashboard atau WhatsApp.</p>'
+               . '<p><a href="' . $h($dash) . '" style="display:inline-block;background:#140383;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Buka Dashboard</a> '
+               . '<a href="https://wa.me/' . $h($num) . '" style="display:inline-block;background:#25d366;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Chat via WhatsApp</a></p>';
+        }
+        echo '</body>';
+        exit;
+    }
+
+    /* ---------- v1.2.56: kirim alarm uji ke kontak eskalasi ---------- */
+    case 'esc_test': {
+        requireAuth(['super_admin', 'admin']);
+        $s = getSettings();
+        $in = bodyInput();
+        $GLOBALS['dei_dry'] = !empty($in['dry']);
+        $GLOBALS['esc_dry_log'] = [];
+        $ec = deiEscConf($s);
+        $level = (int)($in['level'] ?? 1) === 2 ? 2 : 1;
+        $contacts = $level === 1 ? $ec['l1'] : $ec['l2'];
+        if (empty($contacts)) jsonOut(['ok' => false, 'error' => 'Belum ada kontak di Level ' . $level . '.'], 400);
+        $tenant = deiTenantName($s);
+        $text = "\xF0\x9F\xA7\xAA TES ALARM \xE2\x80\x94 " . $tenant . "\nIni uji notifikasi eskalasi Level " . $level . ". Tidak ada tamu yang menunggu.";
+        $res = escNotifyContacts($s, $ec, $contacts, 'TES ALARM - ' . $tenant, $text, [$tenant, '0', 'TES', 'Uji notifikasi'], '');
+        jsonOut(['ok' => true, 'results' => $res, 'dry_log' => $GLOBALS['esc_dry_log']]);
+        break;
+    }
+
+    /* ---------- v1.2.56: daftar insiden + status cron (dashboard) ---------- */
+    case 'esc_incidents': {
+        requireAuth(['super_admin', 'admin']);
+        $db = readJson(ESC_FILE, []);
+        $list = [];
+        foreach ((array)($db['incidents'] ?? []) as $id => $inc) {
+            $inc['id'] = $id;
+            $inc['contact_name'] = waContactName($inc['contact'] ?? '');
+            $end = (int)($inc['ack_at'] ?: $inc['resolved_at']);
+            $inc['response_sec'] = $end > 0 ? max(0, $end - (int)$inc['opened_at']) : null;
+            $list[] = $inc;
+        }
+        usort($list, function ($a, $b) { return (int)$b['opened_at'] - (int)$a['opened_at']; });
+        $done = array_filter($list, function ($x) { return $x['response_sec'] !== null; });
+        $avg = count($done) ? (int)round(array_sum(array_column($done, 'response_sec')) / count($done)) : null;
+        $sebelumL2 = count(array_filter($list, function ($x) { return (int)$x['level'] < 2; }));
+        jsonOut(['ok' => true, 'incidents' => array_slice($list, 0, 100), 'cron' => readJson(DATA_DIR . '/cron-last.json', null),
+                 'summary' => ['total' => count($list), 'avg_response_sec' => $avg, 'handled_before_l2' => $sebelumL2]]);
+        break;
+    }
+
+    /* ---------- v1.2.56: PUBLIC — closing di widget web (dipicu timer browser) ---------- */
+    case 'web_closing': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonOut(['ok' => false, 'error' => 'Method not allowed'], 405);
+        $s = getSettings();
+        $ac = deiAcConf($s);
+        if (!$ac['enabled'] || !deiInHours($ac['hours'])) jsonOut(['ok' => true, 'skip' => 'off']);
+        $in = bodyInput();
+        $convId = trim((string)($in['conversation_id'] ?? ''));
+        $visitorId = trim((string)($in['visitor_id'] ?? ''));
+        if ($convId === '' || $visitorId === '') jsonOut(['ok' => false, 'error' => 'conversation_id and visitor_id required'], 400);
+        $convs = webConvReadAll();
+        $idx = webConvFind($convs, $convId);
+        if ($idx < 0 || ($convs[$idx]['visitor_id'] ?? '') !== $visitorId) jsonOut(['ok' => false, 'error' => 'Conversation not found'], 404);
+        $msgs = webConvLoadMessages($convId);
+        $last = end($msgs);
+        if (!$last || ($last['role'] ?? '') !== 'assistant' || !empty($last['closing'])) jsonOut(['ok' => true, 'skip' => 'not_due']);
+        $lastTs = strtotime((string)($last['ts'] ?? '')) ?: 0;
+        if ($lastTs > 0 && (time() - $lastTs) < $ac['minutes'] * 60 - 30) jsonOut(['ok' => true, 'skip' => 'too_early']);
+        $lastUser = '';
+        for ($i = count($msgs) - 1; $i >= 0; $i--) { if (($msgs[$i]['role'] ?? '') === 'user') { $lastUser = (string)$msgs[$i]['content']; break; } }
+        if ($lastUser === '' || deiIsClosingPhrase($lastUser)) jsonOut(['ok' => true, 'skip' => 'guest_bye']);
+        $lang = deiDeteksiBahasa($lastUser);
+        $text = deiAcText($ac, $lang === 'en' ? 'en' : 'id');
+        $msgs[] = ['role' => 'assistant', 'content' => $text, 'ts' => date('Y-m-d H:i:s'), 'closing' => true];
+        webConvSaveMessages($convId, $msgs);
+        jsonOut(['ok' => true, 'text' => $text, 'phone' => $ac['phone']]);
+        break;
+    }
 
     case 'wa_claim': {
         $u = requireAuth(['super_admin','admin','wa_agent']);

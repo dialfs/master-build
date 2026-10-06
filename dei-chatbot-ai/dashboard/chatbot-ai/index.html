@@ -433,6 +433,7 @@
       <button data-tab="content"  data-role="super_admin,admin" data-icon="pen-tool"><span class="ic"></span> Balasan &amp; Tampilan</button>
       <button data-tab="test"     data-role="super_admin,admin" data-icon="flask-conical"><span class="ic"></span> Tes Chatbot</button>
       <button data-tab="widget"   data-role="super_admin,admin" data-icon="settings"><span class="ic"></span> Widget &amp; API</button>
+      <button data-tab="eskalasi" data-role="super_admin,admin" data-icon="bell"><span class="ic"></span> Respon &amp; Eskalasi</button>
       <button data-tab="users"    data-role="super_admin,admin" data-icon="users"><span class="ic"></span> Pengguna</button>
       <button data-tab="profile"  data-role="super_admin,admin,wa_agent" data-icon="user"><span class="ic"></span> Profil Saya</button>
       <button data-tab="install"  data-role="super_admin,admin" data-icon="rocket"><span class="ic"></span> Pemasangan (GTM)</button>
@@ -463,7 +464,7 @@
             <div id="ucStatus" class="uc-pill">…</div>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px" id="ucStats">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px" id="ucStats">
           <div style="background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:12px">
             <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Chat Terpakai</div>
             <div style="font-size:22px;font-weight:700;color:var(--brand);margin-top:4px" id="ucUsedRaw">–</div>
@@ -476,6 +477,15 @@
             <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Reset dalam</div>
             <div style="font-size:22px;font-weight:700;color:var(--brand);margin-top:4px" id="ucDaysLeft">– hari</div>
             <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Cap reset tanggal 1 setiap bulan (WIB)</div>
+          </div>
+          <!-- v1.2.57: pesan WA keluar vs kuota gratis Meta -->
+          <div style="background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:12px;display:none" id="ucWaBox">
+            <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px" title="Sejak 1 Okt 2026 Meta memberi 1.000 service message gratis per nomor per bulan. Pesan template selalu berbayar.">Pesan WA Keluar (Meta)</div>
+            <div style="font-size:22px;font-weight:700;color:var(--brand);margin-top:4px" id="ucWaUsed">–</div>
+            <div style="height:8px;background:#eef0fb;border-radius:4px;overflow:hidden;margin-top:8px">
+              <div id="ucWaBar" style="height:100%;background:#16a34a;width:0%;transition:width .4s"></div>
+            </div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:6px" id="ucWaNote">–</div>
           </div>
         </div>
         <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Aktivitas 30 hari terakhir (chat per hari)</div>
@@ -1138,6 +1148,61 @@
     </section>
 
     <!-- INSTALL -->
+    <!-- v1.2.56: RESPON & ESKALASI -->
+    <section class="panel" id="panel-eskalasi">
+      <div class="ph"><h2>Respon &amp; Eskalasi</h2><p>Pesan penutup otomatis ke tamu yang diam, dan alarm darurat ke Supervisor/Manager saat tamu menunggu tanpa balasan.</p></div>
+
+      <div class="card"><h3>Status Pemicu (Cron)</h3>
+        <div class="desc">Kedua fitur di bawah butuh pemicu tiap menit dari Server Pusat. Tanpa itu, sistem tidak "bangun" saat tamu/bot diam.</div>
+        <div class="help" id="escCronStatus">Memuat…</div>
+      </div>
+
+      <div class="card"><h3>Auto-Closing (pesan penutup)</h3>
+        <div class="desc">Jika balasan terakhir dari <b>bot</b> dan tamu tidak merespons selama N menit, bot mengirim pesan penutup sekali. Berlaku untuk WhatsApp &amp; widget web. Tidak dikirim bila percakapan sedang dipegang agent, atau tamu sudah pamit ("ok makasih").</div>
+        <div class="toggle-row"><div><div class="tt">Aktifkan Auto-Closing</div></div><label class="switch"><input type="checkbox" id="ac_enabled"><span class="sl"></span></label></div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Jeda (menit)</label><input type="number" id="ac_minutes" min="1" max="120" value="10"></div>
+          <div class="row"><label class="fl">Telepon Call Center</label><input type="text" id="ac_phone" placeholder="mis. (021) 555-0101"><div class="help">Mengganti <code>{telepon}</code> di teks.</div></div>
+        </div>
+        <div class="row"><label class="fl">Teks Bahasa Indonesia</label><textarea id="ac_text_id" rows="3"></textarea></div>
+        <div class="row"><label class="fl">Teks Bahasa Inggris</label><textarea id="ac_text_en" rows="3"></textarea><div class="help">Dipilih otomatis sesuai bahasa percakapan. Kosongkan untuk teks bawaan.</div></div>
+        <div class="row"><label class="fl">Jam berlaku (WIB, opsional)</label><input type="text" id="ac_hours" placeholder="kosong = 24 jam, mis. 08:00-22:00"></div>
+      </div>
+
+      <div class="card"><h3>Eskalasi Darurat (Emergency Call)</h3>
+        <div class="desc">Jika pesan <b>tamu</b> di WhatsApp belum dibalas siapa pun (bot gagal, atau handoff ke manusia tapi tidak ada agent membalas), alarm dikirim bertingkat. Berhenti otomatis saat ada balasan, atau saat penerima menekan link <b>"Saya tangani"</b>.</div>
+        <div class="toggle-row"><div><div class="tt">Aktifkan Eskalasi</div></div><label class="switch"><input type="checkbox" id="esc_enabled"><span class="sl"></span></label></div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Level 1 — Supervisor setelah (menit)</label><input type="number" id="esc_l1_minutes" min="1" max="120" value="5"></div>
+          <div class="row"><label class="fl">Level 2 — Manager setelah (menit)</label><input type="number" id="esc_l2_minutes" min="2" max="240" value="10"></div>
+        </div>
+        <div class="row"><label class="fl">Kontak Level 1 (Supervisor)</label><div id="esc_l1_list" style="flex:1"></div><button class="btn ghost" type="button" data-esc-add="l1">+ Tambah kontak</button></div>
+        <div class="row"><label class="fl">Kontak Level 2 (Manager)</label><div id="esc_l2_list" style="flex:1"></div><button class="btn ghost" type="button" data-esc-add="l2">+ Tambah kontak</button></div>
+        <div class="help">Per kontak isi minimal satu: <b>No. WA</b>, <b>Pushover user key</b> (alarm berbunyi berulang sampai di-acknowledge, menembus mode senyap), atau <b>topik ntfy</b> (gratis, prioritas urgent).</div>
+        <div class="row"><label class="fl">Jam berlaku (WIB, opsional)</label><input type="text" id="esc_hours" placeholder="kosong = 24 jam"></div>
+        <div class="grid2">
+          <div class="row" data-role-card="super_admin"><label class="fl">Pushover App Token</label><input type="text" id="esc_po_token" class="mono" placeholder="dari pushover.net › Create Application"></div>
+          <div class="row"><label class="fl">Server ntfy</label><input type="text" id="esc_ntfy_server" class="mono" placeholder="https://ntfy.sh"></div>
+        </div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Template WA (khusus Cloud API)</label><input type="text" id="esc_wa_tpl" class="mono" placeholder="mis. dei_escalation_alert"><div class="help">Wajib untuk Cloud API (pesan di luar jendela 24 jam). 5 variabel: {{1}} tenant, {{2}} menit, {{3}} kontak, {{4}} pesan, {{5}} link. Kosong = teks bebas (Fonnte).</div></div>
+          <div class="row"><label class="fl">Bahasa template</label><input type="text" id="esc_wa_tpl_lang" class="mono" placeholder="id"></div>
+        </div>
+        <div class="row" style="gap:8px;flex-direction:row;flex-wrap:wrap">
+          <button class="btn ghost" type="button" id="btnEscTest1">Kirim tes alarm Level 1</button>
+          <button class="btn ghost" type="button" id="btnEscTest2">Kirim tes alarm Level 2</button>
+        </div>
+        <div class="help" id="escTestResult"></div>
+      </div>
+
+      <button class="btn" id="btnSaveEsc"><span data-ico="save" data-ico-size="15"></span> Simpan</button>
+
+      <div class="card" style="margin-top:18px"><h3>Riwayat Insiden</h3>
+        <div class="help" id="escSummary">–</div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Waktu</th><th>Kontak</th><th>Sebab</th><th>Level</th><th>Ditangani</th><th style="text-align:right">Respons</th></tr></thead><tbody id="tblEsc"></tbody></table></div>
+      </div>
+    </section>
+
     <section class="panel" id="panel-install">
       <div class="ph"><h2>Pemasangan via Google Tag Manager</h2><p>Pasang widget di website mana pun tanpa mengubah kode HTML.</p></div>
       <div class="card">

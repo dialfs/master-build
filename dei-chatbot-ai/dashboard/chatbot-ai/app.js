@@ -2959,6 +2959,28 @@
       // Days left
       document.getElementById('ucDaysLeft').textContent = (res.days_left_month || 0) + ' hari';
 
+      // v1.2.57: pesan WA keluar (Cloud API Meta) vs 1.000 service message gratis
+      var wo = res.wa_out || null, waBox = document.getElementById('ucWaBox');
+      if (waBox) {
+        if (wo && wo.enabled && wo.provider !== 'fonnte') {
+          var q = wo.free_quota || 1000, sv = wo.service || 0, tp = wo.template || 0;
+          var paid = Math.max(0, sv - q);
+          var wPct = Math.round(sv / q * 100);
+          waBox.style.display = '';
+          document.getElementById('ucWaUsed').textContent = sv + ' / ' + q;
+          var wb = document.getElementById('ucWaBar');
+          wb.style.width = Math.min(wPct, 100) + '%';
+          wb.style.background = wPct >= 100 ? '#c4302b' : (wPct >= 80 ? '#d97706' : '#16a34a');
+          var note = paid > 0 ? (paid + ' service berbayar') : ('Gratis, sisa ' + (q - sv));
+          if (tp > 0) note += ' · ' + tp + ' template (berbayar)';
+          var nEl = document.getElementById('ucWaNote');
+          nEl.textContent = note;
+          nEl.style.color = paid > 0 ? '#c4302b' : (wPct >= 80 ? '#d97706' : 'var(--muted)');
+        } else {
+          waBox.style.display = 'none';
+        }
+      }
+
       // Chart 30 hari — inline SVG bar chart
       drawDailyChart(res.daily_30d || [], res.today_wib);
     }).catch(function () { card.style.display = 'none'; });
@@ -3429,7 +3451,156 @@
       }
     });
   }
+  /* ====================================================================== *
+   *  v1.2.56: RESPON & ESKALASI
+   * ====================================================================== */
+  var escContacts = { l1: [], l2: [] };
+  function escRenderList(lv) {
+    var box = $('#esc_' + lv + '_list');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!escContacts[lv].length) box.innerHTML = '<div class="help">Belum ada kontak.</div>';
+    escContacts[lv].forEach(function (c, i) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr auto;gap:6px;margin-bottom:6px';
+      row.innerHTML =
+        '<input placeholder="Nama" data-f="name" value="' + esc(c.name || '') + '">' +
+        '<input placeholder="No. WA 0812…" data-f="wa" value="' + esc(c.wa || '') + '">' +
+        '<input placeholder="Pushover user key" class="mono" data-f="pushover" value="' + esc(c.pushover || '') + '">' +
+        '<input placeholder="Topik ntfy" class="mono" data-f="ntfy" value="' + esc(c.ntfy || '') + '">' +
+        '<button class="btn ghost" type="button" title="Hapus">&times;</button>';
+      row.querySelectorAll('input').forEach(function (inp) {
+        inp.oninput = function () { escContacts[lv][i][inp.dataset.f] = inp.value; };
+      });
+      row.querySelector('button').onclick = function () { escContacts[lv].splice(i, 1); escRenderList(lv); };
+      box.appendChild(row);
+    });
+  }
+  function escFmtDur(sec) {
+    if (sec == null) return '–';
+    if (sec < 60) return sec + ' dtk';
+    var m = Math.floor(sec / 60), d = sec % 60;
+    return m + ' mnt' + (d ? ' ' + d + ' dtk' : '');
+  }
+  function escFmtTs(ts) {
+    if (!ts) return '–';
+    var d = new Date(ts * 1000);
+    return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+  function loadEskalasi() {
+    api('get_settings').then(function (res) {
+      if (!res.ok) return;
+      var ac = res.settings.auto_closing || {}, ec = res.settings.escalation || {};
+      $('#ac_enabled').checked = ac.enabled === true;
+      $('#ac_minutes').value = ac.minutes || 10;
+      $('#ac_phone').value = ac.phone || '';
+      $('#ac_text_id').value = ac.text_id || '';
+      $('#ac_text_id').placeholder = 'Apakah ada lagi yang bisa kami bantu? Jika ada, silakan sampaikan di sini, atau hubungi Call Center kami di {telepon} untuk respon lebih cepat. Terima kasih 🙏';
+      $('#ac_text_en').value = ac.text_en || '';
+      $('#ac_text_en').placeholder = 'Is there anything else we can help you with? Feel free to reply here, or call our Call Center at {telepon} for a faster response. Thank you 🙏';
+      $('#ac_hours').value = ac.hours || '';
+      $('#esc_enabled').checked = ec.enabled === true;
+      $('#esc_l1_minutes').value = ec.l1_minutes || 5;
+      $('#esc_l2_minutes').value = ec.l2_minutes || 10;
+      $('#esc_hours').value = ec.hours || '';
+      $('#esc_po_token').value = '';
+      $('#esc_po_token').placeholder = ec.pushover_token_is_set ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'dari pushover.net › Create Application';
+      $('#esc_ntfy_server').value = ec.ntfy_server || '';
+      $('#esc_wa_tpl').value = ec.wa_template || '';
+      $('#esc_wa_tpl_lang').value = ec.wa_template_lang || '';
+      escContacts.l1 = (ec.l1_contacts || []).map(function (c) { return Object.assign({}, c); });
+      escContacts.l2 = (ec.l2_contacts || []).map(function (c) { return Object.assign({}, c); });
+      escRenderList('l1'); escRenderList('l2');
+    });
+    loadEscIncidents();
+    $$('[data-esc-add]').forEach(function (b) {
+      b.onclick = function () { escContacts[b.dataset.escAdd].push({ name: '', wa: '', pushover: '', ntfy: '' }); escRenderList(b.dataset.escAdd); };
+    });
+    $('#btnSaveEsc').onclick = saveEskalasi;
+    $('#btnEscTest1').onclick = function () { escTest(1); };
+    $('#btnEscTest2').onclick = function () { escTest(2); };
+  }
+  function escCleanList(list) {
+    return list.map(function (c) {
+      return { name: (c.name || '').trim(), wa: (c.wa || '').trim(), pushover: (c.pushover || '').trim(), ntfy: (c.ntfy || '').trim() };
+    }).filter(function (c) { return c.wa || c.pushover || c.ntfy; });
+  }
+  function saveEskalasi() {
+    var l1m = +$('#esc_l1_minutes').value || 5, l2m = +$('#esc_l2_minutes').value || 10;
+    if (l2m <= l1m) { toast('Menit Level 2 harus lebih besar dari Level 1.', true); return; }
+    var esc_ = {
+      enabled: $('#esc_enabled').checked,
+      l1_minutes: l1m, l2_minutes: l2m,
+      hours: $('#esc_hours').value.trim(),
+      ntfy_server: $('#esc_ntfy_server').value.trim(),
+      wa_template: $('#esc_wa_tpl').value.trim(),
+      wa_template_lang: $('#esc_wa_tpl_lang').value.trim(),
+      l1_contacts: escCleanList(escContacts.l1),
+      l2_contacts: escCleanList(escContacts.l2)
+    };
+    var po = $('#esc_po_token').value.trim();
+    if (po && po.indexOf('•') === -1) esc_.pushover_app_token = po;
+    if (esc_.enabled && !esc_.l1_contacts.length && !esc_.l2_contacts.length) { toast('Isi minimal satu kontak eskalasi.', true); return; }
+    var body = { settings: {
+      auto_closing: {
+        enabled: $('#ac_enabled').checked,
+        minutes: Math.max(1, +$('#ac_minutes').value || 10),
+        phone: $('#ac_phone').value.trim(),
+        text_id: $('#ac_text_id').value.trim(),
+        text_en: $('#ac_text_en').value.trim(),
+        hours: $('#ac_hours').value.trim()
+      },
+      escalation: esc_
+    } };
+    api('save_settings', { method: 'POST', body: body }).then(function (res) {
+      if (res.ok) { toast('Pengaturan Respon & Eskalasi tersimpan.'); loadEskalasi(); }
+      else toast(res.error || 'Gagal menyimpan.', true);
+    });
+  }
+  function escTest(level) {
+    var out = $('#escTestResult');
+    out.textContent = 'Mengirim tes Level ' + level + '… (simpan dulu bila baru mengubah kontak)';
+    api('esc_test', { method: 'POST', body: { level: level } }).then(function (res) {
+      if (!res.ok) { out.textContent = res.error || 'Gagal.'; return; }
+      out.innerHTML = (res.results || []).map(function (r) {
+        if (r.suppressed) return esc(r.name) + ': ditahan (rate limit)';
+        var parts = [];
+        ['wa', 'pushover', 'ntfy'].forEach(function (k) {
+          if (r[k]) parts.push(k + ' ' + (r[k].ok ? '✅' : '❌ ' + esc(r[k].error || '')));
+        });
+        return '<b>' + esc(r.name) + '</b>: ' + (parts.join(' · ') || 'tidak ada saluran');
+      }).join('<br>');
+    });
+  }
+  function loadEscIncidents() {
+    api('esc_incidents').then(function (res) {
+      if (!res.ok) return;
+      var c = res.cron;
+      var st = $('#escCronStatus');
+      if (!c) {
+        st.innerHTML = '❌ Belum pernah ada tick. Pastikan Server Pusat memanggil <code>cron_tick</code> tiap menit (atau pasang cron cPanel: <code>php api/index.php action=cron_tick</code>).';
+      } else {
+        var age = Math.floor(Date.now() / 1000) - c.at;
+        st.innerHTML = (age < 180 ? '✅ Aktif' : '⚠️ Tick terakhir ' + escFmtDur(age) + ' lalu') + ' · terakhir ' + esc(c.at_wib) + ' via ' + esc(c.via) + ' · ' + c.ms + ' ms';
+      }
+      var s = res.summary || {};
+      $('#escSummary').textContent = 'Total insiden (90 hari): ' + (s.total || 0) +
+        ' · rata-rata waktu respons: ' + escFmtDur(s.avg_response_sec) +
+        ' · selesai sebelum Level 2: ' + (s.handled_before_l2 || 0);
+      var reason = { claimed_unanswered: 'Di-claim, belum dibalas', human_unanswered: 'Handoff, belum dibalas', bot_failed: 'Bot gagal' };
+      var tb = $('#tblEsc');
+      var rows = res.incidents || [];
+      tb.innerHTML = rows.length ? rows.map(function (i) {
+        var by = i.ack_by ? ('✋ ' + esc(i.ack_by)) : (i.resolved_by ? ('↩️ ' + esc(i.resolved_by)) : '<span style="color:#c0392b">belum</span>');
+        return '<tr><td>' + escFmtTs(i.opened_at) + '</td><td>+' + esc(i.contact) + (i.contact_name ? '<br><span class="help">' + esc(i.contact_name) + '</span>' : '') +
+          '</td><td>' + esc(reason[i.reason] || i.reason) + '</td><td>L' + (i.level || 0) + '</td><td>' + by +
+          '</td><td style="text-align:right">' + escFmtDur(i.response_sec) + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="help">Belum ada insiden.</td></tr>';
+    });
+  }
+
   var loaders = {
+    eskalasi: loadEskalasi,   // v1.2.56
     reports: function () { initReportsControls(); loadUsageCard(); loadReports(); },
     wachat: loadWachat,
     webchat: loadWebchat,
