@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.60');
+define('DEI_VERSION', 'v1.2.61');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -5446,14 +5446,19 @@ switch ($action) {
 
         // === v1.2.6: admin restriction — cuma boleh manage wa_agent ===
         // v1.2.58: supervisor diperlakukan sama (kelola akun agent saja)
+        // v1.2.61: Admin boleh kelola WA Agent + Supervisor; Supervisor hanya WA Agent
         if ($me['role'] === 'admin' || $me['role'] === 'supervisor') {
-            if ($role !== 'wa_agent') {
-                jsonOut(['ok' => false, 'error' => ($me['role'] === 'supervisor' ? 'Supervisor' : 'Admin') . ' hanya dapat mengelola user dengan peran WA Agent.'], 403);
+            $bolehPeran = ($me['role'] === 'admin') ? ['wa_agent', 'supervisor'] : ['wa_agent'];
+            if (!in_array($role, $bolehPeran, true)) {
+                jsonOut(['ok' => false, 'error' => ($me['role'] === 'supervisor'
+                    ? 'Supervisor hanya dapat mengelola user dengan peran WA Agent.'
+                    : 'Admin hanya dapat mengelola user dengan peran WA Agent atau Supervisor.')], 403);
             }
+            if ($username === $me['username']) jsonOut(['ok' => false, 'error' => 'Akun Anda sendiri tidak bisa diubah di sini — gunakan menu Profil Saya.'], 403);
             $chkUsers = readJson(USERS_FILE, []);
             foreach ($chkUsers as $chkU) {
-                if (($chkU['username'] ?? '') === $username && ($chkU['role'] ?? '') !== 'wa_agent') {
-                    jsonOut(['ok' => false, 'error' => 'Admin tidak dapat mengubah user dengan peran lebih tinggi.'], 403);
+                if (($chkU['username'] ?? '') === $username && !in_array(($chkU['role'] ?? ''), $bolehPeran, true)) {
+                    jsonOut(['ok' => false, 'error' => 'Username "' . $username . '" sudah dipakai akun dengan peran lebih tinggi.'], 403);
                 }
             }
         }
@@ -5541,8 +5546,11 @@ switch ($action) {
             foreach ($delUsers as $du) {
                 if (($du['username'] ?? '') === $username) { $delTargetRole = $du['role'] ?? ''; break; }
             }
-            if ($delTargetRole !== 'wa_agent') {
-                jsonOut(['ok' => false, 'error' => 'Admin hanya dapat menghapus user dengan peran WA Agent.'], 403);
+            $bolehHapus = ($me['role'] === 'admin') ? ['wa_agent', 'supervisor'] : ['wa_agent'];   // v1.2.61
+            if (!in_array($delTargetRole, $bolehHapus, true)) {
+                jsonOut(['ok' => false, 'error' => ($me['role'] === 'admin'
+                    ? 'Admin hanya dapat menghapus user dengan peran WA Agent atau Supervisor.'
+                    : 'Supervisor hanya dapat menghapus user dengan peran WA Agent.')], 403);
             }
         }
         // === /v1.2.6 ===

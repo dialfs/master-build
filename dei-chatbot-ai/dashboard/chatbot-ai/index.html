@@ -1195,7 +1195,7 @@
 
     <!-- USERS -->
     <section class="panel" id="panel-users">
-      <div class="ph"><h2>Pengguna</h2><p id="usersIntro">Kelola akun. <strong>Super Admin</strong>: akses penuh &amp; kelola semua pengguna. <strong>Admin</strong>: kelola konten, laporan, &amp; akun WA Agent. <strong>Supervisor</strong>: kelola agent timnya. <strong>WA Agent</strong>: balas chat WhatsApp.</p></div>
+      <div class="ph"><h2>Pengguna</h2><p id="usersIntro">Kelola akun. <strong>Super Admin</strong>: akses penuh &amp; kelola semua pengguna. <strong>Admin</strong>: kelola konten, laporan, serta akun WA Agent &amp; Supervisor. <strong>Supervisor</strong>: kelola agent timnya. <strong>WA Agent</strong>: balas chat WhatsApp.</p></div>
       <div class="card">
         <h3 id="userFormTitle">Tambah Pengguna</h3>
         <div id="userSeatWarn" class="help" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:10px 12px;margin:0 0 12px"></div>
@@ -1213,6 +1213,7 @@
             <option value="supervisor">Supervisor (SPV) — lihat chat timnya, assign ke agent, laporan tim, kelola agent</option>
             <option value="wa_agent">WA Agent — hanya balas chat WhatsApp</option>
           </select></div>
+          <div class="help" id="u_role_note" style="display:none;grid-column:1/-1;margin-top:-6px"></div>
           <div class="row" id="u_spv_row" style="display:none"><label class="fl">Supervisor</label><select id="u_supervisor"><option value="">— Tanpa supervisor (terlihat semua SPV) —</option></select></div>
           <div class="row"><label class="fl">Kategori Notif</label>
             <div id="u_categories" style="flex:1;display:flex;flex-wrap:wrap;gap:10px">
@@ -1337,6 +1338,6 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.60"></script>
+<script src="app.js?v=1.2.61"></script>
 </body>
 </html>

@@ -1649,10 +1649,19 @@
   function applyRoleDropdownRestriction() {
     var sel = document.getElementById('u_role');
     if (!sel) return;
-    if (user.role === 'admin' || user.role === 'supervisor') {   // v1.2.58
+    var note = document.getElementById('u_role_note');
+    if (user.role === 'admin') {   // v1.2.61: Admin boleh buat WA Agent & Supervisor
+      var cur = sel.value;
+      sel.innerHTML = '<option value="wa_agent">WA Agent — hanya balas chat WhatsApp</option>' +
+        '<option value="supervisor">Supervisor (SPV) — lihat chat timnya, assign ke agent, laporan tim, kelola agent</option>';
+      sel.value = (cur === 'supervisor') ? 'supervisor' : 'wa_agent';
+      sel.disabled = false;
+      if (note) { note.textContent = 'Admin dapat menambah WA Agent dan Supervisor. Admin & Super Admin hanya bisa dibuat oleh Super Admin.'; note.style.display = ''; }
+    } else if (user.role === 'supervisor') {   // v1.2.58
       sel.innerHTML = '<option value="wa_agent">WA Agent — hanya balas chat WhatsApp</option>';
       sel.value = 'wa_agent';
       sel.disabled = true;
+      if (note) { note.textContent = 'Supervisor hanya dapat menambah WA Agent (otomatis masuk tim Anda).'; note.style.display = ''; }
     }
   }
   function renderUsers() {
@@ -1675,7 +1684,8 @@
             (u.seat_locked ? ' <span class="tag" style="background:#fee2e2;color:#b91c1c" title="Di luar batas kursi paket — tidak bisa login">' + ico('ban',12) + ' terkunci</span>' : '') + '</td>' +
           '<td>' + (u.role === 'wa_agent' ? (u.supervisor ? esc(nmBy[u.supervisor] || u.supervisor) : '<span class="help" style="font-size:11px">—</span>') : '') + '</td>' +
           '<td style="text-align:right;white-space:nowrap">' +
-            ((user.role === 'super_admin' || ((user.role === 'admin' || user.role === 'supervisor') && u.role === 'wa_agent'))
+            ((user.role === 'super_admin' || ((user.role === 'admin' || user.role === 'supervisor') && u.role === 'wa_agent') ||
+              (user.role === 'admin' && u.role === 'supervisor'))   // v1.2.61
               ? ('<button class="btn ghost sm u-edit" data-u="' + esc(u.username) + '" data-n="' + esc(u.name) + '" data-r="' + esc(u.role) + '" data-s="' + esc(u.supervisor || '') + '" data-cats="' + esc(JSON.stringify(u.categories || [])) + '">Edit</button> ' +
                  (u.username === user.username ? '' : '<button class="btn danger sm u-del" data-u="' + esc(u.username) + '">Hapus</button>'))
               : '<span class="help" style="font-size:11px">read-only</span>') +
