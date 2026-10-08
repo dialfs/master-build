@@ -128,7 +128,7 @@
   var toastT;
   function toast(msg, isErr) {
     var t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (isErr ? ' err' : '');
-    clearTimeout(toastT); toastT = setTimeout(function () { t.className = 'toast'; }, 2600);
+    clearTimeout(toastT); toastT = setTimeout(function () { t.className = 'toast'; }, isErr ? 5500 : 2600);   // v1.2.60: error lebih lama terbaca
   }
 
   /* ---- role + nav ------------------------------------------------------ */
@@ -1540,7 +1540,8 @@
     var conf = $('#profileConfirmPw').value;
     if (!cur || !newPw || !conf) { toast('Semua field wajib diisi.', true); return; }
     if (newPw !== conf) { toast('Konfirmasi password tidak cocok.', true); return; }
-    if (newPw.length < 8) { toast('Password baru minimal 8 karakter.', true); return; }
+    var pwBad2 = pwProblem(newPw);   // v1.2.60: aturan lengkap, sama dengan server
+    if (pwBad2) { toast(pwBad2, true); return; }
     if (newPw === cur) { toast('Password baru tidak boleh sama dengan yang lama.', true); return; }
     var btn = $('#btnChangePassword');
     btn.disabled = true;
@@ -1564,12 +1565,65 @@
     });
   }
 
+  // v1.2.60: aturan password sama dengan server (checkPasswordStrength)
+  var PW_RULE_MSG = 'Password minimal 8 karakter, harus mengandung huruf besar, huruf kecil, dan angka.';
+  function pwProblem(pw) {
+    var miss = [];
+    if (pw.length < 8) miss.push('minimal 8 karakter');
+    if (!/[A-Z]/.test(pw)) miss.push('huruf besar');
+    if (!/[a-z]/.test(pw)) miss.push('huruf kecil');
+    if (!/[0-9]/.test(pw)) miss.push('angka');
+    return miss.length ? ('Password harus minimal 8 karakter, ada huruf besar, huruf kecil, dan angka (kurang: ' + miss.join(', ') + ').') : '';
+  }
+  function pwLiveHint() {
+    var el = document.getElementById('u_pw_rule'), pw = $('#u_password').value;
+    if (!el) return;
+    var bad = pw ? pwProblem(pw) : '';
+    el.textContent = bad || PW_RULE_MSG;
+    el.style.color = bad ? '#b91c1c' : (pw ? '#15803d' : '');
+  }
+  // v1.2.60: peringatan kursi penuh langsung di form (sebelum klik Simpan)
+  var lastSeats = null, editingUser = null;
+  function seatFull(role) {
+    var se = lastSeats; if (!se) return '';
+    if (editingUser && editingUser.role === role) return '';   // edit akun yang sudah di peran itu tetap boleh
+    var max = role === 'wa_agent' ? se.max_agents : (role === 'supervisor' ? se.max_supervisors : 0);
+    var used = role === 'wa_agent' ? se.used_agents : (role === 'supervisor' ? se.used_supervisors : 0);
+    if (!(max > 0) || used < max) return '';
+    var lbl = role === 'wa_agent' ? 'WA Agent' : 'Supervisor';
+    return ico('ban', 14) + ' <b>Kursi ' + lbl + ' penuh (' + used + '/' + max + ').</b> ' +
+      (user.role === 'super_admin'
+        ? 'Hapus akun ' + lbl + ' yang tidak dipakai, atau minta DEI menambah kursi paket.'
+        : 'Hapus akun ' + lbl + ' yang tidak dipakai, atau minta Super Admin/DEI menambah kursi paket.') +
+      (se.source === 'pusat' ? '' : ' <a href="#" class="seat-sync">Sinkron ulang dari pusat</a>');
+  }
+  function updateSeatWarn() {
+    var box = document.getElementById('userSeatWarn'), btn = $('#btnSaveUser');
+    if (!box) return;
+    var msg = seatFull($('#u_role').value);
+    box.innerHTML = msg; box.style.display = msg ? '' : 'none';
+    if (btn) { btn.disabled = !!msg; btn.title = msg ? 'Kursi paket penuh' : ''; }
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('.seat-sync');
+    if (a) { e.preventDefault(); syncSeats(); }
+  });
+  function syncSeats() {
+    toast('Menyinkronkan kursi dari server pusat...');
+    api('refresh_seats', { method: 'POST', body: {} }).then(function (r) {
+      if (!r.ok) { toast(r.error || 'Gagal sinkron.', true); return; }
+      if (r.note) toast(r.note, true); else toast('Kursi tersinkron dari server pusat.');
+      renderUsers();
+    });
+  }
+
   function loadUsers() {
     ensureCategories(function () { renderUserCategories([]); renderUsers(); });  // v1.2.13
     applyRoleDropdownRestriction();
     $('#btnSaveUser').onclick = saveUser;
     $('#btnResetUser').onclick = resetUserForm;
-    if ($('#u_role')) $('#u_role').onchange = toggleSpvRow;   // v1.2.59
+    if ($('#u_role')) $('#u_role').onchange = function () { toggleSpvRow(); updateSeatWarn(); };   // v1.2.59 / v1.2.60
+    if ($('#u_password')) $('#u_password').oninput = pwLiveHint;   // v1.2.60
     toggleSpvRow();
   }
   // v1.2.59: supervisor atasan WA Agent — dipilih Super Admin/Admin; akun yang
@@ -1609,6 +1663,7 @@
       if ($('#usersSeats')) {
         $('#usersSeats').innerHTML = se ? seatText(se) : '';
       }
+      lastSeats = se; updateSeatWarn();   // v1.2.60
       fillSpvOptions(res.users);   // v1.2.59
       var nmBy = {};
       res.users.forEach(function (x) { nmBy[x.username] = x.name || x.username; });
@@ -1628,10 +1683,11 @@
       }).join('');
       $$('.u-edit').forEach(function (b) { b.onclick = function () {
         $('#userFormTitle').textContent = 'Edit Pengguna';
-        $('#u_username').value = b.dataset.u; $('#u_username').readOnly = true;
+        $('#u_username').value = b.dataset.u; $('#u_username').readOnly = true; $('#u_username').dataset.edit = '1';
+        editingUser = { username: b.dataset.u, role: b.dataset.r };   // v1.2.60
         $('#u_name').value = b.dataset.n; $('#u_role').value = b.dataset.r; $('#u_password').value = '';
         if ($('#u_supervisor')) $('#u_supervisor').value = b.dataset.s || '';   // v1.2.59
-        toggleSpvRow();
+        toggleSpvRow(); updateSeatWarn(); pwLiveHint();
         // v1.2.12: populate kategori checkbox
         var editCats = [];
         try { editCats = JSON.parse(b.dataset.cats || '[]'); } catch (e) { editCats = []; }
@@ -1648,13 +1704,14 @@
   }
   function resetUserForm() {
     $('#userFormTitle').textContent = 'Tambah Pengguna';
-    $('#u_username').value = ''; $('#u_username').readOnly = false;
+    $('#u_username').value = ''; $('#u_username').readOnly = false; delete $('#u_username').dataset.edit;
+    editingUser = null;   // v1.2.60
     $('#u_name').value = ''; $('#u_password').value = '';
     $('#u_role').value = (user.role === 'admin' || user.role === 'supervisor') ? 'wa_agent' : 'admin';
     renderUserCategories([]);  // v1.2.13: rebuild kosong
     applyRoleDropdownRestriction();
     if ($('#u_supervisor')) $('#u_supervisor').value = '';   // v1.2.59
-    toggleSpvRow();
+    toggleSpvRow(); updateSeatWarn(); pwLiveHint();
   }
   function saveUser() {
     var body = {
@@ -1665,6 +1722,13 @@
       categories: Array.prototype.slice.call(document.querySelectorAll('.u_cat:checked')).map(function(c){return c.value;})  // v1.2.12: categories
     };
     if (!body.username) { toast('Username wajib diisi.', true); return; }
+    // v1.2.60: cegah simpan ke akun sendiri (biasanya karena autofill browser)
+    if (!editingUser && body.username === user.username) { toast('Username "' + body.username + '" adalah akun Anda sendiri — kemungkinan terisi otomatis oleh browser. Ganti dengan username baru.', true); return; }
+    if (!editingUser && !body.password) { toast('Password wajib diisi untuk pengguna baru. ' + PW_RULE_MSG, true); $('#u_password').focus(); return; }
+    var pwBad = body.password ? pwProblem(body.password) : '';
+    if (pwBad) { toast(pwBad, true); pwLiveHint(); $('#u_password').focus(); return; }
+    var seatMsg = seatFull(body.role);
+    if (seatMsg) { updateSeatWarn(); toast('Kursi paket penuh — pengguna tidak bisa ditambahkan.', true); return; }
     if ($('#u_spv_row') && $('#u_spv_row').style.display !== 'none') body.supervisor = $('#u_supervisor').value;   // v1.2.59
     api('save_user', { method: 'POST', body: body }).then(function (res) {
       if (res.ok) { toast('Pengguna disimpan.'); resetUserForm(); renderUsers(); }
@@ -2842,7 +2906,7 @@
     };
     return ico('users', 13) + ' Kursi paket: ' + f(se.used_agents, se.max_agents, 'WA Agent') + ' · ' +
       f(se.used_supervisors, se.max_supervisors, 'Supervisor') +
-      (se.source === 'pusat' ? '' : ' <span style="color:var(--muted)">(bawaan — belum tersinkron dari server pusat)</span>');
+      (se.source === 'pusat' ? '' : ' <span style="color:var(--muted)">(bawaan — belum tersinkron dari server pusat)</span> <a href="#" class="seat-sync">Sinkron ulang</a>');
   }
   function wlPreview() {
     var box = $('#wl_preview'); if (!box) return;

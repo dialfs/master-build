@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.59');
+define('DEI_VERSION', 'v1.2.60');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -651,6 +651,7 @@ function deiCollectStats() {
         'cost_this_month_usd'   => $month['cost_this_month_usd'],
         'wa_out_service_month'  => $wo['service'],
         'wa_out_template_month' => $wo['template'],
+        'seats'                 => deiSeatCounts(),   // v1.2.60: pemakaian kursi tim untuk tabel pusat
     ];
 }
 
@@ -2151,6 +2152,10 @@ function deiFeatures($s = null) {
     if (!empty($cs['url']) && !empty($cs['tenant_id']) && !empty($cs['license_key'])) {
         try {
             $cap = getCapStatus($s);
+            // v1.2.60: cache lama (sebelum v1.2.58) tidak membawa fitur -> segarkan, maks 1x / 10 menit
+            if (!is_array($cap['features'] ?? null) && (time() - (int)(readJson(CAP_CACHE_FILE, [])['cached_at'] ?? 0)) > 600) {
+                $cap = getCapStatus($s, true);
+            }
             if (is_array($cap['features'] ?? null)) $f = $cap['features'] + ['source' => 'pusat'];
         } catch (\Throwable $e) { error_log('deiFeatures: ' . $e->getMessage()); }
     }
@@ -2188,6 +2193,37 @@ function deiSeatInfo($users) {
             'max_supervisors' => (int)$f['max_supervisors'], 'used_supervisors' => $sp,
             'source' => $f['source'] ?? 'default'];
 }
+// v1.2.60: jumlah akun per peran tim (dikirim ke pusat lewat stats)
+function deiSeatCounts() {
+    // Sengaja TIDAK memanggil deiFeatures(): fungsi ini dipakai deiCollectStats(), yang dipanggil
+    // getCapStatus() saat refresh -> bisa rekursi. Baca cache saja.
+    $cf = readJson(CAP_CACHE_FILE, [])['features'] ?? null;
+    $f = is_array($cf) ? $cf + ['source' => 'pusat']
+                       : ['max_agents' => DEI_DEFAULT_MAX_AGENTS, 'max_supervisors' => DEI_DEFAULT_MAX_SUPERVISORS, 'source' => 'default'];
+    $ag = 0; $sp = 0;
+    foreach ((array)readJson(USERS_FILE, []) as $u) {
+        if (($u['role'] ?? '') === 'wa_agent') $ag++;
+        if (($u['role'] ?? '') === 'supervisor') $sp++;
+    }
+    return ['agents' => $ag, 'supervisors' => $sp,
+            'max_agents' => (int)$f['max_agents'], 'max_supervisors' => (int)$f['max_supervisors'],
+            'source' => $f['source'] ?? 'default'];
+}
+// v1.2.60: pusat mengirim fitur paket di header cron_tick (sudah terverifikasi license key)
+// -> batas kursi baru berlaku <= 1 menit tanpa menunggu cache 24 jam.
+function deiApplyPushedFeatures($raw) {
+    $j = json_decode((string)$raw, true);
+    $f = deiFeaturesFromCap(is_array($j) ? $j : null);
+    if (!$f) return false;
+    $cache = readJson(CAP_CACHE_FILE, []);
+    if (($cache['features'] ?? null) == $f) return false;
+    $cache['features'] = $f;
+    if (empty($cache['cached_at'])) $cache['cached_at'] = 1;   // tanpa cap info: biar check_update tetap jalan
+    writeJson(CAP_CACHE_FILE, $cache);
+    unset($GLOBALS['dei_features_cache']);
+    return true;
+}
+
 function deiSeatMsg($role, $f) {
     $max = ($role === 'wa_agent') ? (int)$f['max_agents'] : (int)$f['max_supervisors'];
     $lbl = ($role === 'wa_agent') ? 'agent' : 'supervisor';
@@ -5351,6 +5387,19 @@ switch ($action) {
     }
     // === /v1.2.8 push subscription ===
 
+    case 'refresh_seats': {
+        // v1.2.60: tarik ulang batas kursi dari pusat sekarang (tanpa tunggu cache 24 jam)
+        requireAuth(['super_admin', 'admin', 'supervisor']);
+        $sR = getSettings();
+        $cap = getCapStatus($sR, true);
+        unset($GLOBALS['dei_features_cache']);
+        $users = readJson(USERS_FILE, []);
+        $src = $cap['source'] ?? '';
+        jsonOut(['ok' => true, 'seats' => deiSeatInfo($users),
+                 'note' => $src === 'no-central' ? 'Server Pusat belum diisi di Widget & API.' : ($src === 'refreshed' ? '' : 'Server pusat tidak bisa dihubungi (' . $src . ').')]);
+        break;
+    }
+
     case 'get_users': {
         // v1.2.14: admin ikut boleh (kelola wa_agent). Data aman: tanpa password/hash.
         // Pembatasan tetap di save_user/delete_user (admin cuma boleh target wa_agent).
@@ -6315,6 +6364,7 @@ switch ($action) {
             }
         }
         deiRememberApiUrl();
+        if (PHP_SAPI !== 'cli' && !empty($_SERVER['HTTP_X_DEI_FEATURES'])) deiApplyPushedFeatures($_SERVER['HTTP_X_DEI_FEATURES']);   // v1.2.60
         $cronLock = @fopen(DATA_DIR . '/cron.lock', 'c');
         if ($cronLock && !@flock($cronLock, LOCK_EX | LOCK_NB)) {
             jsonOut(['ok' => true, 'version' => DEI_VERSION, 'skipped' => 'tick lain masih berjalan']);
