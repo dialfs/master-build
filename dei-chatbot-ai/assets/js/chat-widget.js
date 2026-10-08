@@ -1,4 +1,4 @@
-/* DEI AI Chat Widget v1.2.53 — Multi-Conversation + Form Data Pengunjung
+/* DEI AI Chat Widget v1.2.58 — Multi-Conversation + Form Data Pengunjung + White-label
  * Loaded via Google Tag Manager (or direct <script>).
  * All appearance/behaviour comes from the dashboard via ?action=bootstrap.
  */
@@ -138,6 +138,12 @@
     } else {
       avatar = '<span style="font-size:20px">' + esc(ap.avatar_emoji || '🤖') + '</span>';
     }
+    /* v1.2.58: white-label — teks status & logo kepala widget dari server */
+    var brand = cfg.branding || {};
+    var brandSub = brand.subtitle || 'Online \u2022 Powered by AI';
+    var hdrAvatar = brand.header_logo
+      ? '<img src="' + esc(brand.header_logo) + '" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;background:#fff">'
+      : avatar;
 
     /* ---- styles ---- */
     var css = document.createElement('style');
@@ -248,8 +254,8 @@
         '<div id="dei-chat-window">' +
           /* -- header (dynamic: changes between list & thread views) -- */
           '<div class="dch" id="dei-hdr">' +
-            '<div class="dch-av">' + avatar + '</div>' +
-            '<div><div class="dch-name">' + esc(bot.bot_name || 'Assistant') + '</div><div class="dch-sub">Online • Powered by AI</div></div>' +
+            '<div class="dch-av">' + hdrAvatar + '</div>' +
+            '<div><div class="dch-name">' + esc(bot.bot_name || 'Assistant') + '</div><div class="dch-sub">' + esc(brandSub) + '</div></div>' +
             '<button class="dch-x" aria-label="Tutup">&times;</button>' +
           '</div>' +
           /* -- conversation list view -- */
@@ -281,16 +287,16 @@
       /* ---- view switching ---- */
       function setHeaderList() {
         hdr.innerHTML =
-          '<div class="dch-av">' + avatar + '</div>' +
-          '<div><div class="dch-name">' + esc(bot.bot_name || 'Assistant') + '</div><div class="dch-sub">Online • Powered by AI</div></div>' +
+          '<div class="dch-av">' + hdrAvatar + '</div>' +
+          '<div><div class="dch-name">' + esc(bot.bot_name || 'Assistant') + '</div><div class="dch-sub">' + esc(brandSub) + '</div></div>' +
           '<button class="dch-x" aria-label="Tutup">&times;</button>';
         hdr.querySelector('.dch-x').onclick = function () { toggleWindow(false); };
       }
       function setHeaderThread(title) {
         hdr.innerHTML =
           '<button class="dch-back" aria-label="Kembali"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>' +
-          '<div class="dch-av">' + avatar + '</div>' +
-          '<div style="flex:1;min-width:0"><div class="dch-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title || bot.bot_name || 'Chat') + '</div><div class="dch-sub">Online • Powered by AI</div></div>' +
+          '<div class="dch-av">' + hdrAvatar + '</div>' +
+          '<div style="flex:1;min-width:0"><div class="dch-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title || bot.bot_name || 'Chat') + '</div><div class="dch-sub">' + esc(brandSub) + '</div></div>' +
           '<button class="dch-x" aria-label="Tutup">&times;</button>';
         hdr.querySelector('.dch-back').onclick = function () { showView('list'); };
         hdr.querySelector('.dch-x').onclick = function () { toggleWindow(false); };
@@ -681,8 +687,8 @@
       var teaser = el(
         '<div id="dei-teaser" role="dialog" aria-label="Chat">' +
           '<div class="tz-h">' +
-            '<div class="tz-av">' + avatar + '</div>' +
-            '<div><div class="tz-nm">' + esc(bot.bot_name || 'Assistant') + '</div><div class="tz-st">Online • Powered by AI</div></div>' +
+            '<div class="tz-av">' + hdrAvatar + '</div>' +
+            '<div><div class="tz-nm">' + esc(bot.bot_name || 'Assistant') + '</div><div class="tz-st">' + esc(brandSub) + '</div></div>' +
             '<button class="tz-x" aria-label="Tutup">&times;</button>' +
           '</div>' +
           '<div class="tz-g"></div>' +

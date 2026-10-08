@@ -133,7 +133,7 @@
 
   /* ---- role + nav ------------------------------------------------------ */
   var role = user.role || 'admin';
-  var ROLE_LABEL = { super_admin: 'Super Admin', admin: 'Admin', wa_agent: 'WA Agent' };
+  var ROLE_LABEL = { super_admin: 'Super Admin', admin: 'Admin', supervisor: 'Supervisor', wa_agent: 'WA Agent' };
   function can(allowed) {           // allowed = "role1,role2,..." or array
     if (!allowed || allowed === 'any') return true;
     var arr = Array.isArray(allowed) ? allowed : String(allowed).split(',');
@@ -1305,6 +1305,7 @@
       $('#w_whatsapp').checked = w.whatsapp_enabled !== false;
       $('#w_wa_number').value = w.whatsapp_number || '';
       $('#w_wa_msg').value = w.whatsapp_message || '';
+      loadWhiteLabel(s);   // v1.2.58
       // v1.2.53: Form Data Pengunjung
       var lf = w.lead_form || {};
       $('#lf_enabled').checked         = lf.enabled === true;
@@ -1500,6 +1501,13 @@
       telegram: tgBlock,
       handoff: hoBlock
     } };
+    if (role === 'super_admin' && $('#wl_subtitle')) {   // v1.2.58: white-label
+      body.settings.white_label = {
+        subtitle: $('#wl_subtitle').value.trim(),
+        header_logo: $('#wl_logo').value.trim(),
+        hide_branding: $('#wl_hide').checked
+      };
+    }
     api('save_settings', { method: 'POST', body: body }).then(function (res) {
       if (res.ok) { toast('Konfigurasi tersimpan.'); loaded.widget = false; loadWidget(); }
       else toast(res.error || 'Gagal menyimpan.', true);
@@ -1514,7 +1522,7 @@
     var user = JSON.parse(localStorage.getItem('dei_user') || '{}');
     if ($('#profileUsername')) $('#profileUsername').textContent = user.username || '-';
     if ($('#profileName'))     $('#profileName').textContent     = user.name || user.username || '-';
-    var roleMap = {'super_admin':'Super Admin', 'admin':'Admin', 'wa_agent':'WA Agent'};
+    var roleMap = {'super_admin':'Super Admin', 'admin':'Admin', 'supervisor':'Supervisor', 'wa_agent':'WA Agent'};
     if ($('#profileRole'))     $('#profileRole').textContent     = roleMap[user.role] || user.role || '-';
     if ($('#profileCurrentPw')) $('#profileCurrentPw').value = '';
     if ($('#profileNewPw'))     $('#profileNewPw').value = '';
@@ -1563,11 +1571,11 @@
     $('#btnResetUser').onclick = resetUserForm;
   }
   // v1.2.6: role-aware user management
-  window.ROLE_LABELS_V126 = { super_admin: 'Super Admin', admin: 'Admin', wa_agent: 'WA Agent' };
+  window.ROLE_LABELS_V126 = { super_admin: 'Super Admin', admin: 'Admin', supervisor: 'Supervisor', wa_agent: 'WA Agent' };
   function applyRoleDropdownRestriction() {
     var sel = document.getElementById('u_role');
     if (!sel) return;
-    if (user.role === 'admin') {
+    if (user.role === 'admin' || user.role === 'supervisor') {   // v1.2.58
       sel.innerHTML = '<option value="wa_agent">WA Agent — hanya balas chat WhatsApp</option>';
       sel.value = 'wa_agent';
       sel.disabled = true;
@@ -1576,13 +1584,19 @@
   function renderUsers() {
     api('get_users').then(function (res) {
       if (!res.ok) return;
+      // v1.2.58: kursi paket
+      var se = res.seats || null;
+      if ($('#usersSeats')) {
+        $('#usersSeats').innerHTML = se ? seatText(se) : '';
+      }
       $('#tblUsers').innerHTML = res.users.map(function (u) {
         return '<tr>' +
           '<td class="mono">' + esc(u.username) + '</td>' +
           '<td>' + esc(u.name) + '</td>' +
-          '<td><span class="tag">' + (window.ROLE_LABELS_V126[u.role] || u.role) + '</span></td>' +
+          '<td><span class="tag">' + (window.ROLE_LABELS_V126[u.role] || u.role) + '</span>' +
+            (u.seat_locked ? ' <span class="tag" style="background:#fee2e2;color:#b91c1c" title="Di luar batas kursi paket — tidak bisa login">' + ico('ban',12) + ' terkunci</span>' : '') + '</td>' +
           '<td style="text-align:right;white-space:nowrap">' +
-            ((user.role === 'super_admin' || (user.role === 'admin' && u.role === 'wa_agent'))
+            ((user.role === 'super_admin' || ((user.role === 'admin' || user.role === 'supervisor') && u.role === 'wa_agent'))
               ? ('<button class="btn ghost sm u-edit" data-u="' + esc(u.username) + '" data-n="' + esc(u.name) + '" data-r="' + esc(u.role) + '" data-cats="' + esc(JSON.stringify(u.categories || [])) + '">Edit</button> ' +
                  (u.username === user.username ? '' : '<button class="btn danger sm u-del" data-u="' + esc(u.username) + '">Hapus</button>'))
               : '<span class="help" style="font-size:11px">read-only</span>') +
@@ -1610,7 +1624,7 @@
     $('#userFormTitle').textContent = 'Tambah Pengguna';
     $('#u_username').value = ''; $('#u_username').readOnly = false;
     $('#u_name').value = ''; $('#u_password').value = '';
-    $('#u_role').value = (user.role === 'admin') ? 'wa_agent' : 'admin';
+    $('#u_role').value = (user.role === 'admin' || user.role === 'supervisor') ? 'wa_agent' : 'admin';
     renderUserCategories([]);  // v1.2.13: rebuild kosong
     applyRoleDropdownRestriction();
   }
@@ -1674,7 +1688,9 @@
   // (waState declared elsewhere; if not, this becomes: var waState = window.waState || {...})
   window.waState = window.waState || {};
   waState.filter = waState.filter || 'all';
-  waState.counts = waState.counts || { all: 0, mine: 0, unclaimed: 0, others: 0, takeover_requests: 0, today: 0, attention: 0 };
+  waState.counts = waState.counts || { all: 0, mine: 0, unclaimed: 0, others: 0, takeover_requests: 0, today: 0, attention: 0, unreplied: 0, done: 0, full_bot: 0 };
+  waState.replyMode = waState.replyMode || 'ai';   // v1.2.58
+  waState.agents = waState.agents || [];
   waState.me = waState.me || '';
   waState.isAdmin = waState.isAdmin || false;
   waState.claimDetails = waState.claimDetails || {}; // number → claim object cache
@@ -2084,8 +2100,12 @@
     var bar = document.createElement('div');
     bar.id = 'waFilterBar';
     bar.className = 'wa-filter-bar';
+    var isManual = waState.replyMode === 'manual';   // v1.2.58
     bar.innerHTML =
       '<button class="wa-filter-btn active" data-filter="all">All <span class="wa-filter-count" data-count="all">0</span></button>' +
+      '<button class="wa-filter-btn" data-filter="unreplied">Belum Dibalas <span class="wa-filter-count" data-count="unreplied">0</span></button>' +
+      (isManual ? '' : '<button class="wa-filter-btn" data-filter="full_bot">Full Bot <span class="wa-filter-count" data-count="full_bot">0</span></button>') +
+      '<button class="wa-filter-btn" data-filter="done">Selesai <span class="wa-filter-count" data-count="done">0</span></button>' +
       '<button class="wa-filter-btn" data-filter="today">Hari Ini <span class="wa-filter-count" data-count="today">0</span></button>' +
       '<button class="wa-filter-btn" data-filter="attention">Perlu Perhatian <span class="wa-filter-count" data-count="attention">0</span></button>' +
       '<button class="wa-filter-btn" data-filter="mine">Punya Saya <span class="wa-filter-count" data-count="mine">0</span></button>' +
@@ -2096,6 +2116,28 @@
       (waState.isAdmin === false ? '' : '<button class="wa-filter-btn wa-audit-toggle" style="margin-left:auto" title="Lihat audit log">' + ico('clipboard-list',14) + ' Audit</button>');
     // Insert BEFORE .wachat-wrap
     var wrap = $('#panel-wachat .wachat-wrap');
+    // v1.2.58: kartu ringkasan flag (klik = filter) + penanda mode Manual
+    var cards = document.createElement('div');
+    cards.id = 'waFlagCards';
+    var kartu = function (f, cls, icon, label) {
+      return '<button type="button" class="wa-flag-card ' + cls + '" data-filter="' + f + '">' +
+        '<div class="n" data-flagn="' + f + '">0</div><div class="l">' + ico(icon, 13) + ' ' + label + '</div></button>';
+    };
+    cards.innerHTML =
+      (isManual ? '<div class="wa-mode-pill">' + ico('user-round', 13) + ' Mode Manual — AI nonaktif, semua chat dibalas agent</div>' : '') +
+      '<div class="wa-flag-cards" style="' + (isManual ? 'grid-template-columns:repeat(2,minmax(0,1fr))' : '') + '">' +
+        kartu('unreplied', 'unreplied', 'clock-3', 'Belum dibalas') +
+        (isManual ? '' : kartu('full_bot', 'fullbot', 'bot', 'Full bot (tanpa agent)')) +
+        kartu('done', 'done', 'check-circle-2', 'Selesai (customer diam 24 jam)') +
+      '</div>';
+    wrap.parentNode.insertBefore(cards, wrap);
+    $$('#waFlagCards .wa-flag-card').forEach(function (c) {
+      c.onclick = function () {
+        var f = (waState.filter === c.dataset.filter) ? 'all' : c.dataset.filter;
+        waState.filter = f;
+        fetchWaConvs();
+      };
+    });
     wrap.parentNode.insertBefore(bar, wrap);
     // Audit log container
     var auditBox = document.createElement('div');
@@ -2104,6 +2146,9 @@
     auditBox.style.display = 'none';
     wrap.parentNode.insertBefore(auditBox, wrap);
     // Event listeners
+    // v1.2.58: bar dibangun ulang tiap muat — tandai tombol sesuai filter aktif
+    $$('#waFilterBar .wa-filter-btn[data-filter]').forEach(function (b) { b.classList.toggle('active', b.dataset.filter === (waState.filter || 'all')); });
+    $$('#waFlagCards .wa-flag-card').forEach(function (c) { c.classList.toggle('active', c.dataset.filter === waState.filter); });
     $$('#waFilterBar .wa-filter-btn').forEach(function (btn) {
       if (btn.classList.contains('wa-audit-toggle')) {
         btn.onclick = toggleAuditLog;
@@ -2134,9 +2179,13 @@
       waState.counts = res.counts || waState.counts;
       waState.me = res.me || '';
       waState.isAdmin = !!res.is_admin;
+      waState.replyMode = res.reply_mode || 'ai';   // v1.2.58
+      waState.agents = res.agents || [];
       // Rebuild filter bar setelah tahu role user (hide Audit btn untuk non-admin)
       var oldBar = document.getElementById('waFilterBar');
       if (oldBar) oldBar.remove();
+      var oldCards = document.getElementById('waFlagCards');   // v1.2.58
+      if (oldCards) oldCards.remove();
       var oldAuditBox = document.getElementById('waAuditBox');
       if (oldAuditBox) oldAuditBox.remove();
       ensureFilterBar();
@@ -2176,11 +2225,16 @@
 
   function updateFilterCounts() {
     var c = waState.counts || {};
-    ['all', 'mine', 'unclaimed', 'others', 'takeover_requests', 'today', 'attention'].forEach(function (f) {
+    ['all', 'mine', 'unclaimed', 'others', 'takeover_requests', 'today', 'attention', 'unreplied', 'done', 'full_bot'].forEach(function (f) {
       var el = $('#waFilterBar .wa-filter-count[data-count="' + f + '"]');
       if (el) {
         el.textContent = c[f] || 0;
         el.style.display = (c[f] > 0 || f === 'all') ? 'inline-block' : 'none';
+      }
+      var kn = $('#waFlagCards [data-flagn="' + f + '"]');   // v1.2.58
+      if (kn) {
+        kn.textContent = c[f] || 0;
+        kn.parentNode.classList.toggle('is-zero', !(c[f] > 0));
       }
     });
   }
@@ -2189,7 +2243,10 @@
     var tabBtn = document.querySelector('[data-tab="wachat"]');
     if (!tabBtn) return;
     var badge = tabBtn.querySelector('.wa-sidebar-badge');
-    var pending = (counts.unclaimed || 0) + (counts.takeover_requests || 0);
+    // v1.2.58: mode Manual -> lencana = chat yang belum dibalas
+    var pending = (waState.replyMode === 'manual')
+      ? ((counts.unreplied || 0) + (counts.takeover_requests || 0))
+      : ((counts.unclaimed || 0) + (counts.takeover_requests || 0));
     if (pending > 0) {
       if (!badge) {
         badge = document.createElement('span');
@@ -2264,7 +2321,25 @@
       else toast((r && r.error) || 'Gagal menyimpan.', true);
     });
   }
-  var waFilterLabelExtra = { today: 'Hari Ini', attention: 'Perlu Perhatian' };  // v1.2.17
+  var waFilterLabelExtra = { today: 'Hari Ini', attention: 'Perlu Perhatian', unreplied: 'Belum Dibalas', done: 'Selesai', full_bot: 'Full Bot' };  // v1.2.17 + v1.2.58
+  // v1.2.58: lencana flag chat
+  function waDurasi(sec) {
+    sec = +sec || 0;
+    if (sec < 60) return '<1 mnt';
+    if (sec < 3600) return Math.floor(sec / 60) + ' mnt';
+    if (sec < 86400) return Math.floor(sec / 3600) + ' jam';
+    return Math.floor(sec / 86400) + ' hari';
+  }
+  function waFlagBadgeHtml(c) {
+    var h = '';
+    if (c.flag === 'unreplied') {
+      h += ' <span class="tag" style="background:#fee2e2;color:#b91c1c">' + ico('clock-3',12) + ' Belum dibalas' + (c.waiting_sec ? ' · ' + waDurasi(c.waiting_sec) : '') + '</span>';
+    } else if (c.flag === 'done') {
+      h += ' <span class="tag" style="background:#d1fae5;color:#065f46" title="' + esc(c.flag_note || '') + '">' + ico('check-circle-2',12) + ' Selesai</span>';
+    }
+    if (c.full_bot) h += ' <span class="tag" style="background:#dbeafe;color:#1e40af" title="Belum pernah dibalas agent">' + ico('bot',12) + ' Full bot</span>';
+    return h;
+  }
   function renderWaConvs() {
     if (!waState.convs.length) {
       var msg = 'Belum ada percakapan';
@@ -2277,9 +2352,10 @@
     }
     $('#waConvList').innerHTML = waState.convs.map(function (c) {
       var badge = statusBadgeHtml(c);
-      var awa = c.awaiting ? ' <span class="tag" style="background:#fecaca;color:#991b1b">menunggu</span>' : '';
+      // v1.2.58: "menunggu" digantikan lencana "Belum dibalas" bila flag tersedia
+      var awa = (c.awaiting && !c.flag) ? ' <span class="tag" style="background:#fecaca;color:#991b1b">menunggu</span>' : '';
       // v1.2.17: tanda kalau butuh manusia (bot gagal / menggantung) & belum dibalas manual
-      var attn = c.needs_attention ? ' <span class="tag" style="background:#fee2e2;color:#b91c1c">' + ico('triangle-alert',12) + ' perlu perhatian</span>' : '';
+      var attn = (c.needs_attention && waState.replyMode !== 'manual') ? ' <span class="tag" style="background:#fee2e2;color:#b91c1c">' + ico('triangle-alert',12) + ' perlu perhatian</span>' : '';
       var bg = (c.number === waState.current) ? 'background:var(--brand-soft);' : '';
       // v1.2.16: waktu aktivitas terakhir + pembeda visual hari ini vs lama
       var t = waConvTimeInfo(c.last_ts);
@@ -2300,7 +2376,9 @@
           '<span style="font-weight:600">' + judul + '</span>' + timeHtml +
         '</div>' + subNomor +
         '<div style="font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(c.last_q || c.last_text || '') + '</div>' +
-        '<div style="margin-top:5px">' + badge + awa + attn + stageBadge + '</div></div>';
+        '<div style="margin-top:5px">' + badge + waFlagBadgeHtml(c) + awa + attn + stageBadge + '</div>' +
+        (c.flag === 'done' && c.flag_note ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + esc(c.flag_note) + '</div>' : '') +
+        '</div>';
     }).join('');
     $$('#waConvList .wa-conv').forEach(function (el) {
       el.onclick = function () { selectWaConv(el.dataset.num); };
@@ -2321,6 +2399,7 @@
         var req = c.claim && c.claim.takeover_request ? c.claim.takeover_request.requester : '?';
         return '<span class="tag" style="background:#fed7aa;color:#9a3412">' + ico('clock-3',12) + ' Take-over req dari ' + esc(req) + '</span>';
       case 'human_unclaimed':
+        if (waState.replyMode === 'manual') return '<span class="tag" style="background:#e5e7eb;color:#374151">' + ico('hand',13) + ' Antrean</span>';   // v1.2.58
         return '<span class="tag" style="background:#e5e7eb;color:#374151">' + ico('user-round',13) + ' Mode manual</span>';
       default:
         return '<span class="tag">' + esc(s) + '</span>';
@@ -2400,7 +2479,7 @@
           '<button class="btn ghost" id="waReleaseBtn" style="padding:6px 12px;font-size:12px">' + ico('corner-up-left',14) + ' Release</button>' +
           '</div>';
       } else {
-        actionBtns = '<button class="btn ghost" id="waReleaseBtn" style="padding:7px 14px;font-size:13px">' + ico('corner-up-left',14) + ' Release (kembali ke bot)</button>';
+        actionBtns = '<button class="btn ghost" id="waReleaseBtn" style="padding:7px 14px;font-size:13px">' + ico('corner-up-left',14) + (waState.replyMode === 'manual' ? ' Lepas ke antrean' : ' Release (kembali ke bot)') + '</button>';
       }
     } else {
       // Owned by someone else
@@ -2422,6 +2501,16 @@
             ' <button class="btn ghost" id="waRequestTakeoverBtn" style="padding:6px 12px;font-size:12px;margin-left:8px">' + ico('hand',13) + ' Minta Take-over</button>';
         }
       }
+    }
+
+    // v1.2.58: Supervisor/Admin — serahkan chat ke agent tertentu
+    if (waState.isAdmin && (waState.agents || []).length) {
+      var _opsi = '<option value="">' + (claim ? 'Pindahkan ke…' : 'Serahkan ke…') + '</option>' +
+        waState.agents.map(function (a) {
+          if (claim && a.username === claim.agent_username) return '';
+          return '<option value="' + esc(a.username) + '">' + esc(a.name || a.username) + ' (' + esc(ROLE_LABEL[a.role] || a.role) + ')</option>';
+        }).join('');
+      actionBtns += '<span class="wa-assign">' + ico('user-round',13) + '<select id="waAssignSel">' + _opsi + '</select></span>';
     }
 
     // v1.2.19: nama kontak (dari daftar percakapan) + tombol koreksi
@@ -2454,14 +2543,15 @@
     var _vipNow = !!(_konv && _konv.vip);
     var _stageOpts = contactStageOptionsHtml(_stageNow);
     var _statusBadge = _konv ? statusBadgeHtml(_konv) : '';
-    var _awaBadge = (_konv && _konv.awaiting) ? ' <span class="tag" style="background:#fecaca;color:#991b1b">menunggu</span>' : '';
-    var _attnBadge = (_konv && _konv.needs_attention) ? ' <span class="tag" style="background:#fee2e2;color:#b91c1c">' + ico('triangle-alert',12) + ' perlu perhatian</span>' : '';
+    var _awaBadge = (_konv && _konv.awaiting && !_konv.flag) ? ' <span class="tag" style="background:#fecaca;color:#991b1b">menunggu</span>' : '';
+    var _attnBadge = (_konv && _konv.needs_attention && waState.replyMode !== 'manual') ? ' <span class="tag" style="background:#fee2e2;color:#b91c1c">' + ico('triangle-alert',12) + ' perlu perhatian</span>' : '';
     var _vipBtnStyle = _vipNow
       ? 'background:#fef9c3;color:#92400e;border:1px solid #fbbf24'
       : 'background:transparent;color:var(--muted);border:1px solid var(--line)';
     var _metaRow =
       '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:12px">' +
-        _statusBadge + _awaBadge + _attnBadge +
+        _statusBadge + (_konv ? waFlagBadgeHtml(_konv) : '') + _awaBadge + _attnBadge +
+        ((_konv && _konv.flag === 'done' && _konv.flag_note) ? '<span style="color:var(--muted)">' + esc(_konv.flag_note) + '</span>' : '') +
         '<span style="color:var(--muted);margin:0 2px">&middot;</span>' +
         '<span style="color:var(--muted)">Lead Rating:</span>' +
         '<select id="waStageSelect" style="border-radius:6px;padding:2px 4px;font-size:11px;border:1px solid var(--line);width:118px">' + _stageOpts + '</select>' +
@@ -2522,6 +2612,7 @@
     if ($('#waTakeoverApproveBtn')) $('#waTakeoverApproveBtn').onclick = function () { respondTakeover(num, 'approve'); };
     if ($('#waTakeoverDenyBtn')) $('#waTakeoverDenyBtn').onclick = function () { respondTakeover(num, 'deny'); };
     if ($('#waAdminTakeoverBtn')) $('#waAdminTakeoverBtn').onclick = function () { openAdminTakeoverModal(num); };
+    if ($('#waAssignSel')) $('#waAssignSel').onchange = function () { assignNumber(num, this.value, this); };   // v1.2.58
 
     // wa-scroll-preserve: cek posisi scroll SEBELUM re-render
     var _waBody = $('#waThreadBody');
@@ -2561,7 +2652,9 @@
     $('#waWindowNote').innerHTML = open
       ? (isMine ? '<span style="color:#065f46">' + ico('check-circle-2',13) + ' Anda mengelola chat ini.</span>'
           : (claim ? '<span style="color:var(--muted)">Chat dikelola oleh <strong>' + esc(claim.agent_username) + '</strong>. Klik "Minta Take-over" untuk request handling.</span>'
-              : '<span style="color:var(--muted)">Tip: klik <strong>Claim</strong> agar bot berhenti dan Anda handle sendiri.</span>'))
+              : (waState.replyMode === 'manual'
+                  ? '<span style="color:var(--muted)">Klik <strong>Claim</strong> untuk menangani chat ini' + (waState.isAdmin ? ', atau serahkan ke agent' : '') + '.</span>'
+                  : '<span style="color:var(--muted)">Tip: klik <strong>Claim</strong> agar bot berhenti dan Anda handle sendiri.</span>')))
       : ico('triangle-alert',13) + ' Jendela 24 jam tertutup — WhatsApp tidak mengizinkan balasan teks bebas sampai pelanggan mengirim pesan lagi.';
   }
 
@@ -2576,11 +2669,23 @@
     });
   }
 
+  // v1.2.58: serahkan / pindahkan chat ke agent (Supervisor/Admin)
+  function assignNumber(num, agent, sel) {
+    if (!agent) return;
+    var label = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : agent;
+    if (!confirm('Serahkan chat ini ke ' + label + '?')) { if (sel) sel.value = ''; return; }
+    api('wa_assign', { method: 'POST', body: { number: num, agent: agent } }).then(function (res) {
+      if (res && res.ok) { toast('Chat diserahkan ke ' + agent + '.'); fetchWaConvs().then(function () { fetchWaThread(num); }); }
+      else { toast((res && res.error) || 'Gagal menyerahkan chat.', true); if (sel) sel.value = ''; }
+    });
+  }
+
   function releaseNumber(num) {
-    if (!confirm('Release chat ini? Bot akan resume balas otomatis.')) return;
+    var manual = waState.replyMode === 'manual';   // v1.2.58
+    if (!confirm(manual ? 'Lepas chat ini ke antrean? Agent lain bisa meng-claim.' : 'Release chat ini? Bot akan resume balas otomatis.')) return;
     api('wa_release', { method: 'POST', body: { number: num } }).then(function (res) {
       if (res && res.ok) {
-        toast('Chat direlease. Bot resume.');
+        toast(manual ? 'Chat dikembalikan ke antrean.' : 'Chat direlease. Bot resume.');
         fetchWaThread(num); fetchWaConvs();
       } else toast((res && res.error) || 'Gagal release.', true);
     });
@@ -2696,6 +2801,130 @@
       o.frequency.value = 880; g.gain.value = 0.05; o.start();
       setTimeout(function () { o.stop(); a.close(); }, 180);
     } catch (e) {}
+  }
+
+  /* ====================================================================== *
+   *  v1.2.58: WHITE-LABEL WIDGET + TIM & AGENT
+   * ====================================================================== */
+  function seatText(se) {
+    var f = function (used, max, lbl) {
+      return '<b>' + used + '</b> / ' + (max > 0 ? max : '∞') + ' ' + lbl +
+        (max > 0 && used > max ? ' <span style="color:#b91c1c">(' + (used - max) + ' akun terkunci)</span>' : '');
+    };
+    return ico('users', 13) + ' Kursi paket: ' + f(se.used_agents, se.max_agents, 'WA Agent') + ' · ' +
+      f(se.used_supervisors, se.max_supervisors, 'Supervisor') +
+      (se.source === 'pusat' ? '' : ' <span style="color:var(--muted)">(bawaan — belum tersinkron dari server pusat)</span>');
+  }
+  function wlPreview() {
+    var box = $('#wl_preview'); if (!box) return;
+    var sub = $('#wl_subtitle').value.trim() || ($('#wl_hide').checked ? 'Online' : 'Online \u2022 Powered by AI');
+    var logo = $('#wl_logo').value.trim();
+    var color = (window._deiPrimaryColor || '#140383');
+    box.innerHTML = '<div style="display:inline-flex;align-items:center;gap:10px;background:' + esc(color) + ';color:#fff;border-radius:14px;padding:10px 14px;min-width:240px">' +
+      '<div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;overflow:hidden">' +
+      (logo ? '<img src="' + esc(logo) + '" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;background:#fff">' : ico('message-circle', 18)) + '</div>' +
+      '<div><div style="font-weight:600;font-size:14px">' + esc(window._deiBotName || 'Assistant') + '</div><div style="font-size:11px;opacity:.85">' + esc(sub) + '</div></div></div>' +
+      '<div class="help" style="margin-top:4px">Pratinjau kepala widget.</div>';
+  }
+  function loadWhiteLabel(s) {
+    if (!$('#wl_subtitle')) return;
+    var wl = s.white_label || {};
+    window._deiPrimaryColor = (s.appearance || {}).primary_color || '#140383';
+    window._deiBotName = (s.bot || {}).bot_name || 'Assistant';
+    $('#wl_subtitle').value = wl.subtitle || '';
+    $('#wl_logo').value = wl.header_logo || '';
+    $('#wl_hide').checked = !!wl.hide_branding;
+    ['#wl_subtitle', '#wl_logo'].forEach(function (id) { $(id).oninput = wlPreview; });
+    $('#wl_hide').onchange = wlPreview;
+    wlPreview();
+    api('team_info').then(function (r) {
+      if (!r || !r.ok || !$('#wl_status')) return;
+      var on = r.features && r.features.white_label;
+      $('#wl_status').innerHTML = on
+        ? '<span style="color:#065f46">' + ico('check-circle-2', 13) + ' Paket ini mendukung white-label — pengaturan di bawah aktif di widget.</span>'
+        : '<span style="color:#92400e">' + ico('triangle-alert', 13) + ' White-label belum aktif untuk paket ini. Pengaturan tersimpan, tetapi widget tetap tampil bawaan sampai diaktifkan oleh DEI.</span>';
+    });
+  }
+
+  var timTeam = null;
+  function loadTim() {
+    var today = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    var ymd = function (d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+    if (!$('#arFrom').value) $('#arFrom').value = ymd(new Date(today.getFullYear(), today.getMonth(), 1));
+    if (!$('#arTo').value) $('#arTo').value = ymd(today);
+    $('#btnArLoad').onclick = loadAgentReport;
+    if ($('#btnSaveTim')) $('#btnSaveTim').onclick = saveTim;
+    $$('input[name="tim_mode"]').forEach(function (r) { r.onchange = timModeNote; });
+    api('team_info').then(function (r) {
+      if (!r || !r.ok) { $('#timSeats').textContent = (r && r.error) || 'Gagal memuat.'; return; }
+      timTeam = r;
+      $$('input[name="tim_mode"]').forEach(function (x) { x.checked = (x.value === r.reply_mode); });
+      if ($('#tim_private')) $('#tim_private').checked = !!(r.team && r.team.agent_private);
+      timModeNote();
+      $('#timSeats').innerHTML = seatText(r.seats) +
+        '<div style="margin-top:6px">' + ico('message-circle', 13) + ' Mode balasan WhatsApp saat ini: <b>' + (r.reply_mode === 'manual' ? 'Manual (AI nonaktif)' : 'AI + Agent') + '</b></div>';
+    });
+    loadAgentReport();
+  }
+  function timModeNote() {
+    var el = $('#timModeNote'); if (!el) return;
+    var sel = (document.querySelector('input[name="tim_mode"]:checked') || {}).value;
+    var r = timTeam || {};
+    var msg = '';
+    if (sel === 'manual') {
+      msg = ico('triangle-alert', 13) + ' Mode Manual: pesan WhatsApp tidak dibalas otomatis (termasuk auto-closing). Pastikan agent memantau dashboard — aktifkan Eskalasi di menu Respon &amp; Eskalasi agar SPV diberi tahu bila chat terlalu lama tidak dibalas.';
+      if (r.wa_provider === 'fonnte') msg += '<br>' + ico('triangle-alert', 13) + ' Fonnte: jalur tidak resmi — ada risiko nomor diblokir WhatsApp.';
+      if (r.wa_enabled === false) msg += '<br>' + ico('octagon-alert', 13) + ' "Aktifkan Bot WhatsApp" di menu Widget &amp; API masih mati — pesan masuk tidak akan tercatat.';
+    }
+    el.innerHTML = msg;
+  }
+  function saveTim() {
+    var sel = (document.querySelector('input[name="tim_mode"]:checked') || {}).value || 'ai';
+    var prev = timTeam ? timTeam.reply_mode : 'ai';
+    if (sel !== prev && !confirm(sel === 'manual'
+        ? 'Matikan AI untuk WhatsApp? Semua pesan masuk harus dibalas agent.'
+        : 'Aktifkan kembali AI? Chat yang tidak dipegang agent akan dijawab bot.')) return;
+    api('save_settings', { method: 'POST', body: { settings: {
+      reply: { mode: sel },
+      team: { agent_private: $('#tim_private').checked }
+    } } }).then(function (res) {
+      if (res && res.ok) { toast('Pengaturan tim tersimpan.'); loaded.wachat = false; loadTim(); }
+      else toast((res && res.error) || 'Gagal menyimpan.', true);
+    });
+  }
+  function fmtDur(sec) {
+    if (sec === null || sec === undefined) return '–';
+    if (sec < 60) return sec + ' dtk';
+    if (sec < 3600) return Math.floor(sec / 60) + ' mnt ' + (sec % 60 ? (sec % 60) + ' dtk' : '');
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    return h + ' jam' + (m ? ' ' + m + ' mnt' : '');
+  }
+  function loadAgentReport() {
+    var q = '&from=' + encodeURIComponent($('#arFrom').value) + '&to=' + encodeURIComponent($('#arTo').value);
+    $('#tblAr').innerHTML = '<tr><td colspan="7" style="color:var(--muted)">Memuat…</td></tr>';
+    api('agent_report', { query: q }).then(function (r) {
+      if (!r || !r.ok) { $('#tblAr').innerHTML = '<tr><td colspan="7" style="color:#b91c1c">' + esc((r && r.error) || 'Gagal memuat.') + '</td></tr>'; return; }
+      var t = r.totals || {};
+      var kpi = function (n, l) { return '<div class="tim-kpi"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>'; };
+      $('#arKpis').innerHTML =
+        kpi(t.chats_handled || 0, 'Chat ditangani agent') +
+        kpi(fmtDur(t.frt_avg_sec), 'Respon pertama rata²') +
+        kpi(fmtDur(t.resp_avg_sec), 'Waktu respon rata²') +
+        kpi((t.unreplied_now || 0) + (r.self_only ? '' : ' <span style="font-size:12px;color:var(--muted);font-weight:400">(' + (t.unreplied_unassigned || 0) + ' belum diklaim)</span>'), 'Belum dibalas saat ini');
+      var rows = r.agents || [];
+      if (!rows.length) { $('#tblAr').innerHTML = '<tr><td colspan="7" style="color:var(--muted)">Belum ada agent / aktivitas di rentang ini.</td></tr>'; return; }
+      $('#tblAr').innerHTML = rows.map(function (a) {
+        var lbl = a.agent === '(HP)' ? 'Dari HP (tanpa claim)' : (a.name || a.agent);
+        return '<tr><td>' + esc(lbl) + (a.agent !== '(HP)' ? ' <span class="tag">' + esc(ROLE_LABEL[a.role] || a.role || '-') + '</span>' : '') + '</td>' +
+          '<td style="text-align:right">' + a.chats + '</td>' +
+          '<td style="text-align:right">' + a.replies + '</td>' +
+          '<td style="text-align:right">' + fmtDur(a.frt_avg_sec) + '</td>' +
+          '<td style="text-align:right">' + fmtDur(a.resp_avg_sec) + '</td>' +
+          '<td style="text-align:right">' + a.holding_now + '</td>' +
+          '<td style="text-align:right;' + (a.unreplied_now ? 'color:#b91c1c;font-weight:600' : '') + '">' + a.unreplied_now + '</td></tr>';
+      }).join('');
+    });
   }
 
   /* ---- loader registry + first tab ------------------------------------ */
@@ -3612,12 +3841,14 @@
     test: initTest,
     widget: function () { loadWidget(); loadCentral(); wireCentralButtons(); },
     users: loadUsers,
+    tim: loadTim,             // v1.2.58
     install: loadInstall,
     profile: loadProfile
   };
 
   // first tab per role
   var firstTab = role === 'wa_agent' ? 'wachat'
+               : role === 'supervisor' ? 'wachat'   // v1.2.58
                : role === 'admin'    ? 'reports'
                :                       'reports';   // super_admin
   showTab(firstTab);

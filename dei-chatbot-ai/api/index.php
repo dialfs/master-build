@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.57');
+define('DEI_VERSION', 'v1.2.58');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -119,6 +119,32 @@ function writeJson($file, $data) {
 // 'dei-update' cuma tebakan pertama supaya cepat. Kalau kemasan ZIP berubah
 // lagi di masa depan, ini tetap menemukannya asal strukturnya tidak lebih
 // dalam dari satu tingkat.
+/* v1.2.58: chatbot-log.json diubah di bawah satu kunci. Sebelumnya tiap
+ * penulis membaca -> menambah -> menulis tanpa kunci; dua pesan yang masuk
+ * bersamaan bisa saling menimpa (entri hilang). Risiko itu membesar saat
+ * log_limit dinaikkan (file lebih besar = waktu tulis lebih lama).
+ * $fn menerima &$logs (terbaru-dulu); kembalikan false untuk batal menulis. */
+function logMutate($fn, $limit = null) {
+    $lock = @fopen(DATA_DIR . '/chatbot-log.lock', 'c');
+    if ($lock) @flock($lock, LOCK_EX);
+    try {
+        $logs = readJson(LOG_FILE, []);
+        if (!is_array($logs)) $logs = [];
+        $r = $fn($logs);
+        if ($r !== false) {
+            if ($limit !== null) $logs = array_slice($logs, 0, max(1, (int)$limit));
+            writeJson(LOG_FILE, $logs);
+        }
+        return $logs;
+    } finally {
+        if ($lock) { @flock($lock, LOCK_UN); @fclose($lock); }
+    }
+}
+// Tambah satu entri di depan log (aman dari tulis bersamaan). Mengembalikan isi log terbaru.
+function logPrepend($entry, $limit) {
+    return logMutate(function (&$logs) use ($entry) { array_unshift($logs, $entry); }, $limit);
+}
+
 function deiCariRootPayload($tmpDir) {
     $penanda = '/api/index.php';
     if (file_exists($tmpDir . $penanda)) return $tmpDir;
@@ -344,8 +370,18 @@ function requireAuth($roles = null) {
             }
             if ($changed) writeJson(USERS_FILE, $users);
             $u['role'] = $role;
-            if ($roles !== null && !in_array($role, (array)$roles, true)) {
-                jsonOut(['ok' => false, 'error' => 'Akses ditolak untuk peran Anda.'], 403);
+            if ($roles !== null) {
+                $allowed = (array)$roles;
+                // v1.2.58: Supervisor = semua yang boleh dilakukan agent, plus
+                // aksi yang mencantumkan 'supervisor' secara eksplisit.
+                if ($role === 'supervisor' && in_array('wa_agent', $allowed, true)) $allowed[] = 'supervisor';
+                if (!in_array($role, $allowed, true)) {
+                    jsonOut(['ok' => false, 'error' => 'Akses ditolak untuk peran Anda.'], 403);
+                }
+            }
+            // v1.2.58: akun di luar batas kursi paket tidak bisa dipakai
+            if (($role === 'wa_agent' || $role === 'supervisor') && !deiSeatAllowed($username, $role, $users)) {
+                jsonOut(['ok' => false, 'error' => deiSeatMsg($role, deiFeatures()), 'seat_locked' => true], 403);
             }
             return $u;
         }
@@ -493,6 +529,7 @@ function getCapStatus($settings, $forceRefresh = false) {
             'tier'    => $cache['tier']    ?? '',
             'cap'     => $cache['cap']     ?? 0,
             'used'    => $cache['used']    ?? 0,
+            'features'=> $cache['features'] ?? null,   // v1.2.58
             'source'  => 'cache-' . $age . 's',
         ];
     }
@@ -537,6 +574,7 @@ function getCapStatus($settings, $forceRefresh = false) {
         'cap'       => (int)($cap['monthly_chat_cap'] ?? 0),
         'used'      => (int)($cap['chats_this_month'] ?? 0),
         'message'   => $msg,
+        'features'  => deiFeaturesFromCap($cap),   // v1.2.58
         'cached_at' => $now,
     ];
     writeJson(CAP_CACHE_FILE, $newCache);
@@ -1465,7 +1503,7 @@ function getPushTargetsByTopic($topic, $subscribers) {
         if (!$u) { continue; }   // subscriber tidak ada di users -> skip (safety)
         $role = $u['role'] ?? '';
         // super_admin + admin selalu dapat semua notif
-        if ($role === 'super_admin' || $role === 'admin') {
+        if ($role === 'super_admin' || $role === 'admin' || $role === 'supervisor') {   // v1.2.58
             $targets[] = $sub;
             continue;
         }
@@ -1858,7 +1896,9 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     if (mb_strlen($text) > 2000) $text = mb_substr($text, 0, 2000);
 
     $limit = (int)($wa['rate_limit_per_number'] ?? ($s['api']['rate_limit'] ?? 20));
-    if (!checkRateLimit('wa:' . $from, $limit)) {
+    // v1.2.58: mode Manual tidak memakai AI (tidak ada biaya), jangan buang pesan
+    // pelanggan & jangan kirim balasan otomatis "terlalu banyak pesan".
+    if (!deiIsManual($s) && !checkRateLimit('wa:' . $from, $limit)) {
         waSend($wa, $from, 'Anda mengirim terlalu banyak pesan. Mohon tunggu sebentar ya.');
         return;
     }
@@ -1900,10 +1940,9 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
             $history[] = ['role' => 'user', 'content' => $text];
             waSaveHistory($from, $history);
         }
-        $logs = readJson(LOG_FILE, []);
-        array_unshift($logs, array_merge($logBase, ['a' => '', 'awaiting' => true]));
-        writeJson(LOG_FILE, array_slice($logs, 0, $logLimit));
+        logPrepend(array_merge($logBase, ['a' => '', 'awaiting' => true]), $logLimit);
         tgNotify($s, "\xF0\x9F\x93\xA9 [WhatsApp] " . $from . ":\n\"" . $text . "\"\n\xF0\x9F\x99\x8B menunggu admin");
+        try { agentEvent('in', '', $from); } catch (\Throwable $e) {}   // v1.2.58: volume masuk untuk laporan
         return;
     }
 
@@ -1913,9 +1952,7 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     if ($lic['status'] === 'suspended') {
         $answer = $lic['message'] ?: LIC_DEFAULT_SUSPEND_MSG;
         if (waSend($wa, $from, $answer)) convReply($from, 'system');   // v1.2.56
-        $logs = readJson(LOG_FILE, []);
-        array_unshift($logs, array_merge($logBase, ['a' => $answer, 'suspended' => true]));
-        writeJson(LOG_FILE, array_slice($logs, 0, $logLimit));
+        logPrepend(array_merge($logBase, ['a' => $answer, 'suspended' => true]), $logLimit);
         return;
     }
     // v1.1.4: cap enforcement (graceful at 90%+, no Claude call)
@@ -1923,9 +1960,7 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     if ($cap['reached'] || $cap['warning']) {
         $answer = $cap['message'] ?: CAP_DEFAULT_MSG;
         if (waSend($wa, $from, $answer)) convReply($from, 'system');   // v1.2.56
-        $logs = readJson(LOG_FILE, []);
-        array_unshift($logs, array_merge($logBase, ['a' => $answer, 'cap_reached' => true]));
-        writeJson(LOG_FILE, array_slice($logs, 0, $logLimit));
+        logPrepend(array_merge($logBase, ['a' => $answer, 'cap_reached' => true]), $logLimit);
         return;
     }
     $history = $keepCtx ? waLoadHistory($from) : [];
@@ -1948,9 +1983,7 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
         waSaveHistory($from, $history);
     }
 
-    $logs = readJson(LOG_FILE, []);
-    array_unshift($logs, array_merge($logBase, ['a' => $answer], $deiAiError ? ['ai_error' => true] : []));  // v1.2.17
-    writeJson(LOG_FILE, array_slice($logs, 0, $logLimit));
+    $logs = logPrepend(array_merge($logBase, ['a' => $answer], $deiAiError ? ['ai_error' => true] : []), $logLimit);  // v1.2.17 + v1.2.58 kunci
 
     // v1.2.20: kalau percakapan sudah mencapai ambang pesan dan belum
     // punya kartu lead, jalankan analisa SEKALI. Non-blocking —
@@ -2007,6 +2040,7 @@ function respondAndContinue($body = 'EVENT_RECEIVED') {
 function waNormNum($n) { return preg_replace('/[^0-9]/', '', (string)$n); }
 
 function waGetMode($from) {
+    if (deiIsManual()) return 'human';   // v1.2.58: mode Manual = semua nomor dipegang manusia
     $modes = readJson(WA_MODES_FILE, []);
     $k = waNormNum($from);
     return (isset($modes[$k]['mode']) && $modes[$k]['mode'] === 'human') ? 'human' : 'bot';
@@ -2034,6 +2068,7 @@ define('WA_MODE_IDLE_SEC', 3600);   // 1 jam
 // aturannya sendiri lewat waClaimAutoProcess (lepas otomatis 30 menit), dan bot
 // tidak boleh menyela pekerjaan yang sedang berjalan.
 function waModeSweepIdle() {
+    if (deiIsManual()) return 0;          // v1.2.58: tidak ada bot untuk dikembalikan
     $modes = readJson(WA_MODES_FILE, []);
     if (empty($modes) || !is_array($modes)) return 0;
     $claims = readJson(waClaimFile(), []);
@@ -2054,6 +2089,264 @@ function waModeSweepIdle() {
                   . (int)(WA_MODE_IDLE_SEC / 60) . ' menit)');
     }
     return $n;
+}
+
+/* ============================================================================
+ *  v1.2.58: MODE BALASAN (AI / Manual) + TIM AGENT + FITUR DARI PUSAT
+ *
+ *  reply.mode = 'manual' -> AI tidak dipanggil untuk WhatsApp, tidak ada
+ *  balasan otomatis, semua nomor dianggap mode manusia (waGetMode), sapu
+ *  idle & auto-closing mati, claim tidak lepas otomatis. Widget web tetap AI.
+ *
+ *  Fitur per tenant (max_agents, max_supervisors, white_label) dikirim pusat
+ *  lewat cap_info pada check_update dan ikut disimpan di cap-cache.json —
+ *  jadi mengedit users.json/settings.json di tenant tidak bisa menembus batas.
+ * ========================================================================= */
+define('DEI_DEFAULT_MAX_AGENTS', 10);
+define('DEI_DEFAULT_MAX_SUPERVISORS', 1);
+define('WA_AGENT_REPLIED_FILE', DATA_DIR . '/wa-agent-replied.json');   // nomor -> ts balasan agent terakhir
+define('AGENT_EV_DIR', DATA_DIR . '/agent-events');                       // log event agent per bulan (.jsonl)
+
+function deiReplyMode($s = null) {
+    if ($s === null) {
+        if (!isset($GLOBALS['dei_reply_mode_cache'])) {
+            $s = getSettings();
+            $GLOBALS['dei_reply_mode_cache'] = ((($s['reply']['mode'] ?? 'ai') === 'manual') ? 'manual' : 'ai');
+        }
+        return $GLOBALS['dei_reply_mode_cache'];
+    }
+    return ((($s['reply']['mode'] ?? 'ai') === 'manual') ? 'manual' : 'ai');
+}
+function deiIsManual($s = null) { return deiReplyMode($s) === 'manual'; }
+function deiNonTextLabel($type) {
+    $t = trim((string)$type);
+    return '[Pesan ' . ($t !== '' ? $t : 'non-teks') . ' — buka WhatsApp di HP untuk melihat isinya]';
+}
+
+function deiTeamConf($s) {
+    $t = is_array($s['team'] ?? null) ? $s['team'] : [];
+    return [
+        // Agent hanya melihat chat yang belum diklaim + miliknya sendiri.
+        'agent_private' => !empty($t['agent_private']),   // bawaan MATI; nyalakan di Tim & Agent
+    ];
+}
+
+function deiFeaturesFromCap($cap) {
+    if (!is_array($cap)) return null;
+    if (!array_key_exists('max_agents', $cap) && !array_key_exists('white_label', $cap)) return null;   // pusat lama
+    return [
+        'max_agents'      => max(0, (int)($cap['max_agents'] ?? DEI_DEFAULT_MAX_AGENTS)),
+        'max_supervisors' => max(0, (int)($cap['max_supervisors'] ?? DEI_DEFAULT_MAX_SUPERVISORS)),
+        'white_label'     => !empty($cap['white_label']),
+    ];
+}
+
+// 0 = tanpa batas (sama seperti monthly_chat_cap di pusat).
+function deiFeatures($s = null) {
+    if (isset($GLOBALS['dei_features_cache'])) return $GLOBALS['dei_features_cache'];
+    if ($s === null) $s = getSettings();
+    $f = ['max_agents' => DEI_DEFAULT_MAX_AGENTS, 'max_supervisors' => DEI_DEFAULT_MAX_SUPERVISORS,
+          'white_label' => false, 'source' => 'default'];
+    $cs = $s['central_server'] ?? [];
+    if (!empty($cs['url']) && !empty($cs['tenant_id']) && !empty($cs['license_key'])) {
+        try {
+            $cap = getCapStatus($s);
+            if (is_array($cap['features'] ?? null)) $f = $cap['features'] + ['source' => 'pusat'];
+        } catch (\Throwable $e) { error_log('deiFeatures: ' . $e->getMessage()); }
+    }
+    $GLOBALS['dei_features_cache'] = $f;
+    return $f;
+}
+
+// Kursi agent/supervisor: urutan di users.json menentukan siapa yang masuk
+// batas. Kalau paket diturunkan, akun TERAKHIR yang ditambahkan yang terkunci.
+function deiSeatRank($username, $role, $users) {
+    $n = 0;
+    foreach ((array)$users as $u) {
+        if (($u['role'] ?? '') !== $role) continue;
+        $n++;
+        if (($u['username'] ?? '') === $username) return $n;
+    }
+    return 0;
+}
+function deiSeatAllowed($username, $role, $users) {
+    if (!in_array($role, ['wa_agent', 'supervisor'], true)) return true;
+    $f = deiFeatures();
+    $max = ($role === 'wa_agent') ? (int)$f['max_agents'] : (int)$f['max_supervisors'];
+    if ($max <= 0) return true;
+    $rank = deiSeatRank($username, $role, $users);
+    return $rank > 0 && $rank <= $max;
+}
+function deiSeatInfo($users) {
+    $f = deiFeatures();
+    $ag = 0; $sp = 0;
+    foreach ((array)$users as $u) {
+        if (($u['role'] ?? '') === 'wa_agent') $ag++;
+        if (($u['role'] ?? '') === 'supervisor') $sp++;
+    }
+    return ['max_agents' => (int)$f['max_agents'], 'used_agents' => $ag,
+            'max_supervisors' => (int)$f['max_supervisors'], 'used_supervisors' => $sp,
+            'source' => $f['source'] ?? 'default'];
+}
+function deiSeatMsg($role, $f) {
+    $max = ($role === 'wa_agent') ? (int)$f['max_agents'] : (int)$f['max_supervisors'];
+    $lbl = ($role === 'wa_agent') ? 'agent' : 'supervisor';
+    return 'Batas paket: maksimal ' . $max . ' ' . $lbl . '. Hubungi DEI untuk menambah kursi.';
+}
+
+// Agent (mode privat) tidak boleh membuka chat yang dipegang agent lain.
+function deiGuardAgentPrivate($u, $num) {
+    if (($u['role'] ?? '') !== 'wa_agent') return;
+    if (!deiTeamConf(getSettings())['agent_private']) return;
+    $cl = waClaimGet($num);
+    if (!$cl) return;
+    if (($cl['agent_username'] ?? '') === ($u['username'] ?? '')) return;
+    if (($cl['takeover_request']['requester'] ?? '') === ($u['username'] ?? '')) return;
+    jsonOut(['ok' => false, 'error' => 'Chat ini dipegang agent lain.'], 403);
+}
+// v1.2.58: teks & logo kepala widget. Kustomisasi hanya berlaku bila paket
+// tenant punya hak white-label dari pusat; selain itu tampilan bawaan.
+define('DEI_WIDGET_SUBTITLE', 'Online • Powered by AI');
+function deiBranding($s) {
+    $wl = is_array($s['white_label'] ?? null) ? $s['white_label'] : [];
+    $f = deiFeatures($s);
+    $on = !empty($f['white_label']);
+    $sub = DEI_WIDGET_SUBTITLE; $logo = '';
+    if ($on) {
+        $c = trim((string)($wl['subtitle'] ?? ''));
+        if ($c !== '') $sub = $c;
+        elseif (!empty($wl['hide_branding'])) $sub = 'Online';
+        $logo = trim((string)($wl['header_logo'] ?? ''));
+    }
+    return ['subtitle' => $sub, 'header_logo' => $logo, 'white_label' => $on];
+}
+function deiIsLead($role) { return in_array($role, ['super_admin', 'admin', 'supervisor'], true); }   // boleh lihat semua & assign
+
+/* ---------- log event agent (append-only, per bulan) ---------- */
+function agentEvent($ev, $agent, $num, $extra = []) {
+    try {
+        if (!is_dir(AGENT_EV_DIR)) @mkdir(AGENT_EV_DIR, 0755, true);
+        $row = array_merge(['t' => time(), 'ev' => (string)$ev, 'agent' => (string)$agent, 'num' => waNormNum($num)], $extra);
+        @file_put_contents(AGENT_EV_DIR . '/' . wibDate('Y-m') . '.jsonl',
+            json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+    } catch (\Throwable $e) { error_log('agentEvent: ' . $e->getMessage()); }
+}
+function agentEventsRead($fromTs, $toTs) {
+    $out = [];
+    $y = (int)wibDate('Y', $fromTs); $mo = (int)wibDate('n', $fromTs);
+    $endKey = wibDate('Y-m', $toTs);
+    for ($i = 0; $i < 14; $i++) {
+        $key = sprintf('%04d-%02d', $y, $mo);
+        $mo++; if ($mo > 12) { $mo = 1; $y++; }
+        $f = AGENT_EV_DIR . '/' . $key . '.jsonl';
+        if (is_file($f)) {
+            $fh = @fopen($f, 'r');
+            if ($fh) {
+                while (($line = fgets($fh)) !== false) {
+                    $r = json_decode($line, true);
+                    if (!is_array($r)) continue;
+                    $t = (int)($r['t'] ?? 0);
+                    if ($t >= $fromTs && $t <= $toTs) $out[] = $r;
+                }
+                fclose($fh);
+            }
+        }
+        if ($key >= $endKey) break;
+    }
+    return $out;
+}
+// WIB 'Y-m-d' -> ts awal hari (UTC epoch)
+function wibDayStart($ymd) {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$ymd)) return null;
+    $t = strtotime($ymd . ' 00:00:00 UTC');
+    return $t === false ? null : $t - 7 * 3600;
+}
+// Akun yang bisa menerima assign chat (agent & supervisor dalam batas kursi).
+function deiAssignableUsers() {
+    $users = readJson(USERS_FILE, []);
+    $out = [];
+    foreach ((array)$users as $u) {
+        $r = $u['role'] ?? '';
+        if (!in_array($r, ['wa_agent', 'supervisor', 'admin', 'super_admin'], true)) continue;
+        if (!deiSeatAllowed($u['username'] ?? '', $r, $users)) continue;
+        $out[] = ['username' => $u['username'] ?? '', 'name' => $u['name'] ?? ($u['username'] ?? ''), 'role' => $r];
+    }
+    return $out;
+}
+
+/* ---------- jejak balasan agent per nomor (untuk flag "Full bot" & FRT) ---------- */
+function waAgentRepliedAll() { $a = readJson(WA_AGENT_REPLIED_FILE, []); return is_array($a) ? $a : []; }
+// Catat balasan agent; kembalikan ts balasan agent SEBELUMNYA (0 = belum pernah).
+function waAgentRepliedTouch($num) {
+    $num = waNormNum($num);
+    if ($num === '') return 0;
+    $lock = @fopen(DATA_DIR . '/wa-agent-replied.lock', 'c');
+    if ($lock) @flock($lock, LOCK_EX);
+    $prev = 0;
+    try {
+        $all = waAgentRepliedAll();
+        $prev = (int)($all[$num] ?? 0);
+        $all[$num] = time();
+        writeJson(WA_AGENT_REPLIED_FILE, $all);
+    } finally {
+        if ($lock) { @flock($lock, LOCK_UN); @fclose($lock); }
+    }
+    return $prev;
+}
+
+// Satu pintu untuk semua balasan agent (dashboard / HP): jejak + event laporan.
+function deiRecordAgentReply($num, $agent, $src = 'dashboard') {
+    try {
+        $cs = readJson(CONV_STATE_FILE, []);
+        $since = (int)($cs[waNormNum($num)]['guest_waiting_since'] ?? 0);   // dibaca SEBELUM convReply mengosongkannya
+        $prev = waAgentRepliedTouch($num);
+        $first = ($prev === 0 || (time() - $prev) > 86400);                  // balasan pertama sesi (jeda > 24 jam)
+        $ex = ['first' => $first ? 1 : 0, 'src' => $src];
+        if ($since > 0) $ex['wait'] = max(0, time() - $since);
+        agentEvent('reply', $agent, $num, $ex);
+    } catch (\Throwable $e) { error_log('deiRecordAgentReply: ' . $e->getMessage()); }
+}
+
+/* ---------- flag status chat ----------
+ * unreplied : pesan terakhir dari customer (bukan sekadar "ok makasih"), belum dibalas. Tidak pernah kedaluwarsa.
+ * done      : pesan terakhir dari kita & customer diam >= 24 jam (atau customer pamit lalu diam >= 24 jam).
+ * active    : selain itu.
+ * full_bot  : belum pernah ada balasan agent sama sekali (mode AI). */
+function deiChatFlag($num, $meta, $cs, $agentReplied, $now = null) {
+    $now = $now ?? time();
+    $st = is_array($cs[$num] ?? null) ? $cs[$num] : null;
+    if ($st && !empty($st['last_from'])) {
+        $from = (string)$st['last_from'];
+        $at = (int)($st['last_at'] ?? 0);
+        $bye = !empty($st['guest_bye']);
+        $since = (int)($st['guest_waiting_since'] ?? 0);
+    } else {
+        // conv-state dipangkas setelah 3 hari diam -> tebak dari entri log terakhir
+        $dir = (string)($meta['last_dir'] ?? '');
+        $q = (string)($meta['last_q'] ?? ''); $a = (string)($meta['last_a'] ?? '');
+        if ($dir === 'manual') $from = 'agent';
+        elseif ($a === '' && $q !== '') $from = 'guest';
+        else $from = 'bot';
+        $at = strtotime((string)($meta['last_ts'] ?? '')) ?: 0;
+        $bye = ($from === 'guest') && deiIsClosingPhrase($q);
+        $since = ($from === 'guest' && !$bye) ? $at : 0;
+    }
+    if (!empty($meta['bot_failed']) && $from !== 'agent') { $from = 'guest'; $bye = false; if (!$since) $since = $at; }
+    $flag = 'active'; $note = '';
+    if ($from === 'guest' && !$bye) {
+        $flag = 'unreplied';
+    } elseif ($at > 0 && ($now - $at) >= 86400) {
+        $flag = 'done';
+        $note = ($from === 'guest') ? 'Customer menutup percakapan' : 'Tidak ada balasan customer dalam 24 jam';
+    }
+    $hasAgent = isset($agentReplied[$num]) || !empty($meta['has_manual']);
+    return [
+        'flag'        => $flag,
+        'flag_note'   => $note,
+        'waiting_sec' => ($flag === 'unreplied' && $since > 0) ? max(0, $now - $since) : 0,
+        'last_from'   => $from,
+        'full_bot'    => !$hasAgent,
+    ];
 }
 
 // ============================================================================
@@ -2165,6 +2458,9 @@ function waClaimAutoProcess() {
         }
 
         // 2. Auto-release kalau inactivity
+        // v1.2.58: mode Manual -> claim tidak lepas otomatis (tidak ada bot
+        // yang mengambil alih); SPV yang memindahkan chat bila perlu.
+        if (deiIsManual()) continue;
         $lastActivity = $claim['last_agent_activity'] ?? $claim['claimed_at'] ?? 0;
         if ($now - $lastActivity > $INACTIVITY_TIMEOUT) {
             waAuditLog('auto_release', $claim['agent_username'] ?? 'unknown', $num, [
@@ -2529,6 +2825,7 @@ function escNotifyContacts($s, $ec, $contacts, $title, $text, $vars, $incId, $in
 
 /* ---------- SWEEP 1: Auto-Closing WA ---------- */
 function autoClosingSweep($s) {
+    if (deiIsManual($s)) return [];      // v1.2.58: mode Manual tanpa pesan otomatis
     $ac = deiAcConf($s);
     if (!$ac['enabled'] || !deiInHours($ac['hours'])) return [];
     $wa = waConf($s);
@@ -2563,13 +2860,11 @@ function autoClosingSweep($s) {
         if (!$ok) continue;
 
         if ($keepCtx) { $h = waLoadHistory($num); $h[] = ['role' => 'assistant', 'content' => $text]; waSaveHistory($num, $h); }
-        $logs = readJson(LOG_FILE, []);
-        array_unshift($logs, [
+        logPrepend([
             'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $text, 'ip' => $num,
             'channel' => 'whatsapp', 'dir' => 'closing',
             'utm_source' => 'whatsapp', 'utm_medium' => 'auto_closing', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
-        ]);
-        writeJson(LOG_FILE, array_slice($logs, 0, (int)($s['api']['log_limit'] ?? 500)));
+        ], (int)($s['api']['log_limit'] ?? 500));
     }
     return $out;
 }
@@ -2578,7 +2873,8 @@ function autoClosingSweep($s) {
 function escReasonLabel($r) {
     $m = ['claimed_unanswered' => 'sudah di-claim agent, belum dibalas',
           'human_unanswered'   => 'mode manusia (handoff), belum ada agent membalas',
-          'bot_failed'         => 'bot/AI gagal membalas'];
+          'bot_failed'         => 'bot/AI gagal membalas',
+          'manual_unanswered'  => 'mode manual, belum ada agent membalas'];   // v1.2.58
     return $m[$r] ?? $r;
 }
 function escBuildText($tenant, $menit, $kontak, $pesan, $reason, $L) {
@@ -2608,7 +2904,7 @@ function escalationSweep($s) {
         if ($target <= $lvl) continue;
 
         $claim = waClaimGet($num);
-        $reason = $claim ? 'claimed_unanswered' : (waGetMode($num) === 'human' ? 'human_unanswered' : 'bot_failed');
+        $reason = $claim ? 'claimed_unanswered' : (deiIsManual($s) ? 'manual_unanswered' : (waGetMode($num) === 'human' ? 'human_unanswered' : 'bot_failed'));
         $incId = (string)($st['esc_inc'] ?? '');
         $baru = ($incId === '');
         if ($baru) $incId = 'inc_' . wibDate('Ymd_His') . '_' . bin2hex(random_bytes(2));
@@ -2790,6 +3086,7 @@ switch ($action) {
                 'whatsapp_number'  => $s['widget']['whatsapp_number'] ?? '',
                 'whatsapp_message' => $s['widget']['whatsapp_message'] ?? '',
                 'lead_form'        => deiLeadFormConfig($s),   // v1.2.53
+                'branding'         => deiBranding($s),          // v1.2.58: white-label
                 'auto_closing'     => (function ($ac) { return ['enabled' => $ac['enabled'], 'minutes' => $ac['minutes']]; })(deiAcConf($s)),   // v1.2.56
                 'bot' => [
                     'bot_name'      => $s['bot']['bot_name'] ?? 'Assistant',
@@ -2871,25 +3168,21 @@ switch ($action) {
             // v1.2.17: sebelumnya kegagalan AI di chat web LANGSUNG jsonOut tanpa
             // menulis log — kejadiannya hilang tanpa jejak. Sekarang dicatat.
             try {
-                $failLogs = readJson(LOG_FILE, []);
-                array_unshift($failLogs, [
+                logPrepend([
                     'ts'       => date('Y-m-d H:i:s'),
                     'q'        => $message,
                     'a'        => $answer,
                     'ip'       => $ip ?? '',
                     'channel'  => 'web',
                     'ai_error' => true,
-                ]);
-                $failLimit = (int)($s['api']['log_limit'] ?? 500);
-                writeJson(LOG_FILE, array_slice($failLogs, 0, $failLimit));
+                ], (int)($s['api']['log_limit'] ?? 500));
             } catch (\Throwable $e) { error_log('log ai_error web: ' . $e->getMessage()); }
             jsonOut(['ok' => false, 'error' => 'Maaf, terjadi gangguan. ' . $answer], 502);
         }
         recordUsage($usage);
 
         // Log the conversation with UTM
-        $logs = readJson(LOG_FILE, []);
-        array_unshift($logs, [
+        $logRow = [
             'ts'           => date('Y-m-d H:i:s'),
             'q'            => $message,
             'a'            => $answer,
@@ -2900,10 +3193,9 @@ switch ($action) {
             'utm_campaign' => substr((string)($utm['utm_campaign'] ?? ''), 0, 120),
             'page'         => substr((string)($utm['page'] ?? ''), 0, 300),
             'referrer'     => substr((string)($utm['referrer'] ?? ''), 0, 300),
-        ]);
+        ];
         $logLimit = (int)($s['api']['log_limit'] ?? 500);
-        $logs = array_slice($logs, 0, $logLimit);
-        writeJson(LOG_FILE, $logs);
+        $logs = logPrepend($logRow, $logLimit);   // v1.2.58: kunci
 
         // v1.2.45: simpan ke web conversation session
         if ($convId !== '') {
@@ -3308,7 +3600,7 @@ switch ($action) {
 
     /* ---------- ADMIN: Blast WA (v1.2.47) ---------- */
     case 'wa_templates': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $wa = waConf(getSettings());
         if (($wa['provider'] ?? 'meta') !== 'meta') {
             jsonOut(['ok' => false, 'error' => 'Blast template hanya untuk penyedia Meta Cloud API resmi.'], 400);
@@ -3335,7 +3627,7 @@ switch ($action) {
     }
 
     case 'wa_blast_start': {
-        $u = requireAuth(['super_admin', 'admin']);
+        $u = requireAuth(['super_admin', 'admin', 'supervisor']);
         $wa = waConf(getSettings());
         if (($wa['provider'] ?? 'meta') !== 'meta') jsonOut(['ok' => false, 'error' => 'Hanya untuk Meta Cloud API resmi.'], 400);
         $in = bodyInput();
@@ -3395,7 +3687,7 @@ switch ($action) {
     }
 
     case 'wa_blast_run': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $wa = waConf(getSettings());
         $in = bodyInput();
         $jobId = trim($in['job_id'] ?? '');
@@ -3426,7 +3718,7 @@ switch ($action) {
     }
 
     case 'wa_blast_history': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $all = waBlastReadAll();
         $out = [];
         foreach ($all as $b) {
@@ -3441,7 +3733,7 @@ switch ($action) {
     }
 
     case 'wa_blast_get': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $jobId = trim($_GET['job_id'] ?? '');
         $all = waBlastReadAll();
         $idx = waBlastFind($all, $jobId);
@@ -3517,6 +3809,11 @@ switch ($action) {
                     catch (\Throwable $e) { error_log('waSaveContact: ' . $e->getMessage()); }
 
                     if (($msg['type'] ?? '') !== 'text') {
+                        // v1.2.58: mode Manual tidak membalas otomatis; tandai saja supaya agent tahu
+                        if (deiIsManual($s)) {
+                            waProcessIncoming($s, $wa, $from, deiNonTextLabel($msg['type'] ?? ''), $deiWaName, $change['value']['metadata'] ?? []);
+                            continue;
+                        }
                         waSend($wa, $from, 'Maaf, untuk saat ini saya hanya bisa membalas pesan teks.');
                         continue;
                     }
@@ -3534,18 +3831,21 @@ switch ($action) {
                     $etext = (($echo['type'] ?? '') === 'text') ? trim($echo['text']['body'] ?? '') : '';
                     if ($etext === '') continue;
                     try {
-                        $elogs = readJson(LOG_FILE, []);
                         $eid = (string)($echo['id'] ?? '');
                         $dup = false;
-                        if ($eid !== '') { foreach ($elogs as $el) { if (($el['echo_id'] ?? '') === $eid) { $dup = true; break; } } }
-                        if (!$dup) {
+                        // v1.2.58: cek duplikat + tulis di bawah satu kunci
+                        logMutate(function (&$elogs) use ($eid, $etext, $eto, &$dup) {
+                            if ($eid !== '') { foreach ($elogs as $el) { if (($el['echo_id'] ?? '') === $eid) { $dup = true; return false; } } }
                             array_unshift($elogs, [
                                 'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $etext, 'ip' => $eto,
                                 'channel' => 'whatsapp', 'dir' => 'manual', 'src' => 'hp', 'echo_id' => $eid,
                                 'utm_source' => 'whatsapp', 'utm_medium' => 'hp', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
                             ]);
-                            writeJson(LOG_FILE, array_slice($elogs, 0, $logLimit));
+                        }, $logLimit);
+                        if (!$dup) {
                             waSetMode($eto, 'human'); // agent balas dari HP = ambil alih -> bot mundur
+                            $ecl = waClaimGet($eto);   // v1.2.58: atribusikan ke pemegang claim bila ada
+                            deiRecordAgentReply($eto, $ecl ? ($ecl['agent_username'] ?? '(HP)') : '(HP)', 'hp');
                             convReply($eto, 'agent');   // v1.2.56
                             if ($keepCtx) { $eh = waLoadHistory($eto); $eh[] = ['role' => 'assistant', 'content' => $etext]; waSaveHistory($eto, $eh); }
                         }
@@ -3569,7 +3869,7 @@ switch ($action) {
                     foreach (($hist['threads'] ?? []) as $thread) {
                         $hnum = waNormNum($thread['id'] ?? ($thread['contact_id'] ?? ''));
                         if ($hnum === '') continue;
-                        $hlogs = readJson(LOG_FILE, []);
+                        $hrows = [];   // v1.2.58: dikumpulkan dulu, ditulis sekali di bawah kunci
                         foreach (($thread['messages'] ?? []) as $hm) {
                             if (($hm['type'] ?? '') !== 'text') continue;
                             $htext = trim($hm['text']['body'] ?? '');
@@ -3577,7 +3877,7 @@ switch ($action) {
                             $hfrom = waNormNum($hm['from'] ?? '');
                             $hts   = !empty($hm['timestamp']) ? date('Y-m-d H:i:s', (int)$hm['timestamp']) : date('Y-m-d H:i:s');
                             $outbound = ($hfrom !== '' && $hfrom !== $hnum); // dari nomor bisnis -> balasan
-                            array_unshift($hlogs, [
+                            array_unshift($hrows, [
                                 'ts' => $hts,
                                 'q' => $outbound ? '' : $htext,
                                 'a' => $outbound ? $htext : '',
@@ -3586,7 +3886,7 @@ switch ($action) {
                                 'utm_source' => 'whatsapp', 'utm_medium' => 'history', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
                             ]);
                         }
-                        writeJson(LOG_FILE, array_slice($hlogs, 0, max($logLimit, 2000)));
+                        if ($hrows) logMutate(function (&$hlogs) use ($hrows) { $hlogs = array_merge($hrows, $hlogs); }, max($logLimit, 2000));
                     }
                 }
             }
@@ -3668,6 +3968,11 @@ switch ($action) {
 
         // Pesan non-teks dibalas sama seperti jalur Meta.
         $jenis = trim((string)($d['type'] ?? ''));
+        if (deiIsManual($s) && (($jenis !== '' && $jenis !== 'text') || $text === '')) {
+            // v1.2.58: mode Manual — catat sebagai pesan non-teks, tanpa balasan otomatis
+            $text = ($text !== '' ? $text . "\n" : '') . deiNonTextLabel($jenis);
+            $jenis = 'text';
+        }
         if (($jenis !== '' && $jenis !== 'text') || $text === '') {
             waSend($wa, $from, 'Maaf, untuk saat ini saya hanya bisa membalas pesan teks.');
             if (!$earlyAck) { echo 'OK'; }
@@ -3817,7 +4122,7 @@ switch ($action) {
     case 'analyze_lead': {
         // Analisa manual (mis. percakapan lama sebelum fitur ini ada, atau
         // percakapan yang sudah berkembang jauh sejak analisa pertama).
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $in  = bodyInput();
         $num = preg_replace('/\D/', '', (string)($in['number'] ?? ''));
         if ($num === '') jsonOut(['ok' => false, 'error' => 'Nomor tidak valid.'], 400);
@@ -3874,7 +4179,7 @@ switch ($action) {
     case 'export_contacts': {
         // Ekspor menarik data pribadi customer keluar sistem -> dibatasi ke
         // super_admin/admin saja, dan dicatat jejaknya.
-        $me = requireAuth(['super_admin', 'admin']);
+        $me = requireAuth(['super_admin', 'admin', 'supervisor']);
 
         // Kumpulkan SEMUA nomor WA yang pernah muncul di log (bukan hanya yang
         // sudah punya nama), lalu gabungkan dengan nama dari wa-contacts.json.
@@ -4005,9 +4310,10 @@ switch ($action) {
     }
 
     case 'wa_thread': {
-        requireAuth(['super_admin','admin','wa_agent']);
+        $u = requireAuth(['super_admin','admin','wa_agent']);
         $num = waNormNum($_GET['number'] ?? '');
         if ($num === '') jsonOut(['ok' => false, 'error' => 'number wajib'], 400);
+        deiGuardAgentPrivate($u, $num);   // v1.2.58
         $logs = readJson(LOG_FILE, []);
         $msgs = [];
         $lastInbound = 0;
@@ -4042,7 +4348,7 @@ switch ($action) {
 
     /* ---------- ADMIN: send a manual WhatsApp reply ---------- */
     case 'wa_send_manual': {
-        requireAuth(['super_admin','admin','wa_agent']);
+        $u = requireAuth(['super_admin','admin','wa_agent']);
         $s = getSettings();
         $wa = waConf($s);
         $in = bodyInput();
@@ -4050,6 +4356,13 @@ switch ($action) {
         $text = trim($in['text'] ?? '');
         if ($num === '' || $text === '') jsonOut(['ok' => false, 'error' => 'number & text wajib'], 400);
         if (mb_strlen($text) > 4000) $text = mb_substr($text, 0, 4000);
+        // v1.2.58: agent tidak boleh membalas chat yang dipegang agent lain
+        if ($u['role'] === 'wa_agent') {
+            $cl58 = waClaimGet($num);
+            if ($cl58 && ($cl58['agent_username'] ?? '') !== $u['username']) {
+                jsonOut(['ok' => false, 'error' => 'Chat ini dipegang ' . ($cl58['agent_username'] ?? 'agent lain') . '. Minta take-over dulu.'], 403);
+            }
+        }
 
         $logs = readJson(LOG_FILE, []);
         $lastInbound = 0;
@@ -4069,18 +4382,20 @@ switch ($action) {
             jsonOut(['ok' => false, 'error' => $emsg], 502);
         }
         waSetMode($num, 'human'); // replying manually = taking over
+        deiRecordAgentReply($num, $u['username'], 'dashboard');   // v1.2.58 (sebelum convReply)
         convReply($num, 'agent');   // v1.2.56
         if ($wa['keep_context'] ?? true) {
             $h = waLoadHistory($num);
             $h[] = ['role' => 'assistant', 'content' => $text];
             waSaveHistory($num, $h);
         }
-        array_unshift($logs, [
+        // v1.2.58: baca ulang di bawah kunci — $logs di atas dibaca SEBELUM waSend
+        // (panggilan jaringan), jadi pesan yang masuk selama itu dulu ikut tertimpa.
+        logPrepend([
             'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $text, 'ip' => $num,
             'channel' => 'whatsapp', 'dir' => 'manual',
             'utm_source' => 'whatsapp', 'utm_medium' => 'manual', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
-        ]);
-        writeJson(LOG_FILE, array_slice($logs, 0, (int)($s['api']['log_limit'] ?? 500)));
+        ], (int)($s['api']['log_limit'] ?? 500));
         jsonOut(['ok' => true]);
         break;
     }
@@ -4127,6 +4442,10 @@ switch ($action) {
                     $users[$idx]['migrated_3role'] = true;
                     writeJson(USERS_FILE, $users);
                     $role = 'admin';
+                }
+                // v1.2.58: batas kursi agent/supervisor dari paket
+                if (($role === 'wa_agent' || $role === 'supervisor') && !deiSeatAllowed($username, $role, $users)) {
+                    jsonOut(['ok' => false, 'error' => deiSeatMsg($role, deiFeatures())], 403);
                 }
                 jsonOut([
                     'ok' => true,
@@ -4303,8 +4622,31 @@ switch ($action) {
                 $merged['escalation'] = deiMergeSettings($current['escalation'] ?? [], $escIn);
             }
             // EXPLICITLY ignore: api.claude_api_key, whatsapp_api.*, telegram.*
+            // v1.2.58: reply.*, team.*, white_label.* hanya Super Admin
         }
+        // v1.2.58: rapikan nilai mode balasan, tim, white-label
+        if (isset($merged['reply']) || isset($incoming['reply'])) {
+            $merged['reply'] = ['mode' => ((($merged['reply']['mode'] ?? 'ai') === 'manual') ? 'manual' : 'ai')];
+        }
+        if (isset($merged['team']) && is_array($merged['team'])) {
+            $merged['team'] = ['agent_private' => !empty($merged['team']['agent_private'])];
+        }
+        if (isset($merged['white_label']) && is_array($merged['white_label'])) {
+            $wl = $merged['white_label'];
+            $logo = trim((string)($wl['header_logo'] ?? ''));
+            if ($logo !== '' && !preg_match('#^(https?://|/|\./|\.\./)#i', $logo)) $logo = '';
+            $merged['white_label'] = [
+                'subtitle'      => mb_substr(trim((string)($wl['subtitle'] ?? '')), 0, 60),
+                'header_logo'   => mb_substr($logo, 0, 500),
+                'hide_branding' => !empty($wl['hide_branding']),
+            ];
+        }
+        $modeLama = deiReplyMode($current);
         writeJson(SETTINGS_FILE, $merged);
+        unset($GLOBALS['dei_reply_mode_cache']);
+        if ($modeLama !== deiReplyMode($merged)) {
+            try { waAuditLog('reply_mode_' . deiReplyMode($merged), $u['username'], '', []); } catch (\Throwable $e) {}
+        }
         jsonOut(['ok' => true]);
         break;
     }
@@ -4392,7 +4734,7 @@ switch ($action) {
 
     /* ---------- v1.2.13: kelola kategori notif ---------- */
     case 'get_categories': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         jsonOut([
             'ok'         => true,
             'fixed'      => deiFixedCategories(),
@@ -4771,7 +5113,7 @@ switch ($action) {
 
     /* ---------- logs (admin only) ---------- */
     case 'get_logs': {
-        requireAuth(['super_admin','admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $logs = readJson(LOG_FILE, []);
         $limit = (int)($_GET['limit'] ?? 200);
         if ($limit > 0) $logs = array_slice($logs, 0, $limit);
@@ -4781,7 +5123,7 @@ switch ($action) {
 
     /* ---------- report / stats with UTM aggregation (admin only) ---------- */
     case 'report': {
-        requireAuth(['super_admin','admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $logs = readJson(LOG_FILE, []);
         $kb = readJson(KB_FILE, []);
         $today = date('Y-m-d');
@@ -4864,7 +5206,7 @@ switch ($action) {
 
     /* ---------- export logs to CSV with date range (admin only) ---------- */
     case 'export_logs': {
-        requireAuth(['super_admin','admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $from = isset($_GET['from']) ? substr($_GET['from'], 0, 10) : '';
         $to   = isset($_GET['to'])   ? substr($_GET['to'], 0, 10)   : '';
         $logs = readJson(LOG_FILE, []);
@@ -4973,7 +5315,7 @@ switch ($action) {
     case 'get_users': {
         // v1.2.14: admin ikut boleh (kelola wa_agent). Data aman: tanpa password/hash.
         // Pembatasan tetap di save_user/delete_user (admin cuma boleh target wa_agent).
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $users = readJson(USERS_FILE, []);
         $safe = array_map(function ($u) {
             return [
@@ -4983,17 +5325,21 @@ switch ($action) {
                 'categories' => $u['categories'] ?? [],  // v1.2.12 Fase 2: categories
             ];
         }, $users);
-        jsonOut(['ok' => true, 'users' => $safe]);
+        // v1.2.58: kursi paket + status terkunci per akun
+        foreach ($safe as $i => $su) {
+            $safe[$i]['seat_locked'] = !deiSeatAllowed($su['username'], $su['role'], $users);
+        }
+        jsonOut(['ok' => true, 'users' => $safe, 'seats' => deiSeatInfo($users)]);
         break;
     }
 
     case 'save_user': {
-        $me = requireAuth(['super_admin', 'admin']);
+        $me = requireAuth(['super_admin', 'admin', 'supervisor']);
         $in = bodyInput();
         $username = trim($in['username'] ?? '');
         $name     = trim($in['name'] ?? $username);
         $roleIn   = (string)($in['role'] ?? 'admin');
-        $role     = in_array($roleIn, ['super_admin', 'admin', 'wa_agent'], true) ? $roleIn : 'admin';
+        $role     = in_array($roleIn, ['super_admin', 'admin', 'supervisor', 'wa_agent'], true) ? $roleIn : 'admin';   // v1.2.58
         $password = (string)($in['password'] ?? '');
         // v1.2.12 Fase 2: categories (multi-select untuk routing push by topic)
         $categories = [];
@@ -5007,9 +5353,10 @@ switch ($action) {
         if ($username === '') jsonOut(['ok' => false, 'error' => 'Username wajib diisi.'], 400);
 
         // === v1.2.6: admin restriction — cuma boleh manage wa_agent ===
-        if ($me['role'] === 'admin') {
+        // v1.2.58: supervisor diperlakukan sama (kelola akun agent saja)
+        if ($me['role'] === 'admin' || $me['role'] === 'supervisor') {
             if ($role !== 'wa_agent') {
-                jsonOut(['ok' => false, 'error' => 'Admin hanya dapat mengelola user dengan peran WA Agent.'], 403);
+                jsonOut(['ok' => false, 'error' => ($me['role'] === 'supervisor' ? 'Supervisor' : 'Admin') . ' hanya dapat mengelola user dengan peran WA Agent.'], 403);
             }
             $chkUsers = readJson(USERS_FILE, []);
             foreach ($chkUsers as $chkU) {
@@ -5026,6 +5373,21 @@ switch ($action) {
         }
 
         $users = readJson(USERS_FILE, []);
+        // v1.2.58: batas kursi paket (agent & supervisor). Dihitung tanpa akun
+        // yang sedang diedit, jadi mengedit akun yang sudah ada tetap boleh.
+        if ($role === 'wa_agent' || $role === 'supervisor') {
+            $fSeat = deiFeatures();
+            $maxSeat = ($role === 'wa_agent') ? (int)$fSeat['max_agents'] : (int)$fSeat['max_supervisors'];
+            if ($maxSeat > 0) {
+                $pakai = 0; $sudahPeran = false;
+                foreach ($users as $su) {
+                    if (($su['role'] ?? '') !== $role) continue;
+                    if (($su['username'] ?? '') === $username) { $sudahPeran = true; continue; }
+                    $pakai++;
+                }
+                if (!$sudahPeran && $pakai >= $maxSeat) jsonOut(['ok' => false, 'error' => deiSeatMsg($role, $fSeat)], 400);
+            }
+        }
         $found = false;
         foreach ($users as $i => $u) {
             if (($u['username'] ?? '') === $username) {
@@ -5054,12 +5416,12 @@ switch ($action) {
     }
 
     case 'delete_user': {
-        $me = requireAuth(['super_admin', 'admin']);
+        $me = requireAuth(['super_admin', 'admin', 'supervisor']);
         $in = bodyInput();
         $username = trim($in['username'] ?? '');
         if ($username === $me['username']) jsonOut(['ok' => false, 'error' => 'Tidak dapat menghapus akun Anda sendiri.'], 400);
         // === v1.2.6: admin restriction — cuma boleh delete wa_agent ===
-        if ($me['role'] === 'admin') {
+        if ($me['role'] === 'admin' || $me['role'] === 'supervisor') {   // v1.2.58
             $delUsers = readJson(USERS_FILE, []);
             $delTargetRole = '';
             foreach ($delUsers as $du) {
@@ -5123,7 +5485,7 @@ switch ($action) {
      * ============================================================ */
 
     case 'usage_summary': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $all = readJson(DATA_DIR . '/usage.json', []);
         ksort($all);
         // last 30 days
@@ -5249,7 +5611,7 @@ switch ($action) {
     }
 
     case 'license_status': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $s = getSettings();
         $lic = getLicenseStatus($s);
         jsonOut(['ok' => true, 'license' => $lic]);
@@ -5649,6 +6011,7 @@ switch ($action) {
                 'cap'       => (int)($cap['monthly_chat_cap'] ?? 0),
                 'used'      => (int)($cap['chats_this_month'] ?? 0),
                 'message'   => $capMsg,
+                'features'  => deiFeaturesFromCap($cap),   // v1.2.58
                 'cached_at' => time(),
             ];
             writeJson(CAP_CACHE_FILE, $capCache);
@@ -5975,7 +6338,7 @@ switch ($action) {
 
     /* ---------- v1.2.56: daftar insiden + status cron (dashboard) ---------- */
     case 'esc_incidents': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $db = readJson(ESC_FILE, []);
         $list = [];
         foreach ((array)($db['incidents'] ?? []) as $id => $inc) {
@@ -6055,6 +6418,7 @@ switch ($action) {
             jsonOut(['ok' => false, 'error' => 'Gagal menyimpan claim state'], 500);
         }
         waAuditLog('claim', $u['username'], $num);
+        agentEvent('claim', $u['username'], $num);   // v1.2.58
         jsonOut([
             'ok' => true,
             'number' => $num,
@@ -6082,7 +6446,7 @@ switch ($action) {
         }
 
         // Admin bisa release siapa saja, wa_agent hanya release milik sendiri
-        $isAdmin = in_array($u['role'], ['super_admin','admin']);
+        $isAdmin = in_array($u['role'], ['super_admin','admin','supervisor']);   // v1.2.58
         $owner = $current['agent_username'] ?? '';
         if (!$isAdmin && $owner !== $u['username']) {
             jsonOut([
@@ -6097,6 +6461,7 @@ switch ($action) {
         }
         $action = ($owner === $u['username']) ? 'release' : 'admin_release';
         waAuditLog($action, $u['username'], $num, ['from_agent' => $owner]);
+        agentEvent('release', $owner, $num, ['by' => $u['username']]);   // v1.2.58
         jsonOut([
             'ok' => true,
             'number' => $num,
@@ -6109,7 +6474,7 @@ switch ($action) {
     case 'wa_conversations_v2': {
         $u = requireAuth(['super_admin','admin','wa_agent']);
         $me = $u['username'];
-        $isAdmin = in_array($u['role'], ['super_admin','admin']);
+        $isAdmin = in_array($u['role'], ['super_admin','admin','supervisor']);   // v1.2.58
 
         // Auto-process expired claims + takeover requests
         list($autoReleased, $autoApproved) = waClaimAutoProcess();
@@ -6135,10 +6500,21 @@ switch ($action) {
                     // ditemui = entri TERAKHIR (log disimpan terbaru-dulu).
                     'last_dir' => $e['dir'] ?? '',
                     'bot_failed' => (!empty($e['cap_reached']) || !empty($e['suspended']) || !empty($e['ai_error'])),
+                    'has_manual' => false,   // v1.2.58
                 ];
             }
             $numbers[$num]['count']++;
+            if (($e['dir'] ?? '') === 'manual') $numbers[$num]['has_manual'] = true;
         }
+
+        // v1.2.58: flag status + privasi agent + daftar agent untuk assign
+        $s58 = getSettings();
+        $isManual = deiIsManual($s58);
+        $agentPrivate = deiTeamConf($s58)['agent_private'] && $u['role'] === 'wa_agent';
+        $convState = readJson(CONV_STATE_FILE, []);
+        if (!is_array($convState)) $convState = [];
+        $agentReplied = waAgentRepliedAll();
+        $nowTs = time();
 
         // Get semua claim state sekaligus (1 file read)
         $allClaims = waClaimGetAll();
@@ -6148,9 +6524,20 @@ switch ($action) {
         // Build result with claim state
         $result = [];
         $cntToday = 0; $cntAttention = 0;   // v1.2.17
+        $cntFlag = ['unreplied' => 0, 'done' => 0, 'full_bot' => 0, 'active' => 0];   // v1.2.58
+        $visible = [];                      // v1.2.58: nomor yang boleh dilihat user ini
         $todayStr = date('Y-m-d');          // sejam dengan penulisan log (date(), bukan WIB helper)
         foreach ($numbers as $num => $meta) {
             $claim = $allClaims[$num] ?? null;
+            // v1.2.58: agent hanya melihat chat yang belum diklaim + miliknya
+            // (+ chat yang sedang ia minta take-over).
+            if ($agentPrivate && $claim && ($claim['agent_username'] ?? '') !== $me
+                && (($claim['takeover_request']['requester'] ?? '') !== $me)) continue;
+            $visible[$num] = true;
+            $fl = deiChatFlag((string)$num, $meta, $convState, $agentReplied, $nowTs);
+            if ($isManual) $fl['full_bot'] = false;   // tidak ada bot di mode Manual
+            $cntFlag[$fl['flag']]++;
+            if ($fl['full_bot']) $cntFlag['full_bot']++;
             $mode = $claim ? 'human' : waGetMode($num);  // fallback ke waGetMode kalau tidak claimed
             $status = 'bot';
             if ($claim) {
@@ -6189,6 +6576,11 @@ switch ($action) {
                 'mode' => $mode,
                 'status' => $status,
                 'claim' => $claim,
+                'flag' => $fl['flag'],              // v1.2.58: unreplied|done|active
+                'flag_note' => $fl['flag_note'],
+                'waiting_sec' => $fl['waiting_sec'],
+                'full_bot' => $fl['full_bot'],
+                'last_from' => $fl['last_from'],
             ];
 
             // Apply filter
@@ -6219,6 +6611,13 @@ switch ($action) {
                 case 'attention':           // v1.2.17
                     $show = $needsAttention;
                     break;
+                case 'unreplied':           // v1.2.58
+                case 'done':
+                    $show = ($fl['flag'] === $filter);
+                    break;
+                case 'full_bot':
+                    $show = $fl['full_bot'];
+                    break;
                 case 'all':
                 default:
                     $show = true;
@@ -6232,8 +6631,10 @@ switch ($action) {
         });
 
         // Counts per filter (untuk badge)
-        $counts = ['all' => count($numbers), 'mine' => 0, 'unclaimed' => 0, 'others' => 0, 'takeover_requests' => 0, 'today' => $cntToday, 'attention' => $cntAttention];  // v1.2.17
+        $counts = ['all' => count($visible), 'mine' => 0, 'unclaimed' => 0, 'others' => 0, 'takeover_requests' => 0, 'today' => $cntToday, 'attention' => $cntAttention,
+                   'unreplied' => $cntFlag['unreplied'], 'done' => $cntFlag['done'], 'full_bot' => $cntFlag['full_bot']];  // v1.2.17 + v1.2.58
         foreach ($numbers as $num => $meta) {
+            if (!isset($visible[$num])) continue;   // v1.2.58
             $claim = $allClaims[$num] ?? null;
             if (!$claim) {
                 $counts['unclaimed']++;
@@ -6258,6 +6659,11 @@ switch ($action) {
             'me' => $me,
             'is_admin' => $isAdmin,
             'filter' => $filter,
+            // v1.2.58
+            'role' => $u['role'],
+            'reply_mode' => $isManual ? 'manual' : 'ai',
+            'agent_private' => $agentPrivate,
+            'agents' => deiIsLead($u['role']) ? deiAssignableUsers() : [],
         ]);
         break;
     }
@@ -6345,7 +6751,7 @@ switch ($action) {
         }
         $req = $current['takeover_request'];
         $owner = $current['agent_username'] ?? '';
-        $isAdmin = in_array($u['role'], ['super_admin','admin']);
+        $isAdmin = in_array($u['role'], ['super_admin','admin','supervisor']);   // v1.2.58
 
         // Only owner atau admin yang boleh respond
         if (!$isAdmin && $owner !== $u['username']) {
@@ -6389,7 +6795,7 @@ switch ($action) {
     }
 
     case 'wa_admin_takeover': {
-        $u = requireAuth(['super_admin','admin']);
+        $u = requireAuth(['super_admin', 'admin', 'supervisor']);
         $in = bodyInput();
         $num = waNormNum($in['number'] ?? '');
         $reason = trim((string)($in['reason'] ?? 'admin_action'));
@@ -6422,8 +6828,163 @@ switch ($action) {
         break;
     }
 
+    /* ============================================================
+     *  v1.2.58: TIM — assign chat, info tim, laporan per agent
+     * ============================================================ */
+    case 'wa_assign': {
+        $u = requireAuth(['super_admin', 'admin', 'supervisor']);
+        $in = bodyInput();
+        $num = waNormNum($in['number'] ?? '');
+        $to  = trim((string)($in['agent'] ?? ''));
+        if ($num === '' || $to === '') jsonOut(['ok' => false, 'error' => 'number & agent wajib'], 400);
+        $target = null;
+        foreach (deiAssignableUsers() as $au) { if ($au['username'] === $to) { $target = $au; break; } }
+        if (!$target) jsonOut(['ok' => false, 'error' => 'Agent tidak ditemukan atau di luar batas paket.'], 404);
+        waClaimAutoProcess();
+        $current = waClaimGet($num);
+        $from = $current['agent_username'] ?? '';
+        if ($from === $to) jsonOut(['ok' => true, 'number' => $num, 'agent' => $to, 'note' => 'Sudah dipegang agent ini']);
+        $claim = [
+            'agent_username'      => $to,
+            'claimed_at'          => time(),
+            'last_agent_activity' => time(),
+            'assigned_by'         => $u['username'],
+        ];
+        if (!waClaimSet($num, $claim)) jsonOut(['ok' => false, 'error' => 'Gagal menyimpan assign'], 500);
+        waAuditLog('assign', $u['username'], $num, ['from_agent' => $from !== '' ? $from : '(none)', 'to_agent' => $to]);
+        agentEvent('assign', $to, $num, ['by' => $u['username'], 'from' => $from]);
+        try {
+            $nm = waContactName($num);
+            sendPushToUsers([$to], 'Chat diserahkan ke Anda', '+' . $num . ($nm ? ' (' . $nm . ')' : '') . ' — dari ' . $u['username'], deiDashboardUrl());
+        } catch (\Throwable $e) { error_log('wa_assign push: ' . $e->getMessage()); }
+        jsonOut(['ok' => true, 'number' => $num, 'agent' => $to, 'from_agent' => $from]);
+        break;
+    }
+
+    case 'team_info': {
+        $u = requireAuth(['super_admin', 'admin', 'supervisor', 'wa_agent']);
+        $s = getSettings();
+        $users = readJson(USERS_FILE, []);
+        $f = deiFeatures($s);
+        jsonOut([
+            'ok'          => true,
+            'role'        => $u['role'],
+            'reply_mode'  => deiReplyMode($s),
+            'team'        => deiTeamConf($s),
+            'features'    => ['max_agents' => (int)$f['max_agents'], 'max_supervisors' => (int)$f['max_supervisors'],
+                              'white_label' => !empty($f['white_label']), 'source' => $f['source'] ?? 'default'],
+            'seats'       => deiSeatInfo($users),
+            'wa_provider' => (string)($s['whatsapp_api']['provider'] ?? 'meta'),
+            'wa_enabled'  => !empty($s['whatsapp_api']['enabled']),
+        ]);
+        break;
+    }
+
+    case 'agent_report': {
+        $u = requireAuth(['super_admin', 'admin', 'supervisor', 'wa_agent']);
+        $todayWib = wibToday();
+        $fromD = (string)($_GET['from'] ?? wibDate('Y-m-01'));
+        $toD   = (string)($_GET['to'] ?? $todayWib);
+        $fromTs = wibDayStart($fromD); $toTs = wibDayStart($toD);
+        if ($fromTs === null || $toTs === null || $toTs < $fromTs) jsonOut(['ok' => false, 'error' => 'Rentang tanggal tidak valid (YYYY-MM-DD).'], 400);
+        if ($toTs - $fromTs > 370 * 86400) jsonOut(['ok' => false, 'error' => 'Rentang maksimal 1 tahun.'], 400);
+        $toTs += 86399;
+        $onlyMe = ($u['role'] === 'wa_agent') ? $u['username'] : null;
+
+        $users = readJson(USERS_FILE, []);
+        $names = [];
+        $rows = [];
+        $blank = function ($un, $nm, $rl) {
+            return ['agent' => $un, 'name' => $nm, 'role' => $rl, 'replies' => 0, 'chats' => 0,
+                    'first_responses' => 0, 'frt_sum' => 0, 'resp_n' => 0, 'resp_sum' => 0,
+                    'claims' => 0, 'assigned_in' => 0, 'unreplied_now' => 0, 'holding_now' => 0, '_nums' => []];
+        };
+        foreach ((array)$users as $us) {
+            $r = $us['role'] ?? '';
+            $un = $us['username'] ?? '';
+            $names[$un] = $us['name'] ?? $un;
+            if ($r !== 'wa_agent' && $r !== 'supervisor') continue;   // admin/super_admin muncul kalau punya aktivitas
+            if ($onlyMe !== null && $un !== $onlyMe) continue;
+            $rows[$un] = $blank($un, $us['name'] ?? $un, $r);
+        }
+        $incoming = 0; $inNums = [];
+        foreach (agentEventsRead($fromTs, $toTs) as $ev) {
+            $e = (string)($ev['ev'] ?? '');
+            if ($e === 'in') { $incoming++; $inNums[(string)($ev['num'] ?? '')] = 1; continue; }
+            $ag = (string)($ev['agent'] ?? '');
+            if ($ag === '') continue;
+            if ($onlyMe !== null && $ag !== $onlyMe) continue;
+            if (!isset($rows[$ag])) {
+                $rl = '';
+                foreach ((array)$users as $us) { if (($us['username'] ?? '') === $ag) { $rl = $us['role'] ?? ''; break; } }
+                $rows[$ag] = $blank($ag, $names[$ag] ?? $ag, $rl !== '' ? $rl : ($ag === '(HP)' ? 'hp' : ''));
+            }
+            $R = &$rows[$ag];
+            if ($e === 'reply') {
+                $R['replies']++;
+                $R['_nums'][(string)($ev['num'] ?? '')] = 1;
+                if (isset($ev['wait'])) {
+                    $R['resp_n']++; $R['resp_sum'] += (int)$ev['wait'];
+                    if (!empty($ev['first'])) { $R['first_responses']++; $R['frt_sum'] += (int)$ev['wait']; }
+                }
+            } elseif ($e === 'claim') {
+                $R['claims']++;
+            } elseif ($e === 'assign') {
+                $R['assigned_in']++;
+            }
+            unset($R);
+        }
+        // Snapshot saat ini: chat yang dipegang & belum dibalas per agent
+        $claims = waClaimGetAll();
+        $cs = readJson(CONV_STATE_FILE, []);
+        $unrepliedTotal = 0; $unrepliedUnassigned = 0;
+        foreach ((array)$cs as $num => $st) {
+            if (!is_array($st) || ($st['last_from'] ?? '') !== 'guest' || !empty($st['guest_bye'])) continue;
+            $owner = $claims[$num]['agent_username'] ?? '';
+            if ($onlyMe !== null && $owner !== $onlyMe) continue;
+            $unrepliedTotal++;
+            if ($owner === '') { $unrepliedUnassigned++; continue; }
+            if (isset($rows[$owner])) $rows[$owner]['unreplied_now']++;
+        }
+        foreach ((array)$claims as $num => $cl) {
+            $owner = $cl['agent_username'] ?? '';
+            if (isset($rows[$owner])) $rows[$owner]['holding_now']++;
+        }
+        $out = [];
+        $tot = ['replies' => 0, 'chats' => 0, 'frt_sum' => 0, 'first_responses' => 0, 'resp_sum' => 0, 'resp_n' => 0];
+        $allNums = [];
+        foreach ($rows as $R) {
+            $R['chats'] = count($R['_nums']);
+            foreach ($R['_nums'] as $n => $_) $allNums[$n] = 1;
+            $R['frt_avg_sec']  = $R['first_responses'] > 0 ? (int)round($R['frt_sum'] / $R['first_responses']) : null;
+            $R['resp_avg_sec'] = $R['resp_n'] > 0 ? (int)round($R['resp_sum'] / $R['resp_n']) : null;
+            foreach (['replies', 'frt_sum', 'first_responses', 'resp_sum', 'resp_n'] as $k) $tot[$k] += $R[$k];
+            unset($R['_nums'], $R['frt_sum'], $R['resp_sum']);
+            $out[] = $R;
+        }
+        usort($out, function ($a, $b) { return $b['replies'] <=> $a['replies'] ?: strcmp($a['agent'], $b['agent']); });
+        jsonOut([
+            'ok'     => true,
+            'from'   => $fromD,
+            'to'     => $toD,
+            'agents' => $out,
+            'totals' => [
+                'incoming_msgs'        => $incoming,          // tercatat hanya saat mode manusia/manual
+                'incoming_numbers'     => count($inNums),
+                'replies'              => $tot['replies'],
+                'chats_handled'        => count($allNums),
+                'frt_avg_sec'          => $tot['first_responses'] > 0 ? (int)round($tot['frt_sum'] / $tot['first_responses']) : null,
+                'resp_avg_sec'         => $tot['resp_n'] > 0 ? (int)round($tot['resp_sum'] / $tot['resp_n']) : null,
+                'unreplied_now'        => $unrepliedTotal,
+                'unreplied_unassigned' => $unrepliedUnassigned,
+            ],
+            'self_only' => $onlyMe !== null,
+        ]);
+        break;
+    }
+
     case 'wa_audit_log': {
-        requireAuth(['super_admin', 'admin']);
+        requireAuth(['super_admin', 'admin', 'supervisor']);
         $limit = min(200, max(10, (int)($_GET['limit'] ?? 50)));
         $all = readJson(waAuditLogFile(), []);
         $entries = array_slice($all, 0, $limit);

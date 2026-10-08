@@ -412,6 +412,37 @@
 
 /* === End v1.2.0 WA Claim UI ================================================ */
 
+/* === v1.2.58: flag chat, kartu ringkasan, tim ============================== */
+.wa-flag-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:10px; }
+.wa-flag-card { border:1px solid var(--line); border-radius:12px; padding:10px 14px; background:var(--card,#fff); cursor:pointer; text-align:left; font:inherit; color:inherit; }
+.wa-flag-card:hover { border-color:var(--brand); }
+.wa-flag-card.active { box-shadow:0 0 0 2px var(--brand) inset; }
+.wa-flag-card .n { font-size:24px; font-weight:700; line-height:1.1; }
+.wa-flag-card .l { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:5px; }
+.wa-flag-card.unreplied .n { color:#b91c1c; }
+.wa-flag-card.done .n { color:#047857; }
+.wa-flag-card.fullbot .n { color:#1d4ed8; }
+.wa-flag-card.is-zero .n { color:var(--muted); }
+.wa-mode-pill { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:3px 9px; border-radius:999px; background:#fef3c7; color:#92400e; margin-bottom:8px; }
+.wa-assign { display:inline-flex; gap:6px; align-items:center; margin-left:8px; }
+.wa-assign select { border-radius:6px; padding:4px 6px; font-size:12px; border:1px solid var(--line); }
+.tim-modes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:6px 0 10px; }
+.tim-mode { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--line); border-radius:12px; padding:12px; cursor:pointer; }
+.tim-mode b { display:block; margin-bottom:3px; }
+.tim-mode span { font-size:12.5px; color:var(--muted); line-height:1.45; }
+.tim-mode:has(input:checked) { border-color:var(--brand); background:var(--brand-soft); }
+.tim-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:12px 0; }
+.tim-kpi { border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+.tim-kpi .n { font-size:20px; font-weight:700; }
+.tim-kpi .l { font-size:12px; color:var(--muted); }
+@media (max-width: 640px) {
+  .wa-flag-cards { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+  .wa-flag-card { padding:8px 10px; }
+  .wa-flag-card .n { font-size:19px; }
+  .tim-modes, .tim-kpis { grid-template-columns:1fr 1fr; }
+  .tim-modes { grid-template-columns:1fr; }
+}
+
 </style>
 </head>
 <body>
@@ -423,19 +454,20 @@
       <div><b>DEI Chatbot</b><small>Admin Dashboard</small></div>
     </div>
     <nav id="nav">
-      <button data-tab="reports"  data-role="super_admin,admin" data-icon="bar-chart-3"><span class="ic"></span> Laporan &amp; Log</button>
-      <button data-tab="wachat"   data-role="super_admin,admin,wa_agent" data-icon="message-circle"><span class="ic"></span> Percakapan WA</button>
-      <button data-tab="webchat"  data-role="super_admin,admin,wa_agent" data-icon="monitor-smartphone"><span class="ic"></span> Percakapan Web</button>
-      <button data-tab="blast"    data-role="super_admin,admin" data-icon="send"><span class="ic"></span> Blast WA</button>
-      <button data-tab="leads"    data-role="super_admin,admin,wa_agent" data-icon="target"><span class="ic"></span> Leads</button>
-      <button data-tab="kontak"   data-role="super_admin,admin,wa_agent" data-icon="users"><span class="ic"></span> Kontak</button>
+      <button data-tab="reports"  data-role="super_admin,admin,supervisor" data-icon="bar-chart-3"><span class="ic"></span> Laporan &amp; Log</button>
+      <button data-tab="wachat"   data-role="super_admin,admin,supervisor,wa_agent" data-icon="message-circle"><span class="ic"></span> Percakapan WA</button>
+      <button data-tab="webchat"  data-role="super_admin,admin,supervisor,wa_agent" data-icon="monitor-smartphone"><span class="ic"></span> Percakapan Web</button>
+      <button data-tab="blast"    data-role="super_admin,admin,supervisor" data-icon="send"><span class="ic"></span> Blast WA</button>
+      <button data-tab="leads"    data-role="super_admin,admin,supervisor,wa_agent" data-icon="target"><span class="ic"></span> Leads</button>
+      <button data-tab="kontak"   data-role="super_admin,admin,supervisor,wa_agent" data-icon="users"><span class="ic"></span> Kontak</button>
+      <button data-tab="tim"      data-role="super_admin,admin,supervisor,wa_agent" data-icon="headphones"><span class="ic"></span> Tim &amp; Agent</button>
       <button data-tab="kb"       data-role="super_admin,admin" data-icon="book-open"><span class="ic"></span> Knowledge Base</button>
       <button data-tab="content"  data-role="super_admin,admin" data-icon="pen-tool"><span class="ic"></span> Balasan &amp; Tampilan</button>
       <button data-tab="test"     data-role="super_admin,admin" data-icon="flask-conical"><span class="ic"></span> Tes Chatbot</button>
       <button data-tab="widget"   data-role="super_admin,admin" data-icon="settings"><span class="ic"></span> Widget &amp; API</button>
       <button data-tab="eskalasi" data-role="super_admin,admin" data-icon="bell"><span class="ic"></span> Respon &amp; Eskalasi</button>
-      <button data-tab="users"    data-role="super_admin,admin" data-icon="users"><span class="ic"></span> Pengguna</button>
-      <button data-tab="profile"  data-role="super_admin,admin,wa_agent" data-icon="user"><span class="ic"></span> Profil Saya</button>
+      <button data-tab="users"    data-role="super_admin,admin,supervisor" data-icon="users"><span class="ic"></span> Pengguna</button>
+      <button data-tab="profile"  data-role="super_admin,admin,supervisor,wa_agent" data-icon="user"><span class="ic"></span> Profil Saya</button>
       <button data-tab="install"  data-role="super_admin,admin" data-icon="rocket"><span class="ic"></span> Pemasangan (GTM)</button>
     </nav>
     <div class="who">
@@ -1104,6 +1136,18 @@
         <div class="row"><label class="fl">Kata kunci (satu per baris)</label><textarea id="ho_keywords" rows="6" class="mono" placeholder="admin&#10;cs&#10;manusia"></textarea><div class="help">Satu kata/frasa per baris. Kata tunggal dicocokkan sebagai kata utuh; frasa dicocokkan sebagai bagian kalimat.</div></div>
       </div>
 
+      <div class="card" data-role-card="super_admin"><h3>White-label Widget</h3>
+        <div class="desc">Ganti teks status dan logo di kepala widget chat dengan identitas klien. Nama bot &amp; warna diatur di menu <b>Balasan &amp; Tampilan</b>.</div>
+        <div class="help" id="wl_status" style="margin-bottom:10px">Memuat status paket…</div>
+        <div class="grid2">
+          <div class="row"><label class="fl">Teks status kepala widget</label><input type="text" id="wl_subtitle" maxlength="60" placeholder="Online • Powered by AI"><div class="help">Kosong = bawaan. Contoh: "Online • Tim Reservasi".</div></div>
+          <div class="row"><label class="fl">Logo kepala widget (URL gambar)</label><input type="text" id="wl_logo" class="mono" placeholder="https://domainklien.com/logo.png"><div class="help">Persegi, min. 64×64 px. Kosong = pakai avatar bot.</div></div>
+        </div>
+        <div class="toggle-row"><div><div class="tt">Sembunyikan "Powered by AI"</div><div class="td">Jika teks status kosong, widget hanya menampilkan "Online".</div></div>
+          <label class="switch"><input type="checkbox" id="wl_hide"><span class="sl"></span></label></div>
+        <div id="wl_preview" style="margin-top:10px"></div>
+      </div>
+
       <div class="card" data-role-card="super_admin"><h3>Server Pusat (Auto-Update)</h3>
         <div class="desc">Hubungkan dashboard ini ke server pusat untuk auto-update kode + report-back statistik agregat. Diisi oleh Super Admin.</div>
         <div class="row"><label class="fl">URL Server Pusat</label><input id="cs_url" placeholder="https://chat.deintegra.com"></div>
@@ -1115,6 +1159,38 @@
       </div>
 
       <button class="btn" id="btnSaveWidget"><span data-ico="save" data-ico-size="15"></span> Simpan Semua</button>
+    </section>
+
+    <!-- v1.2.58: TIM & AGENT -->
+    <section class="panel" id="panel-tim">
+      <div class="ph"><h2>Tim &amp; Agent</h2><p>Mode balasan WhatsApp, pengaturan tim, dan laporan kinerja per agent.</p></div>
+
+      <div class="card" data-role-card="super_admin" id="timModeCard"><h3>Mode Balasan WhatsApp</h3>
+        <div class="desc">Pilih siapa yang membalas pesan WhatsApp yang masuk. Widget web tidak terpengaruh (tetap dijawab AI).</div>
+        <div class="tim-modes">
+          <label class="tim-mode"><input type="radio" name="tim_mode" value="ai"><div><b>AI + Agent</b><span>Chatbot AI menjawab otomatis. Agent mengambil alih lewat Claim / handoff.</span></div></label>
+          <label class="tim-mode"><input type="radio" name="tim_mode" value="manual"><div><b>Manual (AI nonaktif)</b><span>Tidak ada balasan otomatis. Semua chat masuk antrean dan dibalas agent. Dashboard tetap menyediakan laporan &amp; statistik.</span></div></label>
+        </div>
+        <div class="help" id="timModeNote"></div>
+        <div class="toggle-row"><div><div class="tt">Agent hanya melihat chat miliknya</div><div class="td">WA Agent hanya melihat chat yang belum diklaim dan yang ia pegang. Supervisor &amp; Admin tetap melihat semua. Bawaan: mati.</div></div>
+          <label class="switch"><input type="checkbox" id="tim_private"><span class="sl"></span></label></div>
+        <button class="btn" id="btnSaveTim"><span data-ico="save" data-ico-size="15"></span> Simpan</button>
+      </div>
+
+      <div class="card"><h3>Kursi Tim</h3>
+        <div class="help" id="timSeats">Memuat…</div>
+      </div>
+
+      <div class="card"><h3>Laporan per Agent</h3>
+        <div class="row" style="flex-direction:row;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div><label class="fl">Dari</label><input type="date" id="arFrom" style="width:auto"></div>
+          <div><label class="fl">Sampai</label><input type="date" id="arTo" style="width:auto"></div>
+          <button class="btn ghost" id="btnArLoad" type="button"><span data-ico="rotate-cw" data-ico-size="15"></span> Tampilkan</button>
+        </div>
+        <div class="tim-kpis" id="arKpis"></div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Agent</th><th style="text-align:right">Chat ditangani</th><th style="text-align:right">Balasan</th><th style="text-align:right">Respon pertama (rata²)</th><th style="text-align:right">Waktu respon (rata²)</th><th style="text-align:right">Dipegang</th><th style="text-align:right">Belum dibalas</th></tr></thead><tbody id="tblAr"></tbody></table></div>
+        <div class="help" style="margin-top:8px">Waktu respon = jarak dari pesan customer yang menunggu sampai dibalas agent. Respon pertama = balasan pertama agent di satu sesi (jeda &gt; 24 jam dari balasan sebelumnya). "Dipegang" &amp; "Belum dibalas" adalah kondisi saat ini.</div>
+      </div>
     </section>
 
     <!-- USERS -->
@@ -1129,6 +1205,7 @@
           <div class="row"><label class="fl">Peran</label><select id="u_role">
             <option value="super_admin">Super Admin — akses penuh + kelola pengguna</option>
             <option value="admin" selected>Admin — kelola konten &amp; lihat laporan (tidak akses secret/WA Cloud API)</option>
+            <option value="supervisor">Supervisor (SPV) — lihat semua chat, assign ke agent, laporan tim, kelola agent</option>
             <option value="wa_agent">WA Agent — hanya balas chat WhatsApp</option>
           </select></div>
           <div class="row"><label class="fl">Kategori Notif</label>
@@ -1143,6 +1220,7 @@
         <button class="btn ghost" id="btnResetUser" type="button">Reset Form</button>
       </div>
       <div class="card">
+        <div class="help" id="usersSeats" style="margin:0 0 10px"></div>
         <div class="scroll"><table class="tbl"><thead><tr><th>Username</th><th>Nama</th><th>Peran</th><th></th></tr></thead><tbody id="tblUsers"></tbody></table></div>
       </div>
     </section>
