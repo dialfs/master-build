@@ -1569,6 +1569,26 @@
     applyRoleDropdownRestriction();
     $('#btnSaveUser').onclick = saveUser;
     $('#btnResetUser').onclick = resetUserForm;
+    if ($('#u_role')) $('#u_role').onchange = toggleSpvRow;   // v1.2.59
+    toggleSpvRow();
+  }
+  // v1.2.59: supervisor atasan WA Agent — dipilih Super Admin/Admin; akun yang
+  // dibuat Supervisor otomatis masuk timnya (dropdown disembunyikan).
+  function toggleSpvRow() {
+    var row = document.getElementById('u_spv_row');
+    if (!row) return;
+    var show = (user.role === 'super_admin' || user.role === 'admin') && $('#u_role').value === 'wa_agent';
+    row.style.display = show ? '' : 'none';
+  }
+  function fillSpvOptions(users) {
+    var sel = document.getElementById('u_supervisor');
+    if (!sel) return;
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">— Tanpa supervisor (terlihat semua SPV) —</option>' +
+      users.filter(function (x) { return x.role === 'supervisor'; }).map(function (x) {
+        return '<option value="' + esc(x.username) + '">' + esc(x.name || x.username) + ' (' + esc(x.username) + ')</option>';
+      }).join('');
+    sel.value = cur;
   }
   // v1.2.6: role-aware user management
   window.ROLE_LABELS_V126 = { super_admin: 'Super Admin', admin: 'Admin', supervisor: 'Supervisor', wa_agent: 'WA Agent' };
@@ -1589,15 +1609,19 @@
       if ($('#usersSeats')) {
         $('#usersSeats').innerHTML = se ? seatText(se) : '';
       }
+      fillSpvOptions(res.users);   // v1.2.59
+      var nmBy = {};
+      res.users.forEach(function (x) { nmBy[x.username] = x.name || x.username; });
       $('#tblUsers').innerHTML = res.users.map(function (u) {
         return '<tr>' +
           '<td class="mono">' + esc(u.username) + '</td>' +
           '<td>' + esc(u.name) + '</td>' +
           '<td><span class="tag">' + (window.ROLE_LABELS_V126[u.role] || u.role) + '</span>' +
             (u.seat_locked ? ' <span class="tag" style="background:#fee2e2;color:#b91c1c" title="Di luar batas kursi paket — tidak bisa login">' + ico('ban',12) + ' terkunci</span>' : '') + '</td>' +
+          '<td>' + (u.role === 'wa_agent' ? (u.supervisor ? esc(nmBy[u.supervisor] || u.supervisor) : '<span class="help" style="font-size:11px">—</span>') : '') + '</td>' +
           '<td style="text-align:right;white-space:nowrap">' +
             ((user.role === 'super_admin' || ((user.role === 'admin' || user.role === 'supervisor') && u.role === 'wa_agent'))
-              ? ('<button class="btn ghost sm u-edit" data-u="' + esc(u.username) + '" data-n="' + esc(u.name) + '" data-r="' + esc(u.role) + '" data-cats="' + esc(JSON.stringify(u.categories || [])) + '">Edit</button> ' +
+              ? ('<button class="btn ghost sm u-edit" data-u="' + esc(u.username) + '" data-n="' + esc(u.name) + '" data-r="' + esc(u.role) + '" data-s="' + esc(u.supervisor || '') + '" data-cats="' + esc(JSON.stringify(u.categories || [])) + '">Edit</button> ' +
                  (u.username === user.username ? '' : '<button class="btn danger sm u-del" data-u="' + esc(u.username) + '">Hapus</button>'))
               : '<span class="help" style="font-size:11px">read-only</span>') +
           '</td></tr>';
@@ -1606,6 +1630,8 @@
         $('#userFormTitle').textContent = 'Edit Pengguna';
         $('#u_username').value = b.dataset.u; $('#u_username').readOnly = true;
         $('#u_name').value = b.dataset.n; $('#u_role').value = b.dataset.r; $('#u_password').value = '';
+        if ($('#u_supervisor')) $('#u_supervisor').value = b.dataset.s || '';   // v1.2.59
+        toggleSpvRow();
         // v1.2.12: populate kategori checkbox
         var editCats = [];
         try { editCats = JSON.parse(b.dataset.cats || '[]'); } catch (e) { editCats = []; }
@@ -1627,6 +1653,8 @@
     $('#u_role').value = (user.role === 'admin' || user.role === 'supervisor') ? 'wa_agent' : 'admin';
     renderUserCategories([]);  // v1.2.13: rebuild kosong
     applyRoleDropdownRestriction();
+    if ($('#u_supervisor')) $('#u_supervisor').value = '';   // v1.2.59
+    toggleSpvRow();
   }
   function saveUser() {
     var body = {
@@ -1637,6 +1665,7 @@
       categories: Array.prototype.slice.call(document.querySelectorAll('.u_cat:checked')).map(function(c){return c.value;})  // v1.2.12: categories
     };
     if (!body.username) { toast('Username wajib diisi.', true); return; }
+    if ($('#u_spv_row') && $('#u_spv_row').style.display !== 'none') body.supervisor = $('#u_supervisor').value;   // v1.2.59
     api('save_user', { method: 'POST', body: body }).then(function (res) {
       if (res.ok) { toast('Pengguna disimpan.'); resetUserForm(); renderUsers(); }
       else toast(res.error || 'Gagal menyimpan.', true);

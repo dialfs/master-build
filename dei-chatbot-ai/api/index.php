@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.58');
+define('DEI_VERSION', 'v1.2.59');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2196,6 +2196,7 @@ function deiSeatMsg($role, $f) {
 
 // Agent (mode privat) tidak boleh membuka chat yang dipegang agent lain.
 function deiGuardAgentPrivate($u, $num) {
+    deiGuardSpvScope($u, $num);   // v1.2.59
     if (($u['role'] ?? '') !== 'wa_agent') return;
     if (!deiTeamConf(getSettings())['agent_private']) return;
     $cl = waClaimGet($num);
@@ -2221,6 +2222,40 @@ function deiBranding($s) {
     return ['subtitle' => $sub, 'header_logo' => $logo, 'white_label' => $on];
 }
 function deiIsLead($role) { return in_array($role, ['super_admin', 'admin', 'supervisor'], true); }   // boleh lihat semua & assign
+
+/* ---------- v1.2.59: tim supervisor (WA Agent -> Supervisor atasan) ---------- */
+// Supervisor efektif seorang agent: dihitung hanya bila akun supervisor itu masih ada.
+function deiAgentSpv($agentUser, $users) {
+    $sv = trim((string)($agentUser['supervisor'] ?? ''));
+    if ($sv === '') return '';
+    foreach ((array)$users as $x) {
+        if (($x['username'] ?? '') === $sv && ($x['role'] ?? '') === 'supervisor') return $sv;
+    }
+    return '';
+}
+// Lingkup supervisor = dirinya + WA Agent di bawahnya + WA Agent yang belum punya supervisor.
+// null = tanpa batas (bukan supervisor).
+function deiSpvScope($u, $users = null) {
+    if (($u['role'] ?? '') !== 'supervisor') return null;
+    if ($users === null) $users = readJson(USERS_FILE, []);
+    $me = (string)($u['username'] ?? '');
+    $out = [$me => true];
+    foreach ((array)$users as $x) {
+        if (($x['role'] ?? '') !== 'wa_agent') continue;
+        $sp = deiAgentSpv($x, $users);
+        if ($sp === '' || $sp === $me) $out[(string)($x['username'] ?? '')] = true;
+    }
+    return $out;
+}
+// Chat belum diklaim selalu terlihat; chat diklaim hanya bila pemegangnya masuk lingkup.
+function deiSpvSeesOwner($scope, $owner) { return $scope === null || $owner === '' || isset($scope[$owner]); }
+function deiGuardSpvScope($u, $num) {
+    if (($u['role'] ?? '') !== 'supervisor') return;
+    $cl = waClaimGet($num);
+    $owner = (string)($cl['agent_username'] ?? '');
+    if (deiSpvSeesOwner(deiSpvScope($u), $owner)) return;
+    jsonOut(['ok' => false, 'error' => 'Chat ini dipegang ' . $owner . ' (di luar tim Anda).'], 403);
+}
 
 /* ---------- log event agent (append-only, per bulan) ---------- */
 function agentEvent($ev, $agent, $num, $extra = []) {
@@ -2262,12 +2297,14 @@ function wibDayStart($ymd) {
     return $t === false ? null : $t - 7 * 3600;
 }
 // Akun yang bisa menerima assign chat (agent & supervisor dalam batas kursi).
-function deiAssignableUsers() {
+function deiAssignableUsers($me = null) {
     $users = readJson(USERS_FILE, []);
+    $scope = $me ? deiSpvScope($me, $users) : null;   // v1.2.59: supervisor hanya ke timnya
     $out = [];
     foreach ((array)$users as $u) {
         $r = $u['role'] ?? '';
         if (!in_array($r, ['wa_agent', 'supervisor', 'admin', 'super_admin'], true)) continue;
+        if ($scope !== null && !isset($scope[$u['username'] ?? ''])) continue;
         if (!deiSeatAllowed($u['username'] ?? '', $r, $users)) continue;
         $out[] = ['username' => $u['username'] ?? '', 'name' => $u['name'] ?? ($u['username'] ?? ''), 'role' => $r];
     }
@@ -4336,11 +4373,12 @@ switch ($action) {
 
     /* ---------- ADMIN: take over / return to bot ---------- */
     case 'wa_set_mode': {
-        requireAuth(['super_admin','admin','wa_agent']);
+        $u = requireAuth(['super_admin','admin','wa_agent']);
         $in = bodyInput();
         $num = waNormNum($in['number'] ?? '');
         $mode = (($in['mode'] ?? '') === 'human') ? 'human' : 'bot';
         if ($num === '') jsonOut(['ok' => false, 'error' => 'number wajib'], 400);
+        deiGuardSpvScope($u, $num);   // v1.2.59
         waSetMode($num, $mode);
         jsonOut(['ok' => true, 'number' => $num, 'mode' => $mode]);
         break;
@@ -4356,6 +4394,7 @@ switch ($action) {
         $text = trim($in['text'] ?? '');
         if ($num === '' || $text === '') jsonOut(['ok' => false, 'error' => 'number & text wajib'], 400);
         if (mb_strlen($text) > 4000) $text = mb_substr($text, 0, 4000);
+        deiGuardSpvScope($u, $num);   // v1.2.59
         // v1.2.58: agent tidak boleh membalas chat yang dipegang agent lain
         if ($u['role'] === 'wa_agent') {
             $cl58 = waClaimGet($num);
@@ -5315,7 +5354,7 @@ switch ($action) {
     case 'get_users': {
         // v1.2.14: admin ikut boleh (kelola wa_agent). Data aman: tanpa password/hash.
         // Pembatasan tetap di save_user/delete_user (admin cuma boleh target wa_agent).
-        requireAuth(['super_admin', 'admin', 'supervisor']);
+        $meU = requireAuth(['super_admin', 'admin', 'supervisor']);
         $users = readJson(USERS_FILE, []);
         $safe = array_map(function ($u) {
             return [
@@ -5328,7 +5367,11 @@ switch ($action) {
         // v1.2.58: kursi paket + status terkunci per akun
         foreach ($safe as $i => $su) {
             $safe[$i]['seat_locked'] = !deiSeatAllowed($su['username'], $su['role'], $users);
+            $safe[$i]['supervisor'] = ($su['role'] === 'wa_agent') ? deiAgentSpv($users[$i], $users) : '';   // v1.2.59
         }
+        // v1.2.59: supervisor hanya melihat dirinya + agent timnya (+ agent tanpa supervisor)
+        $scU = deiSpvScope($meU, $users);
+        if ($scU !== null) $safe = array_values(array_filter($safe, function ($x) use ($scU) { return isset($scU[$x['username']]); }));
         jsonOut(['ok' => true, 'users' => $safe, 'seats' => deiSeatInfo($users)]);
         break;
     }
@@ -5373,6 +5416,25 @@ switch ($action) {
         }
 
         $users = readJson(USERS_FILE, []);
+        // v1.2.59: supervisor atasan (khusus WA Agent). null = pertahankan nilai lama.
+        $spvSet = null;
+        if ($role === 'wa_agent') {
+            if ($me['role'] === 'supervisor') {
+                foreach ($users as $su) {
+                    if (($su['username'] ?? '') !== $username || ($su['role'] ?? '') !== 'wa_agent') continue;
+                    $curSpv = deiAgentSpv($su, $users);
+                    if ($curSpv !== '' && $curSpv !== $me['username']) jsonOut(['ok' => false, 'error' => 'Agent ini berada di tim supervisor ' . $curSpv . '.'], 403);
+                }
+                $spvSet = $me['username'];   // agent yang dibuat/diedit supervisor masuk timnya
+            } elseif (array_key_exists('supervisor', $in)) {
+                $spvSet = trim((string)$in['supervisor']);
+                if ($spvSet !== '') {
+                    $okSpv = false;
+                    foreach ($users as $su) { if (($su['username'] ?? '') === $spvSet && ($su['role'] ?? '') === 'supervisor') { $okSpv = true; break; } }
+                    if (!$okSpv) jsonOut(['ok' => false, 'error' => 'Supervisor "' . $spvSet . '" tidak ditemukan.'], 400);
+                }
+            }
+        }
         // v1.2.58: batas kursi paket (agent & supervisor). Dihitung tanpa akun
         // yang sedang diedit, jadi mengedit akun yang sudah ada tetap boleh.
         if ($role === 'wa_agent' || $role === 'supervisor') {
@@ -5394,6 +5456,8 @@ switch ($action) {
                 $users[$i]['name'] = $name;
                 $users[$i]['role'] = $role;
                 $users[$i]['categories'] = $categories;  // v1.2.12 Fase 2
+                if ($role !== 'wa_agent') unset($users[$i]['supervisor']);            // v1.2.59
+                elseif ($spvSet !== null) $users[$i]['supervisor'] = $spvSet;
                 if ($password !== '') $users[$i]['password'] = password_hash($password, PASSWORD_DEFAULT);
                 $found = true;
                 break;
@@ -5409,6 +5473,7 @@ switch ($action) {
                 'categories' => $categories,
                 'migrated_3role' => true,
             ];
+            if ($role === 'wa_agent' && $spvSet !== null && $spvSet !== '') $users[count($users) - 1]['supervisor'] = $spvSet;   // v1.2.59
         }
         writeJson(USERS_FILE, $users);
         jsonOut(['ok' => true]);
@@ -5433,6 +5498,8 @@ switch ($action) {
         }
         // === /v1.2.6 ===
         $users = readJson(USERS_FILE, []);
+        $scDel = deiSpvScope($me, $users);   // v1.2.59
+        if ($scDel !== null && !isset($scDel[$username])) jsonOut(['ok' => false, 'error' => 'Agent ini berada di luar tim Anda.'], 403);
         $remaining = array_values(array_filter($users, function ($u) use ($username) {
             return ($u['username'] ?? '') !== $username;
         }));
@@ -6445,6 +6512,7 @@ switch ($action) {
             break;
         }
 
+        deiGuardSpvScope($u, $num);   // v1.2.59
         // Admin bisa release siapa saja, wa_agent hanya release milik sendiri
         $isAdmin = in_array($u['role'], ['super_admin','admin','supervisor']);   // v1.2.58
         $owner = $current['agent_username'] ?? '';
@@ -6511,6 +6579,7 @@ switch ($action) {
         $s58 = getSettings();
         $isManual = deiIsManual($s58);
         $agentPrivate = deiTeamConf($s58)['agent_private'] && $u['role'] === 'wa_agent';
+        $spvScope = deiSpvScope($u);   // v1.2.59: supervisor hanya lihat chat timnya
         $convState = readJson(CONV_STATE_FILE, []);
         if (!is_array($convState)) $convState = [];
         $agentReplied = waAgentRepliedAll();
@@ -6533,6 +6602,7 @@ switch ($action) {
             // (+ chat yang sedang ia minta take-over).
             if ($agentPrivate && $claim && ($claim['agent_username'] ?? '') !== $me
                 && (($claim['takeover_request']['requester'] ?? '') !== $me)) continue;
+            if ($spvScope !== null && !deiSpvSeesOwner($spvScope, (string)($claim['agent_username'] ?? ''))) continue;   // v1.2.59
             $visible[$num] = true;
             $fl = deiChatFlag((string)$num, $meta, $convState, $agentReplied, $nowTs);
             if ($isManual) $fl['full_bot'] = false;   // tidak ada bot di mode Manual
@@ -6663,7 +6733,8 @@ switch ($action) {
             'role' => $u['role'],
             'reply_mode' => $isManual ? 'manual' : 'ai',
             'agent_private' => $agentPrivate,
-            'agents' => deiIsLead($u['role']) ? deiAssignableUsers() : [],
+            'spv_team' => $spvScope !== null,   // v1.2.59
+            'agents' => deiIsLead($u['role']) ? deiAssignableUsers($u) : [],
         ]);
         break;
     }
@@ -6802,6 +6873,7 @@ switch ($action) {
         if (mb_strlen($reason) > 500) $reason = mb_substr($reason, 0, 500);
         if ($num === '') jsonOut(['ok' => false, 'error' => 'number wajib'], 400);
 
+        deiGuardSpvScope($u, $num);   // v1.2.59
         $current = waClaimGet($num);
         $oldAgent = $current['agent_username'] ?? '(none)';
 
@@ -6838,8 +6910,9 @@ switch ($action) {
         $to  = trim((string)($in['agent'] ?? ''));
         if ($num === '' || $to === '') jsonOut(['ok' => false, 'error' => 'number & agent wajib'], 400);
         $target = null;
-        foreach (deiAssignableUsers() as $au) { if ($au['username'] === $to) { $target = $au; break; } }
-        if (!$target) jsonOut(['ok' => false, 'error' => 'Agent tidak ditemukan atau di luar batas paket.'], 404);
+        foreach (deiAssignableUsers($u) as $au) { if ($au['username'] === $to) { $target = $au; break; } }
+        if (!$target) jsonOut(['ok' => false, 'error' => 'Agent tidak ditemukan, di luar tim Anda, atau di luar batas paket.'], 404);
+        deiGuardSpvScope($u, $num);   // v1.2.59
         waClaimAutoProcess();
         $current = waClaimGet($num);
         $from = $current['agent_username'] ?? '';
@@ -6890,6 +6963,7 @@ switch ($action) {
         if ($toTs - $fromTs > 370 * 86400) jsonOut(['ok' => false, 'error' => 'Rentang maksimal 1 tahun.'], 400);
         $toTs += 86399;
         $onlyMe = ($u['role'] === 'wa_agent') ? $u['username'] : null;
+        $spvScope = deiSpvScope($u);   // v1.2.59: supervisor hanya timnya
 
         $users = readJson(USERS_FILE, []);
         $names = [];
@@ -6905,6 +6979,7 @@ switch ($action) {
             $names[$un] = $us['name'] ?? $un;
             if ($r !== 'wa_agent' && $r !== 'supervisor') continue;   // admin/super_admin muncul kalau punya aktivitas
             if ($onlyMe !== null && $un !== $onlyMe) continue;
+            if ($spvScope !== null && !isset($spvScope[$un])) continue;
             $rows[$un] = $blank($un, $us['name'] ?? $un, $r);
         }
         $incoming = 0; $inNums = [];
@@ -6914,6 +6989,7 @@ switch ($action) {
             $ag = (string)($ev['agent'] ?? '');
             if ($ag === '') continue;
             if ($onlyMe !== null && $ag !== $onlyMe) continue;
+            if ($spvScope !== null && !isset($spvScope[$ag])) continue;
             if (!isset($rows[$ag])) {
                 $rl = '';
                 foreach ((array)$users as $us) { if (($us['username'] ?? '') === $ag) { $rl = $us['role'] ?? ''; break; } }
@@ -6942,6 +7018,7 @@ switch ($action) {
             if (!is_array($st) || ($st['last_from'] ?? '') !== 'guest' || !empty($st['guest_bye'])) continue;
             $owner = $claims[$num]['agent_username'] ?? '';
             if ($onlyMe !== null && $owner !== $onlyMe) continue;
+            if ($spvScope !== null && $owner !== '' && !isset($spvScope[$owner])) continue;
             $unrepliedTotal++;
             if ($owner === '') { $unrepliedUnassigned++; continue; }
             if (isset($rows[$owner])) $rows[$owner]['unreplied_now']++;
@@ -6979,6 +7056,7 @@ switch ($action) {
                 'unreplied_unassigned' => $unrepliedUnassigned,
             ],
             'self_only' => $onlyMe !== null,
+            'team_only' => $spvScope !== null,   // v1.2.59
         ]);
         break;
     }

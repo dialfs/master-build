@@ -1205,9 +1205,10 @@
           <div class="row"><label class="fl">Peran</label><select id="u_role">
             <option value="super_admin">Super Admin — akses penuh + kelola pengguna</option>
             <option value="admin" selected>Admin — kelola konten &amp; lihat laporan (tidak akses secret/WA Cloud API)</option>
-            <option value="supervisor">Supervisor (SPV) — lihat semua chat, assign ke agent, laporan tim, kelola agent</option>
+            <option value="supervisor">Supervisor (SPV) — lihat chat timnya, assign ke agent, laporan tim, kelola agent</option>
             <option value="wa_agent">WA Agent — hanya balas chat WhatsApp</option>
           </select></div>
+          <div class="row" id="u_spv_row" style="display:none"><label class="fl">Supervisor</label><select id="u_supervisor"><option value="">— Tanpa supervisor (terlihat semua SPV) —</option></select></div>
           <div class="row"><label class="fl">Kategori Notif</label>
             <div id="u_categories" style="flex:1;display:flex;flex-wrap:wrap;gap:10px">
               <!-- v1.2.13: diisi dinamis oleh renderUserCategories() -->
@@ -1221,7 +1222,7 @@
       </div>
       <div class="card">
         <div class="help" id="usersSeats" style="margin:0 0 10px"></div>
-        <div class="scroll"><table class="tbl"><thead><tr><th>Username</th><th>Nama</th><th>Peran</th><th></th></tr></thead><tbody id="tblUsers"></tbody></table></div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Username</th><th>Nama</th><th>Peran</th><th>Supervisor</th><th></th></tr></thead><tbody id="tblUsers"></tbody></table></div>
       </div>
     </section>
 
