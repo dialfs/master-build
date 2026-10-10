@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.67');
+define('DEI_VERSION', 'v1.2.68');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -652,6 +652,7 @@ function deiCollectStats() {
         'wa_out_service_month'  => $wo['service'],
         'wa_out_template_month' => $wo['template'],
         'seats'                 => deiSeatCounts(),   // v1.2.60: pemakaian kursi tim untuk tabel pusat
+        'topic_scans'           => (function () { try { $q = deiTopicQuota(true); return ['used' => $q['used'], 'limit' => $q['limit']]; } catch (\Throwable $e) { return null; } })(),   // v1.2.68
     ];
 }
 
@@ -2105,6 +2106,7 @@ function waModeSweepIdle() {
  * ========================================================================= */
 define('DEI_DEFAULT_MAX_AGENTS', 10);
 define('DEI_DEFAULT_MAX_SUPERVISORS', 1);
+define('DEI_DEFAULT_TOPIC_SCANS', 10);   // v1.2.68: kuota scan topik / bulan (0 = tanpa batas)
 define('WA_AGENT_REPLIED_FILE', DATA_DIR . '/wa-agent-replied.json');   // nomor -> ts balasan agent terakhir
 define('AGENT_EV_DIR', DATA_DIR . '/agent-events');                       // log event agent per bulan (.jsonl)
 
@@ -2139,6 +2141,7 @@ function deiFeaturesFromCap($cap) {
         'max_agents'      => max(0, (int)($cap['max_agents'] ?? DEI_DEFAULT_MAX_AGENTS)),
         'max_supervisors' => max(0, (int)($cap['max_supervisors'] ?? DEI_DEFAULT_MAX_SUPERVISORS)),
         'white_label'     => !empty($cap['white_label']),
+        'topic_scan_quota' => max(0, (int)($cap['topic_scan_quota'] ?? DEI_DEFAULT_TOPIC_SCANS)),   // v1.2.68
     ];
 }
 
@@ -2147,7 +2150,7 @@ function deiFeatures($s = null) {
     if (isset($GLOBALS['dei_features_cache'])) return $GLOBALS['dei_features_cache'];
     if ($s === null) $s = getSettings();
     $f = ['max_agents' => DEI_DEFAULT_MAX_AGENTS, 'max_supervisors' => DEI_DEFAULT_MAX_SUPERVISORS,
-          'white_label' => false, 'source' => 'default'];
+          'white_label' => false, 'topic_scan_quota' => DEI_DEFAULT_TOPIC_SCANS, 'source' => 'default'];
     $cs = $s['central_server'] ?? [];
     if (!empty($cs['url']) && !empty($cs['tenant_id']) && !empty($cs['license_key'])) {
         try {
@@ -2416,6 +2419,37 @@ function deiTopicSample($units, $max) {
     return $o;
 }
 function deiTopicKey($days, $channel) { return $days . '|' . ($channel === '' ? 'all' : $channel); }
+// v1.2.68: kuota scan topik per bulan (WIB). Hanya scan yang benar-benar memanggil AI yang dihitung.
+define('TOPIC_USAGE_FILE', DATA_DIR . '/topic-scan-usage.json');
+function deiTopicQuota($noFetch = false) {
+    // $noFetch: dipakai deiCollectStats() — JANGAN memanggil deiFeatures() di sana
+    // (getCapStatus mengirim statistik -> rekursi tanpa akhir).
+    $f = $noFetch ? ((array)(readJson(CAP_CACHE_FILE, [])['features'] ?? [])) : deiFeatures();
+    $limit = max(0, (int)($f['topic_scan_quota'] ?? DEI_DEFAULT_TOPIC_SCANS));
+    $month = wibDate('Y-m');
+    $u = readJson(TOPIC_USAGE_FILE, []);
+    $used = (int)($u[$month]['count'] ?? 0);
+    $y = (int)substr($month, 0, 4); $m = (int)substr($month, 5, 2) + 1;
+    if ($m > 12) { $m = 1; $y++; }
+    return ['limit' => $limit, 'used' => $used, 'left' => $limit > 0 ? max(0, $limit - $used) : null,
+            'month' => $month, 'reset' => sprintf('%04d-%02d-01', $y, $m)];
+}
+function deiTopicQuotaUse($user, $days, $channel, $usage) {
+    $lock = @fopen(DATA_DIR . '/topic-scan-usage.lock', 'c');
+    if ($lock) @flock($lock, LOCK_EX);
+    $month = wibDate('Y-m');
+    $u = readJson(TOPIC_USAGE_FILE, []);
+    if (!is_array($u)) $u = [];
+    if (!isset($u[$month])) $u[$month] = ['count' => 0, 'runs' => []];
+    $u[$month]['count']++;
+    $u[$month]['runs'][] = ['at' => wibDate('Y-m-d H:i:s'), 'user' => $user, 'days' => $days, 'channel' => $channel,
+                            'in' => (int)($usage['input_tokens'] ?? 0), 'out' => (int)($usage['output_tokens'] ?? 0)];
+    $u[$month]['runs'] = array_slice($u[$month]['runs'], -200);
+    ksort($u);
+    $u = array_slice($u, -12, null, true);   // simpan 12 bulan
+    writeJson(TOPIC_USAGE_FILE, $u);
+    if ($lock) { @flock($lock, LOCK_UN); @fclose($lock); }
+}
 /* ====== /v1.2.67 ====== */
 
 function deiApplyPushedFeatures($raw) {
@@ -5544,12 +5578,12 @@ switch ($action) {
         $all = readJson(TOPIC_SCANS_FILE, []);
         $s = getSettings();
         jsonOut(['ok' => true, 'scans' => is_array($all) ? $all : new stdClass(), 'periods' => deiTopicPeriods(),
-                 'log_limit' => (int)($s['api']['log_limit'] ?? 500)]);
+                 'log_limit' => (int)($s['api']['log_limit'] ?? 500), 'quota' => deiTopicQuota()]);
         break;
     }
 
     case 'topic_scan_run': {
-        requireAuth(['super_admin', 'admin']);
+        $tpUser = requireAuth(['super_admin', 'admin']);
         @set_time_limit(150);
         $in = bodyInput();
         $days = (int)($in['days'] ?? 30);
@@ -5572,7 +5606,12 @@ switch ($action) {
             $res = $base + ['sampled' => $total, 'topics' => [], 'insight' => '', 'empty' => true];
             $all = readJson(TOPIC_SCANS_FILE, []); if (!is_array($all)) $all = [];
             $all[deiTopicKey($days, $channel)] = $res; writeJson(TOPIC_SCANS_FILE, $all);
-            jsonOut(['ok' => true, 'scan' => $res]);
+            jsonOut(['ok' => true, 'scan' => $res, 'quota' => deiTopicQuota()]);
+        }
+        // v1.2.68: cek kuota sebelum memanggil AI
+        $q = deiTopicQuota();
+        if ($q['limit'] > 0 && $q['used'] >= $q['limit']) {
+            jsonOut(['ok' => false, 'quota' => $q, 'error' => 'Kuota scan topik bulan ini sudah habis (' . $q['used'] . '/' . $q['limit'] . '). Kuota direset ' . $q['reset'] . '. Hubungi DEI untuk menambah kuota.'], 429);
         }
         $sample = deiTopicSample($units, TOPIC_SAMPLE_MAX);
         $list = '';
@@ -5602,6 +5641,7 @@ switch ($action) {
         list($okAi, $answer, $usage) = callClaude($s, $sys, [['role' => 'user', 'content' => "Periode: " . $meta['from'] . " s/d " . $meta['to'] . "\n\n" . $list]]);
         if (!$okAi) jsonOut(['ok' => false, 'error' => 'AI gagal: ' . $answer], 502);
         recordUsage($usage);
+        deiTopicQuotaUse((string)($tpUser['username'] ?? ''), $days, $channel, $usage);   // v1.2.68: dihitung walau jawaban tak terbaca (token tetap terpakai)
         $raw = trim((string)$answer);
         $a = strpos($raw, '{'); $b = strrpos($raw, '}');
         $data = ($a !== false && $b !== false) ? json_decode(substr($raw, $a, $b - $a + 1), true) : null;
@@ -5661,7 +5701,7 @@ switch ($action) {
         $all = readJson(TOPIC_SCANS_FILE, []); if (!is_array($all)) $all = [];
         $all[deiTopicKey($days, $channel)] = $res;
         writeJson(TOPIC_SCANS_FILE, $all);
-        jsonOut(['ok' => true, 'scan' => $res]);
+        jsonOut(['ok' => true, 'scan' => $res, 'quota' => deiTopicQuota()]);
         break;
     }
 

@@ -510,7 +510,7 @@
   var TP_PER = [[7, '7 hari'], [14, '14 hari'], [30, '30 hari'], [60, '60 hari'], [90, '90 hari'], [180, '6 bulan'], [365, '1 tahun']];
   var TP_SENT = { positif: 'Positif', netral: 'Netral', negatif: 'Negatif' };
   var TP_COL = ['#140383', '#3b2fb8', '#5b4fe0', '#7c6ff0', '#8b5cf6', '#a855f7', '#c084fc', '#6366f1', '#4338ca', '#818cf8'];
-  var tp = { days: 30, scans: {}, loaded: false, busy: false, logLimit: 500 };
+  var tp = { days: 30, scans: {}, loaded: false, busy: false, logLimit: 500, quota: null };
   try { var _td = +localStorage.getItem('dei_tp_days'); if (TP_PER.some(function (p) { return p[0] === _td; })) tp.days = _td; } catch (e) {}
   function tpKey() { return tp.days + '|' + ($('#tpChannel').value || 'all'); }
   function tpDate(d) { var x = lgTsParts((d || '') + ' 00:00'); return x[0]; }
@@ -524,16 +524,30 @@
       b.onclick = function () { if (tp.busy) return; tp.days = +b.dataset.d; try { localStorage.setItem('dei_tp_days', tp.days); } catch (e) {} tpRenderPeriods(); tpRender(); };
     });
   }
+  function tpQuotaOut() { var q = tp.quota; return !!(q && q.limit > 0 && q.used >= q.limit); }
+  function tpRenderQuota() {
+    var el = $('#tpQuota'), q = tp.quota;
+    if (!q) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    if (!(q.limit > 0)) { el.className = 'tp-quota'; el.textContent = 'Kuota scan: tanpa batas'; el.title = 'Terpakai ' + q.used + ' kali bulan ini'; return; }
+    var left = Math.max(0, q.limit - q.used);
+    el.className = 'tp-quota' + (left === 0 ? ' out' : (left <= Math.max(1, Math.round(q.limit * 0.2)) ? ' low' : ''));
+    el.textContent = 'Kuota scan: ' + left + '/' + q.limit + ' tersisa';
+    el.title = 'Terpakai ' + q.used + ' dari ' + q.limit + ' scan bulan ini. Direset ' + tpDate(q.reset) + '.';
+  }
   function tpRender() {
+    tpRenderQuota();
     var r = tp.scans[tpKey()];
     var lbl = (TP_PER.filter(function (p) { return p[0] === tp.days; })[0] || [0, ''])[1];
     var canRun = can('super_admin,admin');
     $('#tpRun').style.display = canRun ? '' : 'none';
     $('#tpRun').innerHTML = ico('sparkles', 15) + (r ? ' Scan ulang' : ' Scan topik');
+    $('#tpRun').disabled = tpQuotaOut();
+    $('#tpRun').title = tpQuotaOut() ? 'Kuota scan topik bulan ini habis. Direset ' + tpDate(tp.quota.reset) + '.' : '';
     if (!r) {
       $('#tpNote').innerHTML = '';
       $('#tpResult').innerHTML = '<div class="tp-empty">' + ico('sparkles', 28) + '<b>Belum ada hasil scan untuk ' + esc(lbl) + '</b>' +
-        '<span>' + (canRun ? 'Tekan <b>Scan topik</b>. AI akan membaca percakapan pelanggan di periode ini dan mengelompokkannya menjadi topik (sekitar 15–60 detik, memakai kuota AI).' : 'Minta Admin menjalankan scan topik.') + '</span></div>';
+        '<span>' + (tpQuotaOut() ? 'Kuota scan topik bulan ini sudah habis (' + tp.quota.used + '/' + tp.quota.limit + '). Kuota direset ' + esc(tpDate(tp.quota.reset)) + '. Hubungi DEI untuk menambah kuota.' : canRun ? 'Tekan <b>Scan topik</b>. AI akan membaca percakapan pelanggan di periode ini dan mengelompokkannya menjadi topik (sekitar 15–60 detik, memakai kuota AI).' : 'Minta Admin menjalankan scan topik.') + '</span></div>';
       return;
     }
     var note = [];
@@ -578,18 +592,31 @@
     var first = document.querySelector('#tpResult .tp-item'); if (first) first.classList.add('open');
   }
   function tpRun() {
-    if (tp.busy) return;
+    if (tp.busy || tpQuotaOut()) return;
+    var q = tp.quota;
+    if (q && q.limit > 0 && !confirmTpOnce(q)) return;
     tp.busy = true;
     var btn = $('#tpRun'); btn.disabled = true;
     btn.innerHTML = '<span class="tp-spin"></span> Menganalisis…';
     $('#tpResult').classList.add('tp-loading');
     api('topic_scan_run', { method: 'POST', body: { days: tp.days, channel: $('#tpChannel').value } }).then(function (res) {
       tp.busy = false; btn.disabled = false; $('#tpResult').classList.remove('tp-loading');
+      if (res && res.quota) tp.quota = res.quota;
       if (!res || !res.ok) { toast((res && res.error) || 'Scan topik gagal.', true); tpRender(); return; }
       tp.scans[tpKey()] = res.scan;
       tpRenderPeriods(); tpRender();
       toast('Scan topik selesai.');
     }).catch(function () { tp.busy = false; btn.disabled = false; $('#tpResult').classList.remove('tp-loading'); tpRender(); toast('Koneksi terputus saat scan.', true); });
+  }
+  // Konfirmasi ringan (tanpa dialog browser): klik pertama mengubah tombol jadi "Yakin? pakai 1 kuota", klik kedua menjalankan.
+  var tpArmT = null;
+  function confirmTpOnce(q) {
+    var btn = $('#tpRun');
+    if (btn.dataset.armed === '1') { btn.dataset.armed = ''; clearTimeout(tpArmT); return true; }
+    btn.dataset.armed = '1';
+    btn.innerHTML = ico('sparkles', 15) + ' Klik lagi: pakai 1 kuota (sisa ' + Math.max(0, q.limit - q.used) + ')';
+    tpArmT = setTimeout(function () { btn.dataset.armed = ''; tpRender(); }, 4000);
+    return false;
   }
   function tpInit() {
     if (!tp.wired) {
@@ -600,7 +627,7 @@
     tpRenderPeriods(); tpRender();
     api('topic_scan_get').then(function (res) {
       if (!res || !res.ok) return;
-      tp.scans = res.scans || {}; tp.logLimit = res.log_limit || 500;
+      tp.scans = res.scans || {}; tp.logLimit = res.log_limit || 500; tp.quota = res.quota || null;
       if (!tp.busy) { tpRenderPeriods(); tpRender(); }
     });
   }
