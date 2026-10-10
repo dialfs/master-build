@@ -544,6 +544,98 @@
     .rel-dot{left:0;width:14px;height:14px}
     .rel-card{padding:14px}
   }
+  /* v1.2.66: Laporan — sub-tab + Log Percakapan terstruktur */
+  .rep-seg{display:inline-flex;gap:4px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:4px;margin:0 0 18px}
+  .rep-seg button{border:none;background:none;font:inherit;font-size:13.5px;font-weight:500;color:var(--muted);padding:8px 16px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+  .rep-seg button.on{background:var(--brand);color:#fff}
+  .lg-filters{padding:16px 18px}
+  .lg-presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .lg-presets button{border:1px solid var(--line);background:#fff;color:var(--muted);padding:6px 12px;border-radius:20px;font:inherit;font-size:12.5px;font-weight:500;cursor:pointer}
+  .lg-presets button.on{background:var(--brand-soft);border-color:#cbc6f3;color:var(--brand);font-weight:600}
+  .lg-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+  .lg-f label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
+  .lg-f input,.lg-f select{padding:8px 10px;font-size:13px}
+  .lg-search{grid-column:span 2}
+  .lg-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .lg-chips{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+  .lg-chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 11px;font:inherit;font-size:12.5px;cursor:pointer;color:var(--ink);display:inline-flex;gap:6px;align-items:center}
+  .lg-chip b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11.5px;color:var(--muted);font-weight:600}
+  .lg-chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .lg-chip.on b{color:rgba(255,255,255,.8)}
+  .lg-chip .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .lg-card{padding:0;overflow:hidden}
+  .lg-head{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .lg-head .lg-count{font-weight:600}
+  .lg-head .lg-sub{color:var(--muted);font-size:12.5px;flex:1}
+  .lg-head select{width:auto;padding:6px 8px;font-size:12.5px}
+  .lg-wrap{overflow-x:auto}
+  .lg-tbl{table-layout:fixed;min-width:860px}
+  .lg-tbl th{padding:9px 12px;background:#fafbfd}
+  .lg-tbl td{padding:9px 12px;vertical-align:middle}
+  .lg-tbl tbody tr{cursor:pointer}
+  .lg-tbl tbody tr:hover td{background:#f6f5fd}
+  .lg-clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lg-ts b{display:block;font-weight:600;font-size:12.5px}
+  .lg-ts span{font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',ui-monospace,monospace}
+  .lg-ch{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:2px 8px;border-radius:6px}
+  .lg-ch.whatsapp{background:#e7f8ee;color:#137a3d}
+  .lg-ch.web{background:#e8f0fe;color:#1d4fb8}
+  .lg-who b{display:block;font-weight:600;font-size:12.5px}
+  .lg-who span{display:block;font-size:11.5px;color:var(--muted)}
+  .lg-q{font-weight:500}
+  .lg-a{color:var(--muted)}
+  .lg-src{font-size:12px}
+  .lg-src small{display:block;color:var(--muted);font-size:11px}
+  .lg-st{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:6px;white-space:nowrap}
+  .lg-st.ai{background:#eceaf9;color:var(--brand)}
+  .lg-st.awaiting{background:#fef3c7;color:#854d0e}
+  .lg-st.manual{background:#e7f8ee;color:#137a3d}
+  .lg-st.closing{background:#f0f0f4;color:var(--muted)}
+  .lg-st.error{background:#fdecec;color:#b42318}
+  .lg-pager{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--line)}
+  .lg-pager span{font-size:12.5px;color:var(--muted);text-align:center}
+  .lg-pager .btn:disabled{opacity:.4;cursor:default}
+  .lg-empty{padding:40px 16px;text-align:center;color:var(--muted);cursor:default}
+  .lg-drawer{position:fixed;inset:0;z-index:60;display:none}
+  .lg-drawer.open{display:block}
+  .lg-dr-back{position:absolute;inset:0;background:rgba(21,21,43,.35)}
+  .lg-dr-panel{position:absolute;top:0;right:0;bottom:0;width:min(520px,100%);background:#fff;box-shadow:-12px 0 40px -12px rgba(0,0,0,.25);display:flex;flex-direction:column;animation:lgIn .18s ease}
+  @keyframes lgIn{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+  .lg-dr-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .lg-dr-head h3{font-size:15px;flex:1;margin:0}
+  .lg-dr-head button{background:none;border:none;cursor:pointer;color:var(--muted);padding:4px;display:inline-flex}
+  .lg-dr-body{padding:16px 18px;overflow-y:auto;flex:1}
+  .lg-bub{border-radius:12px;padding:11px 13px;margin-bottom:10px;white-space:pre-wrap;word-break:break-word;line-height:1.55;font-size:13.5px}
+  .lg-bub small{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;opacity:.7}
+  .lg-bub.q{background:#f4f5fb}
+  .lg-bub.a{background:#eceaf9}
+  .lg-meta{display:grid;grid-template-columns:120px 1fr;gap:7px 12px;font-size:13px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+  .lg-meta dt{color:var(--muted)}
+  .lg-meta dd{margin:0;word-break:break-all}
+  .lg-dr-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+  @media(max-width:1100px){ .lg-grid{grid-template-columns:repeat(3,minmax(0,1fr))} .lg-search{grid-column:span 3} }
+  @media(max-width:860px){
+    .rep-seg{display:flex}
+    .rep-seg button{flex:1;justify-content:center}
+    .lg-grid{grid-template-columns:1fr 1fr}
+    .lg-search{grid-column:span 2}
+    .lg-f input,.lg-f select{font-size:16px}
+    .lg-tbl{min-width:0;table-layout:auto}
+    .lg-tbl colgroup,.lg-tbl thead{display:none}
+    .lg-tbl,.lg-tbl tbody,.lg-tbl tr,.lg-tbl td{display:block;width:100%}
+    .lg-tbl tr{padding:11px 14px;border-bottom:1px solid var(--line)}
+    .lg-tbl tbody tr:hover td{background:none}
+    .lg-tbl tbody tr:active{background:#f6f5fd}
+    .lg-tbl td{padding:0;border:none}
+    .lg-tbl td.c-ts{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+    .lg-tbl td.c-ts .lg-ts b,.lg-tbl td.c-ts .lg-ts span{display:inline;margin-right:6px}
+    .lg-tbl td.c-ch,.lg-tbl td.c-src{display:none}
+    .lg-tbl td.c-who{margin-bottom:3px}
+    .lg-tbl td.c-who b,.lg-tbl td.c-who span{display:inline;margin-right:6px}
+    .lg-tbl td.c-st{margin-top:6px}
+    .lg-pager{flex-wrap:wrap}
+    .lg-meta{grid-template-columns:100px 1fr}
+  }
 </style>
 </head>
 <body>
@@ -590,6 +682,12 @@
     <!-- REPORTS -->
     <section class="panel" id="panel-reports">
       <div class="ph"><h2>Laporan &amp; Log</h2><p>Statistik percakapan, sumber traffic (UTM), dan ekspor data.</p></div>
+      <!-- v1.2.66: sub-tab -->
+      <div class="rep-seg" id="repSeg">
+        <button type="button" data-v="summary" class="on"><span data-ico="bar-chart-3"></span> Ringkasan</button>
+        <button type="button" data-v="logs"><span data-ico="clipboard-list"></span> Log Percakapan</button>
+      </div>
+      <div id="repSummary">
 
       <!-- v1.1.5: Usage card (Paket aktif + cap + chart 30 hari) -->
       <div class="card" id="usageCard">
@@ -686,17 +784,65 @@
         <div class="scroll"><table class="tbl"><thead><tr><th>Campaign</th><th style="text-align:right">Chat</th><th style="text-align:right">User</th></tr></thead><tbody id="tblCampaign"></tbody></table></div>
       </div>
 
-      <div class="card">
-        <h3>Log Percakapan</h3>
-        <div class="desc">Riwayat percakapan terbaru beserta UTM source &amp; medium. Tombol "Unduh CSV" di atas memakai rentang tanggal yang dipilih.</div>
-        <div class="scroll">
-          <table class="tbl">
-            <thead><tr><th>Waktu</th><th>Pertanyaan</th><th>Jawaban AI</th><th>Source</th><th>Medium</th><th>Halaman</th></tr></thead>
-            <tbody id="tblLogs"></tbody>
-          </table>
+      </div><!-- /repSummary -->
+
+      <!-- v1.2.66: LOG PERCAKAPAN terstruktur -->
+      <div id="repLogs" style="display:none">
+        <div class="card lg-filters">
+          <div class="lg-presets" id="lgPresets">
+            <button type="button" data-p="today">Hari ini</button>
+            <button type="button" data-p="7">7 hari</button>
+            <button type="button" data-p="30" class="on">30 hari</button>
+            <button type="button" data-p="month">Bulan ini</button>
+            <button type="button" data-p="all">Semua</button>
+          </div>
+          <div class="lg-grid">
+            <div class="lg-f"><label for="lgFrom">Dari</label><input type="date" id="lgFrom"></div>
+            <div class="lg-f"><label for="lgTo">Sampai</label><input type="date" id="lgTo"></div>
+            <div class="lg-f"><label for="lgChannel">Channel</label><select id="lgChannel"><option value="">Semua</option></select></div>
+            <div class="lg-f"><label for="lgSource">Source</label><select id="lgSource"><option value="">Semua</option></select></div>
+            <div class="lg-f"><label for="lgMedium">Medium</label><select id="lgMedium"><option value="">Semua</option></select></div>
+            <div class="lg-f"><label for="lgCampaign">Campaign</label><select id="lgCampaign"><option value="">Semua</option></select></div>
+            <div class="lg-f lg-search"><label for="lgQ">Cari</label><input type="text" id="lgQ" placeholder="Pertanyaan, jawaban, nama, nomor/IP, halaman…" autocomplete="off"></div>
+          </div>
+          <div class="lg-actions">
+            <div class="lg-chips" id="lgChips"></div>
+            <button class="btn ghost sm" type="button" id="lgReset"><span data-ico="rotate-cw"></span> Reset</button>
+            <button class="btn ghost sm" type="button" id="lgExport"><span data-ico="download"></span> Unduh CSV</button>
+          </div>
+        </div>
+        <div class="card lg-card">
+          <div class="lg-head">
+            <span class="lg-count" id="lgCount">Memuat…</span>
+            <span class="lg-sub" id="lgSub"></span>
+            <label style="font-size:12px;color:var(--muted)">Per halaman
+              <select id="lgPer"><option>25</option><option>50</option><option>100</option></select></label>
+          </div>
+          <div class="lg-wrap">
+            <table class="tbl lg-tbl">
+              <colgroup><col style="width:104px"><col style="width:108px"><col style="width:150px"><col><col><col style="width:140px"><col style="width:136px"></colgroup>
+              <thead><tr><th>Waktu</th><th>Channel</th><th>Kontak</th><th>Pertanyaan</th><th>Jawaban</th><th>Source / Medium</th><th>Status</th></tr></thead>
+              <tbody id="lgBody"></tbody>
+            </table>
+          </div>
+          <div class="lg-pager">
+            <button class="btn ghost sm" type="button" id="lgPrev">‹ Sebelumnya</button>
+            <span id="lgPageInfo"></span>
+            <button class="btn ghost sm" type="button" id="lgNext">Berikutnya ›</button>
+          </div>
         </div>
       </div>
     </section>
+
+    <!-- v1.2.66: detail log -->
+    <div class="lg-drawer" id="lgDrawer" aria-hidden="true">
+      <div class="lg-dr-back" data-close="1"></div>
+      <aside class="lg-dr-panel" role="dialog" aria-label="Detail percakapan">
+        <div class="lg-dr-head"><h3 id="lgDrTitle">Detail</h3><button type="button" data-close="1" title="Tutup"><span data-ico="x" data-ico-size="18"></span></button></div>
+        <div class="lg-dr-body" id="lgDrBody"></div>
+        <div class="lg-dr-foot" id="lgDrFoot"></div>
+      </aside>
+    </div>
 
     <!-- WHATSAPP CONVERSATIONS -->
     <section class="panel" id="panel-wachat">
@@ -1470,6 +1616,6 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.65"></script>
+<script src="app.js?v=1.2.66"></script>
 </body>
 </html>

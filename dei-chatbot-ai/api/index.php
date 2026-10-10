@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.65');
+define('DEI_VERSION', 'v1.2.66');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2293,6 +2293,73 @@ function deiReleaseNotify($latest) {
     return ['notified' => $latest, 'pushed' => count($targets)];
 }
 /* ====== /v1.2.65 ====== */
+
+/* ======================================================================
+ * v1.2.66: Log Percakapan terstruktur — filter, facet, paginasi (server-side)
+ * ==================================================================== */
+function deiLogStatus($e) {
+    $d = (string)($e['dir'] ?? '');
+    if ($d === 'manual')  return 'manual';
+    if ($d === 'closing') return 'closing';
+    if (!empty($e['ai_error']) || !empty($e['suspended']) || !empty($e['cap_reached'])) return 'error';
+    if (!empty($e['awaiting'])) return 'awaiting';
+    return 'ai';
+}
+function deiLogDim($e, $k) {
+    $v = trim((string)($e['utm_' . $k] ?? ''));
+    if ($v !== '') return $v;
+    return $k === 'source' ? '(direct)' : '(none)';
+}
+function deiLogParams($g) {
+    $d = function ($v) { $v = substr((string)$v, 0, 10); return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : ''; };
+    $ch = (string)($g['channel'] ?? '');
+    $st = (string)($g['status'] ?? '');
+    return [
+        'from'     => $d($g['from'] ?? ''),
+        'to'       => $d($g['to'] ?? ''),
+        'channel'  => in_array($ch, ['web', 'whatsapp'], true) ? $ch : '',
+        'source'   => mb_substr(trim((string)($g['source'] ?? '')), 0, 120),
+        'medium'   => mb_substr(trim((string)($g['medium'] ?? '')), 0, 120),
+        'campaign' => mb_substr(trim((string)($g['campaign'] ?? '')), 0, 120),
+        'status'   => in_array($st, ['ai', 'awaiting', 'manual', 'closing', 'error'], true) ? $st : '',
+        'q'        => mb_strtolower(mb_substr(trim((string)($g['q'] ?? '')), 0, 100)),
+    ];
+}
+// $skip = nama dimensi yang diabaikan (untuk menghitung facet dimensi itu sendiri)
+function deiLogMatch($e, $f, $skip = '') {
+    $day = substr((string)($e['ts'] ?? ''), 0, 10);
+    if ($f['from'] !== '' && $day < $f['from']) return false;
+    if ($f['to'] !== ''   && $day > $f['to'])   return false;
+    if ($skip !== 'channel'  && $f['channel']  !== '' && ($e['channel'] ?? 'web') !== $f['channel']) return false;
+    if ($skip !== 'source'   && $f['source']   !== '' && deiLogDim($e, 'source')   !== $f['source'])   return false;
+    if ($skip !== 'medium'   && $f['medium']   !== '' && deiLogDim($e, 'medium')   !== $f['medium'])   return false;
+    if ($skip !== 'campaign' && $f['campaign'] !== '' && deiLogDim($e, 'campaign') !== $f['campaign']) return false;
+    if ($skip !== 'status'   && $f['status']   !== '' && deiLogStatus($e) !== $f['status']) return false;
+    if ($f['q'] !== '') {
+        $hay = mb_strtolower(($e['q'] ?? '') . "\n" . ($e['a'] ?? '') . "\n" . ($e['ip'] ?? '') . "\n" . ($e['page'] ?? '') . "\n" . ($e['_name'] ?? ''));
+        if (mb_strpos($hay, $f['q']) === false) return false;
+    }
+    return true;
+}
+// Nama kontak WA (manual > profil WA) ditempel sebagai _name supaya bisa dicari & ditampilkan
+function deiLogWithNames($logs) {
+    $c = readJson(DATA_DIR . '/wa-contacts.json', []);
+    if (!is_array($c) || !$c) return $logs;
+    foreach ($logs as &$e) {
+        if (($e['channel'] ?? 'web') !== 'whatsapp') continue;
+        $k = (string)($e['ip'] ?? '');
+        if ($k !== '' && isset($c[$k]) && is_array($c[$k])) {
+            $n = trim((string)($c[$k]['name_manual'] ?? '')) ?: trim((string)($c[$k]['name_wa'] ?? ''));
+            if ($n !== '') $e['_name'] = $n;
+        }
+    }
+    unset($e);
+    return $logs;
+}
+function deiLogStatusLabel($st) {
+    return ['ai' => 'Dijawab AI', 'awaiting' => 'Menunggu balasan', 'manual' => 'Balasan agent', 'closing' => 'Closing otomatis', 'error' => 'Gagal / error'][$st] ?? $st;
+}
+/* ====== /v1.2.66 ====== */
 
 function deiApplyPushedFeatures($raw) {
     $j = json_decode((string)$raw, true);
@@ -5413,18 +5480,68 @@ switch ($action) {
     }
 
     /* ---------- export logs to CSV with date range (admin only) ---------- */
+    /* ---------- v1.2.66: log percakapan terstruktur ---------- */
+    case 'logs_query': {
+        requireAuth(['super_admin', 'admin', 'supervisor']);
+        $f = deiLogParams($_GET);
+        $per  = (int)($_GET['per'] ?? 25);
+        if (!in_array($per, [25, 50, 100], true)) $per = 25;
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $logs = deiLogWithNames(readJson(LOG_FILE, []));
+        usort($logs, function ($a, $b) { return strcmp((string)($b['ts'] ?? ''), (string)($a['ts'] ?? '')); });
+
+        $rows = [];
+        $fac = ['channel' => [], 'source' => [], 'medium' => [], 'campaign' => [], 'status' => []];
+        foreach ($logs as $e) {
+            if (deiLogMatch($e, $f)) $rows[] = $e;
+            foreach ($fac as $dim => $_) {
+                if (!deiLogMatch($e, $f, $dim)) continue;
+                $v = $dim === 'channel' ? ($e['channel'] ?? 'web') : ($dim === 'status' ? deiLogStatus($e) : deiLogDim($e, $dim));
+                $fac[$dim][$v] = ($fac[$dim][$v] ?? 0) + 1;
+            }
+        }
+        $facets = [];
+        foreach ($fac as $dim => $m) {
+            arsort($m);
+            $facets[$dim] = [];
+            foreach (array_slice($m, 0, 200, true) as $v => $n) $facets[$dim][] = ['value' => (string)$v, 'count' => $n];
+        }
+        $total = count($rows);
+        $pages = max(1, (int)ceil($total / $per));
+        if ($page > $pages) $page = $pages;
+        $out = [];
+        foreach (array_slice($rows, ($page - 1) * $per, $per) as $e) {
+            $out[] = [
+                'ts'       => (string)($e['ts'] ?? ''),
+                'channel'  => (string)($e['channel'] ?? 'web'),
+                'status'   => deiLogStatus($e),
+                'q'        => mb_substr((string)($e['q'] ?? ''), 0, 4000),
+                'a'        => mb_substr((string)($e['a'] ?? ''), 0, 6000),
+                'who'      => (string)($e['ip'] ?? ''),
+                'name'     => (string)($e['_name'] ?? ''),
+                'source'   => deiLogDim($e, 'source'),
+                'medium'   => deiLogDim($e, 'medium'),
+                'campaign' => deiLogDim($e, 'campaign'),
+                'page'     => (string)($e['page'] ?? ''),
+                'referrer' => (string)($e['referrer'] ?? ''),
+            ];
+        }
+        $first = $logs ? substr((string)end($logs)['ts'], 0, 10) : '';
+        jsonOut(['ok' => true, 'rows' => $out, 'total' => $total, 'page' => $page, 'pages' => $pages, 'per' => $per,
+                 'facets' => $facets, 'filters' => $f, 'oldest' => $first, 'all_total' => count($logs)]);
+        break;
+    }
+
     case 'export_logs': {
         requireAuth(['super_admin', 'admin', 'supervisor']);
-        $from = isset($_GET['from']) ? substr($_GET['from'], 0, 10) : '';
-        $to   = isset($_GET['to'])   ? substr($_GET['to'], 0, 10)   : '';
-        $logs = readJson(LOG_FILE, []);
+        // v1.2.66: filter sama dengan logs_query (channel/source/medium/campaign/status/cari)
+        $f = deiLogParams($_GET);
+        $from = $f['from']; $to = $f['to'];
+        $logs = deiLogWithNames(readJson(LOG_FILE, []));
 
         $rows = [];
         foreach ($logs as $l) {
-            $d = substr((string)($l['ts'] ?? ''), 0, 10);
-            if ($from && $d < $from) continue;
-            if ($to && $d > $to) continue;
-            $rows[] = $l;
+            if (deiLogMatch($l, $f)) $rows[] = $l;
         }
 
         $fname = 'chatbot-log';
@@ -5436,7 +5553,7 @@ switch ($action) {
         $out = fopen('php://output', 'w');
         // UTF-8 BOM so Excel reads Indonesian characters correctly
         fwrite($out, "\xEF\xBB\xBF");
-        fputcsv($out, ['Waktu', 'Channel', 'Pertanyaan', 'Jawaban AI', 'Pengirim/IP', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'Halaman', 'Referrer']);
+        fputcsv($out, ['Waktu', 'Channel', 'Pertanyaan', 'Jawaban AI', 'Pengirim/IP', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'Halaman', 'Referrer', 'Nama', 'Status']);
         foreach ($rows as $l) {
             fputcsv($out, [
                 $l['ts'] ?? '',
@@ -5449,6 +5566,8 @@ switch ($action) {
                 $l['utm_campaign'] ?? '',
                 $l['page'] ?? '',
                 $l['referrer'] ?? '',
+                $l['_name'] ?? '',
+                deiLogStatusLabel(deiLogStatus($l)),
             ]);
         }
         fclose($out);

@@ -258,7 +258,7 @@
       $('#pieSrcMed').innerHTML  = svgPie(res.by_source_medium || []);
       $('#lineTrend').innerHTML  = svgTrend(res.trend || []);
     });
-    loadLogs();
+    // v1.2.66: log percakapan pindah ke sub-tab "Log Percakapan" (lgLoad)
   }
 
   /* ---- inline SVG charts (no external libs) ---------------------------- */
@@ -345,6 +345,173 @@
       }).join('');
     });
   }
+
+  /* ====================================================================== *
+   *  LOG PERCAKAPAN (v1.2.66) — filter + facet + paginasi + detail
+   * ====================================================================== */
+  var LG_ST = { ai: ['Dijawab AI', '#140383'], awaiting: ['Menunggu balasan', '#d97706'], manual: ['Balasan agent', '#16a34a'], closing: ['Closing otomatis', '#94a3b8'], error: ['Gagal / error', '#dc2626'] };
+  var LG_CH = { web: 'Web', whatsapp: 'WhatsApp' };
+  var lg = { page: 1, per: 25, status: '', preset: '30', rows: [], wired: false, t: null, seq: 0 };
+  try { var _lp = +localStorage.getItem('dei_lg_per'); if ([25, 50, 100].indexOf(_lp) !== -1) lg.per = _lp; } catch (e) {}
+  function lgYmd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function lgApplyPreset(p) {
+    var now = new Date(), from = '', to = lgYmd(now);
+    if (p === 'today') from = to;
+    else if (p === '7') from = lgYmd(new Date(now.getTime() - 6 * 864e5));
+    else if (p === '30') from = lgYmd(new Date(now.getTime() - 29 * 864e5));
+    else if (p === 'month') from = lgYmd(new Date(now.getFullYear(), now.getMonth(), 1));
+    else if (p === 'all') { from = ''; to = ''; }
+    $('#lgFrom').value = from; $('#lgTo').value = to;
+    lg.preset = p;
+    $$('#lgPresets button').forEach(function (b) { b.classList.toggle('on', b.dataset.p === p); });
+  }
+  function lgParams() {
+    return '&from=' + encodeURIComponent($('#lgFrom').value) + '&to=' + encodeURIComponent($('#lgTo').value) +
+      '&channel=' + encodeURIComponent($('#lgChannel').value) + '&source=' + encodeURIComponent($('#lgSource').value) +
+      '&medium=' + encodeURIComponent($('#lgMedium').value) + '&campaign=' + encodeURIComponent($('#lgCampaign').value) +
+      '&status=' + encodeURIComponent(lg.status) + '&q=' + encodeURIComponent($('#lgQ').value.trim());
+  }
+  function lgFillSelect(sel, items, labels) {
+    var cur = sel.value, seen = false, total = 0;
+    items.forEach(function (it) { total += it.count; });
+    var h = '<option value="">Semua (' + total + ')</option>';
+    items.forEach(function (it) {
+      if (it.value === cur) seen = true;
+      h += '<option value="' + esc(it.value) + '">' + esc((labels && labels[it.value]) || it.value) + ' (' + it.count + ')</option>';
+    });
+    if (cur && !seen) h += '<option value="' + esc(cur) + '">' + esc((labels && labels[cur]) || cur) + ' (0)</option>';
+    sel.innerHTML = h; sel.value = cur;
+  }
+  function lgTsParts(ts) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(ts || '');
+    if (!m) return [ts || '–', ''];
+    var B = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    return [(+m[3]) + ' ' + B[+m[2] - 1] + ' ' + m[1].slice(2), m[4]];
+  }
+  function lgWho(r) {
+    if (r.channel === 'whatsapp') return { main: r.name || ('+' + r.who), sub: r.name ? '+' + r.who : '' };
+    var ip = r.who || '';
+    return { main: ip.length > 18 ? ip.slice(0, 16) + '…' : (ip || 'Pengunjung'), sub: r.page || '' };
+  }
+  function lgStatus(st) { var x = LG_ST[st] || [st, '#999']; return '<span class="lg-st ' + esc(st) + '">' + esc(x[0]) + '</span>'; }
+  function lgChan(ch) { return '<span class="lg-ch ' + esc(ch) + '">' + ico(ch === 'whatsapp' ? 'message-circle' : 'globe', 12) + ' ' + esc(LG_CH[ch] || ch) + '</span>'; }
+  function lgRender(res) {
+    var f = res.facets || {};
+    lgFillSelect($('#lgChannel'), f.channel || [], LG_CH);
+    lgFillSelect($('#lgSource'), f.source || []);
+    lgFillSelect($('#lgMedium'), f.medium || []);
+    lgFillSelect($('#lgCampaign'), f.campaign || []);
+    // chip status (facet, mengabaikan filter status itu sendiri)
+    var sc = {}, all = 0;
+    (f.status || []).forEach(function (it) { sc[it.value] = it.count; all += it.count; });
+    var ch = '<button type="button" class="lg-chip' + (lg.status === '' ? ' on' : '') + '" data-s="">Semua <b>' + all + '</b></button>';
+    Object.keys(LG_ST).forEach(function (k) {
+      if (!sc[k] && lg.status !== k) return;
+      ch += '<button type="button" class="lg-chip' + (lg.status === k ? ' on' : '') + '" data-s="' + k + '"><span class="dot" style="background:' + LG_ST[k][1] + '"></span>' + LG_ST[k][0] + ' <b>' + (sc[k] || 0) + '</b></button>';
+    });
+    $('#lgChips').innerHTML = ch;
+    $$('#lgChips .lg-chip').forEach(function (b) { b.onclick = function () { lg.status = b.dataset.s; lg.page = 1; lgLoad(); }; });
+
+    lg.rows = res.rows || [];
+    var from = $('#lgFrom').value, to = $('#lgTo').value;
+    $('#lgCount').textContent = res.total.toLocaleString('id-ID') + ' percakapan';
+    $('#lgSub').textContent = (from || to) ? (from ? lgTsParts(from + ' 00:00')[0] : 'awal') + ' – ' + (to ? lgTsParts(to + ' 00:00')[0] : 'sekarang') : 'Semua waktu';
+    if (!lg.rows.length) {
+      $('#lgBody').innerHTML = '<tr><td colspan="7" class="lg-empty">Tidak ada percakapan yang cocok dengan filter ini.</td></tr>';
+    } else {
+      $('#lgBody').innerHTML = lg.rows.map(function (r, i) {
+        var t = lgTsParts(r.ts), w = lgWho(r);
+        var ans = r.a ? esc(r.a.slice(0, 220)) : '<i style="opacity:.7">' + (r.status === 'awaiting' ? 'belum dibalas' : '—') + '</i>';
+        var srcMed = (r.source === '(direct)' && r.medium === '(none)') ? '<span style="color:var(--muted)">(direct)</span>' : esc(r.source) + '<small>' + esc(r.medium) + '</small>';
+        return '<tr data-i="' + i + '">' +
+          '<td class="c-ts"><div class="lg-ts"><b>' + esc(t[0]) + '</b><span>' + esc(t[1]) + '</span></div></td>' +
+          '<td class="c-ch">' + lgChan(r.channel) + '</td>' +
+          '<td class="c-who"><div class="lg-who lg-clip"><b class="lg-clip">' + esc(w.main) + '</b><span class="lg-clip">' + esc(w.sub) + '</span></div></td>' +
+          '<td class="lg-clip lg-q" title="' + esc((r.q || '').slice(0, 300)) + '">' + (r.q ? esc(r.q.slice(0, 220)) : '<i style="opacity:.6">(tanpa pesan)</i>') + '</td>' +
+          '<td class="lg-clip lg-a">' + ans + '</td>' +
+          '<td class="c-src lg-clip lg-src">' + srcMed + '</td>' +
+          '<td class="c-st">' + lgStatus(r.status) + '</td></tr>';
+      }).join('');
+      $$('#lgBody tr[data-i]').forEach(function (tr) { tr.onclick = function () { lgOpen(+tr.dataset.i); }; });
+    }
+    var a = res.total ? (res.page - 1) * res.per + 1 : 0, b = Math.min(res.total, res.page * res.per);
+    lg.page = res.page;
+    $('#lgPageInfo').textContent = a + '–' + b + ' dari ' + res.total.toLocaleString('id-ID') + ' · hal. ' + res.page + '/' + res.pages;
+    $('#lgPrev').disabled = res.page <= 1;
+    $('#lgNext').disabled = res.page >= res.pages;
+  }
+  function lgLoad() {
+    var my = ++lg.seq;
+    $('#lgBody').style.opacity = '.55';
+    api('logs_query', { query: lgParams() + '&page=' + lg.page + '&per=' + lg.per }).then(function (res) {
+      if (my !== lg.seq) return;          // abaikan respons lama
+      $('#lgBody').style.opacity = '';
+      if (!res || !res.ok) { $('#lgBody').innerHTML = '<tr><td colspan="7" class="lg-empty">' + esc((res && res.error) || 'Gagal memuat log.') + '</td></tr>'; return; }
+      lgRender(res);
+    }).catch(function () { $('#lgBody').style.opacity = ''; });
+  }
+  function lgOpen(i) {
+    var r = lg.rows[i]; if (!r) return;
+    var t = lgTsParts(r.ts), w = lgWho(r);
+    $('#lgDrTitle').textContent = w.main;
+    var meta = [
+      ['Waktu', esc(t[0] + ' · ' + t[1] + ' WIB')], ['Channel', lgChan(r.channel)], ['Status', lgStatus(r.status)],
+      [r.channel === 'whatsapp' ? 'Nomor' : 'IP', esc(r.channel === 'whatsapp' ? '+' + r.who : r.who)],
+      ['Source', esc(r.source)], ['Medium', esc(r.medium)], ['Campaign', esc(r.campaign)]
+    ];
+    if (r.page) meta.push(['Halaman', esc(r.page)]);
+    if (r.referrer) meta.push(['Referrer', esc(r.referrer)]);
+    $('#lgDrBody').innerHTML =
+      (r.q ? '<div class="lg-bub q"><small>Pengunjung</small>' + esc(r.q) + '</div>' : '') +
+      '<div class="lg-bub a"><small>' + (r.status === 'manual' ? 'Balasan agent' : (r.status === 'closing' ? 'Pesan closing' : 'Jawaban AI')) + '</small>' + (r.a ? esc(r.a) : '<i>' + (r.status === 'awaiting' ? 'Belum dibalas.' : '—') + '</i>') + '</div>' +
+      '<dl class="lg-meta">' + meta.map(function (m) { return '<dt>' + m[0] + '</dt><dd>' + m[1] + '</dd>'; }).join('') + '</dl>';
+    var foot = '';
+    if (r.channel === 'whatsapp') foot += '<button class="btn sm" type="button" id="lgGoWa">' + ico('message-circle', 14) + ' Buka Percakapan WA</button>';
+    foot += '<button class="btn ghost sm" type="button" id="lgCopy">' + ico('copy', 14) + ' Salin teks</button>';
+    $('#lgDrFoot').innerHTML = foot;
+    if ($('#lgGoWa')) $('#lgGoWa').onclick = function () { lgClose(); showTab('wachat'); };
+    $('#lgCopy').onclick = function () {
+      var txt = (r.q ? 'Q: ' + r.q + '\n' : '') + 'A: ' + (r.a || '');
+      try { navigator.clipboard.writeText(txt).then(function () { toast('Teks disalin.'); }); } catch (e) {}
+    };
+    $('#lgDrawer').classList.add('open');
+    $('#lgDrawer').setAttribute('aria-hidden', 'false');
+  }
+  function lgClose() { $('#lgDrawer').classList.remove('open'); $('#lgDrawer').setAttribute('aria-hidden', 'true'); }
+  function lgInit() {
+    if (lg.wired) { lgLoad(); return; }
+    lg.wired = true;
+    $('#lgPer').value = String(lg.per);
+    lgApplyPreset('30');
+    $$('#lgPresets button').forEach(function (b) { b.onclick = function () { lgApplyPreset(b.dataset.p); lg.page = 1; lgLoad(); }; });
+    ['#lgFrom', '#lgTo'].forEach(function (id) {
+      $(id).onchange = function () { lg.preset = ''; $$('#lgPresets button').forEach(function (b) { b.classList.remove('on'); }); lg.page = 1; lgLoad(); };
+    });
+    ['#lgChannel', '#lgSource', '#lgMedium', '#lgCampaign'].forEach(function (id) { $(id).onchange = function () { lg.page = 1; lgLoad(); }; });
+    $('#lgQ').oninput = function () { clearTimeout(lg.t); lg.t = setTimeout(function () { lg.page = 1; lgLoad(); }, 350); };
+    $('#lgPer').onchange = function () { lg.per = +this.value; try { localStorage.setItem('dei_lg_per', lg.per); } catch (e) {} lg.page = 1; lgLoad(); };
+    $('#lgPrev').onclick = function () { if (lg.page > 1) { lg.page--; lgLoad(); } };
+    $('#lgNext').onclick = function () { lg.page++; lgLoad(); };
+    $('#lgReset').onclick = function () {
+      ['#lgChannel', '#lgSource', '#lgMedium', '#lgCampaign'].forEach(function (id) { $(id).value = ''; });
+      $('#lgQ').value = ''; lg.status = ''; lg.page = 1; lgApplyPreset('30'); lgLoad();
+    };
+    $('#lgExport').onclick = function () {
+      window.location.href = API + '?action=export_logs&token=' + encodeURIComponent(token) + lgParams();
+      toast('Mengunduh CSV sesuai filter…');
+    };
+    $$('#lgDrawer [data-close]').forEach(function (el) { el.onclick = lgClose; });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('#lgDrawer').classList.contains('open')) lgClose(); });
+    lgLoad();
+  }
+  function repView(v) {
+    $$('#repSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.v === v); });
+    $('#repSummary').style.display = v === 'logs' ? 'none' : '';
+    $('#repLogs').style.display = v === 'logs' ? '' : 'none';
+    try { localStorage.setItem('dei_rep_view', v); } catch (e) {}
+    if (v === 'logs') lgInit();
+  }
+  $$('#repSeg button').forEach(function (b) { b.onclick = function () { repView(b.dataset.v); }; });
 
   function initReportsControls() {
     var today = new Date().toISOString().slice(0, 10);
@@ -4324,7 +4491,11 @@
 
   var loaders = {
     eskalasi: loadEskalasi,   // v1.2.56
-    reports: function () { initReportsControls(); loadUsageCard(); loadReports(); },
+    reports: function () {
+      initReportsControls(); loadUsageCard(); loadReports();
+      var v = 'summary'; try { v = localStorage.getItem('dei_rep_view') || 'summary'; } catch (e) {}
+      repView(v === 'logs' ? 'logs' : 'summary');   // v1.2.66
+    },
     wachat: loadWachat,
     webchat: loadWebchat,
     blast: loadBlast,
