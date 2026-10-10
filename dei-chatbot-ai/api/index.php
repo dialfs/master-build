@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.64');
+define('DEI_VERSION', 'v1.2.65');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -1522,7 +1522,7 @@ function getPushTargetsByTopic($topic, $subscribers) {
 /*
  * v1.2.8: sendPushToUsers — kirim Web Push ke subscriber (generic, future-proof)
  * ============================================================ */
-function sendPushToUsers($targetUsers, $title, $body, $url) {
+function sendPushToUsers($targetUsers, $title, $body, $url, $tag = 'dei-wa') {
     $vendorAutoload = __DIR__ . '/../vendor/autoload.php';
     $vapidFile = DATA_DIR . '/vapid-keys.json';
     $subsFile  = DATA_DIR . '/push-subs.json';
@@ -1546,7 +1546,7 @@ function sendPushToUsers($targetUsers, $title, $body, $url) {
             'body'  => $body,
             'url'   => $url,
             'icon'  => './icon-192.png',
-            'tag'   => 'dei-wa',
+            'tag'   => $tag,
         ], JSON_UNESCAPED_UNICODE);
 
         foreach ($targetUsers as $username) {
@@ -2211,6 +2211,89 @@ function deiSeatCounts() {
 }
 // v1.2.60: pusat mengirim fitur paket di header cron_tick (sudah terverifikasi license key)
 // -> batas kursi baru berlaku <= 1 menit tanpa menunggu cache 24 jam.
+/* ======================================================================
+ * v1.2.65: Catatan rilis — halaman "Pembaruan" (khusus super_admin/admin)
+ * Sumber: pusat ?action=release_notes (tenant_id + license_key), di-cache
+ * 30 menit. Push ke admin dipicu cron_tick lewat header X-Dei-Latest.
+ * ==================================================================== */
+define('RELNOTES_CACHE_FILE', DATA_DIR . '/release-notes-cache.json');
+define('RELNOTIFY_FILE',      DATA_DIR . '/release-notify.json');
+define('RELNOTES_TTL', 1800);
+
+function deiVerOk($v) { return is_string($v) && preg_match('/^v\d+\.\d+\.\d+$/', $v) === 1; }
+function deiVerCmp($a, $b) { return version_compare(ltrim((string)$a, 'v'), ltrim((string)$b, 'v')); }
+
+function deiFetchReleaseNotes($force = false) {
+    $cache = readJson(RELNOTES_CACHE_FILE, []);
+    $has = !empty($cache['releases']) && is_array($cache['releases']);
+    if (!$force && $has && (time() - (int)($cache['fetched_at'] ?? 0)) < RELNOTES_TTL) return $cache + ['stale' => false];
+    $s = getSettings();
+    $cs = $s['central_server'] ?? [];
+    if (empty($cs['url']) || empty($cs['tenant_id']) || empty($cs['license_key'])) {
+        $err = 'Server pusat belum dikonfigurasi.';
+        return $has ? $cache + ['stale' => true, 'error' => $err] : ['releases' => [], 'latest' => null, 'stale' => true, 'error' => $err];
+    }
+    $ch = curl_init(rtrim($cs['url'], '/') . '/backend/index.php?action=release_notes');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_POST => true, CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_POSTFIELDS => json_encode(['tenant_id' => $cs['tenant_id'], 'license_key' => $cs['license_key'], 'limit' => 60])]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $j = json_decode((string)$resp, true);
+    if ($code === 200 && is_array($j) && !empty($j['ok']) && is_array($j['releases'] ?? null)) {
+        $rel = [];
+        foreach ($j['releases'] as $r) {
+            if (!is_array($r) || !deiVerOk($r['version'] ?? '')) continue;
+            $hl = [];
+            foreach (array_slice((array)($r['highlights'] ?? []), 0, 12) as $h) { if (is_string($h) && trim($h) !== '') $hl[] = mb_substr(trim($h), 0, 300); }
+            $rel[] = [
+                'version'     => $r['version'],
+                'released_at' => mb_substr((string)($r['released_at'] ?? ''), 0, 19),
+                'title'       => mb_substr(trim((string)($r['title'] ?? '')), 0, 120),
+                'type'        => in_array(($r['type'] ?? ''), ['fitur', 'peningkatan', 'perbaikan'], true) ? $r['type'] : 'peningkatan',
+                'changelog'   => mb_substr(trim((string)($r['changelog'] ?? '')), 0, 3000),
+                'highlights'  => $hl,
+            ];
+        }
+        usort($rel, function ($a, $b) { return deiVerCmp($b['version'], $a['version']); });
+        $cache = ['fetched_at' => time(), 'fetched_at_wib' => wibDate('Y-m-d H:i:s'), 'latest' => $rel[0]['version'] ?? null, 'releases' => $rel];
+        writeJson(RELNOTES_CACHE_FILE, $cache);
+        return $cache + ['stale' => false];
+    }
+    $err = (is_array($j) && !empty($j['error'])) ? (string)$j['error'] : ('Gagal menghubungi server pusat (HTTP ' . $code . ').');
+    return $has ? $cache + ['stale' => true, 'error' => $err] : ['releases' => [], 'latest' => null, 'stale' => true, 'error' => $err];
+}
+
+// Dipanggil dari cron_tick. Rilis pertama yang terlihat hanya dicatat (tanpa push)
+// supaya tenant yang baru dipasang tidak dibanjiri notifikasi rilis lama.
+function deiReleaseNotify($latest) {
+    if (!deiVerOk($latest)) return null;
+    $st = readJson(RELNOTIFY_FILE, []);
+    $last = (string)($st['last_notified'] ?? '');
+    if ($last === '') {
+        writeJson(RELNOTIFY_FILE, ['last_notified' => $latest, 'at_wib' => wibDate('Y-m-d H:i:s'), 'pushed' => 0, 'init' => true]);
+        return ['init' => $latest];
+    }
+    if (deiVerCmp($latest, $last) <= 0) return null;
+    if (!empty($GLOBALS['dei_dry'])) return ['would_notify' => $latest];
+    $notes = deiFetchReleaseNotes(true);
+    $title = '';
+    foreach (($notes['releases'] ?? []) as $r) {
+        if ($r['version'] === $latest) { $title = $r['title'] !== '' ? $r['title'] : mb_substr($r['changelog'], 0, 110); break; }
+    }
+    $subs = array_keys(readJson(DATA_DIR . '/push-subs.json', []));
+    $targets = [];
+    foreach (readJson(USERS_FILE, []) as $u) {
+        $un = (string)($u['username'] ?? '');
+        if ($un !== '' && in_array(($u['role'] ?? ''), ['super_admin', 'admin'], true) && in_array($un, $subs, true)) $targets[] = $un;
+    }
+    if ($targets) sendPushToUsers($targets, 'Pembaruan baru: ' . $latest, $title !== '' ? $title : 'Lihat apa yang baru di DEI Chatbot.', deiDashboardUrl() . '#pembaruan', 'dei-release');
+    writeJson(RELNOTIFY_FILE, ['last_notified' => $latest, 'at_wib' => wibDate('Y-m-d H:i:s'), 'pushed' => count($targets)]);
+    return ['notified' => $latest, 'pushed' => count($targets)];
+}
+/* ====== /v1.2.65 ====== */
+
 function deiApplyPushedFeatures($raw) {
     $j = json_decode((string)$raw, true);
     $f = deiFeaturesFromCap(is_array($j) ? $j : null);
@@ -6407,6 +6490,51 @@ switch ($action) {
      * ============================================================ */
 
     /* ---------- v1.2.56: CRON TICK (dipanggil dei-pusat tiap menit, atau CLI) ---------- */
+    /* ---------- v1.2.65: halaman Pembaruan (catatan rilis) — khusus admin ---------- */
+    case 'release_notes': {
+        $u = requireAuth(['super_admin', 'admin']);
+        $n = deiFetchReleaseNotes(!empty($_GET['refresh']));
+        $rel = $n['releases'] ?? [];
+        $latest = $rel[0]['version'] ?? null;
+        $seen = '';
+        foreach (readJson(USERS_FILE, []) as $x) {
+            if (($x['username'] ?? '') === $u['username']) { $seen = (string)($x['release_seen'] ?? ''); break; }
+        }
+        $unread = 0;
+        if ($latest) {
+            if (!deiVerOk($seen)) $unread = 1;   // belum pernah membuka: tandai rilis terakhir saja
+            else foreach ($rel as $r) { if (deiVerCmp($r['version'], $seen) > 0) $unread++; }
+        }
+        jsonOut([
+            'ok'                => true,
+            'releases'          => !empty($_GET['summary']) ? array_slice($rel, 0, 1) : $rel,
+            'latest'            => $latest,
+            'installed_version' => DEI_VERSION,
+            'seen'              => $seen,
+            'unread'            => $unread,
+            'fetched_at_wib'    => $n['fetched_at_wib'] ?? '',
+            'stale'             => !empty($n['stale']),
+            'error'             => $n['error'] ?? '',
+        ]);
+        break;
+    }
+
+    case 'release_seen': {
+        $u = requireAuth(['super_admin', 'admin']);
+        $in = bodyInput();
+        $v = (string)($in['version'] ?? '');
+        if (!deiVerOk($v)) jsonOut(['ok' => false, 'error' => 'Versi tidak valid.'], 400);
+        $users = readJson(USERS_FILE, []);
+        foreach ($users as $i => $x) {
+            if (($x['username'] ?? '') !== $u['username']) continue;
+            $cur = (string)($x['release_seen'] ?? '');
+            if (!deiVerOk($cur) || deiVerCmp($v, $cur) > 0) { $users[$i]['release_seen'] = $v; writeJson(USERS_FILE, $users); }
+            break;
+        }
+        jsonOut(['ok' => true, 'seen' => $v]);
+        break;
+    }
+
     case 'cron_tick': {
         $s = getSettings();
         if (PHP_SAPI !== 'cli') {
@@ -6433,6 +6561,11 @@ switch ($action) {
         $GLOBALS['dei_dry'] = !empty($_GET['dry']);
         $GLOBALS['esc_dry_log'] = [];
         $r = ['ok' => true, 'version' => DEI_VERSION, 'dry' => $GLOBALS['dei_dry']];
+        // v1.2.65: pusat mengirim versi rilis terbaru -> push "Pembaruan baru" ke admin (sekali per rilis)
+        if (PHP_SAPI !== 'cli' && !empty($_SERVER['HTTP_X_DEI_LATEST'])) {
+            try { $relN = deiReleaseNotify(trim((string)$_SERVER['HTTP_X_DEI_LATEST'])); if ($relN) $r['release'] = $relN; }
+            catch (\Throwable $e) { $r['err_release'] = $e->getMessage(); }
+        }
         try {
             list($rel, $appr) = waClaimAutoProcess();
             $r['claims_released'] = $rel;

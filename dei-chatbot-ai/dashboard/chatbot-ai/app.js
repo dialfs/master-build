@@ -4191,6 +4191,137 @@
     });
   }
 
+  /* ====================================================================== *
+   *  PEMBARUAN (v1.2.65) — catatan rilis + notifikasi rilis baru (admin)
+   * ====================================================================== */
+  var REL_TYPE = { fitur: 'Fitur baru', peningkatan: 'Peningkatan', perbaikan: 'Perbaikan' };
+  var REL_BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  var relState = { data: null, filter: 'all' };
+  function relCanSee() { return role === 'super_admin' || role === 'admin'; }
+  function relVerCmp(a, b) {
+    var x = String(a || '').replace(/^v/, '').split('.'), y = String(b || '').replace(/^v/, '').split('.');
+    for (var i = 0; i < 3; i++) { var d = (+x[i] || 0) - (+y[i] || 0); if (d) return d > 0 ? 1 : -1; }
+    return 0;
+  }
+  function relDate(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+    return m ? (+m[3]) + ' ' + REL_BULAN[+m[2] - 1].slice(0, 3) + ' ' + m[1] : '';
+  }
+  function relMonth(s) {
+    var m = /^(\d{4})-(\d{2})/.exec(s || '');
+    return m ? REL_BULAN[+m[2] - 1] + ' ' + m[1] : 'Tanpa tanggal';
+  }
+  function relSetBadge(n) {
+    var b = document.querySelector('#nav [data-tab="pembaruan"]');
+    if (!b) return;
+    var el = b.querySelector('.wa-sidebar-badge');
+    if (n > 0) {
+      if (!el) { el = document.createElement('span'); el.className = 'wa-sidebar-badge'; b.appendChild(el); }
+      el.textContent = n > 9 ? '9+' : String(n);
+      el.title = n + ' pembaruan belum dilihat';
+    } else if (el) el.remove();
+  }
+  function relDismissKey() { return 'dei_rel_dismiss_' + (user.username || ''); }
+  function relRenderBanner(d) {
+    var el = document.getElementById('releaseBanner');
+    if (!el) return;
+    var dismissed = '';
+    try { dismissed = sessionStorage.getItem(relDismissKey()) || ''; } catch (e) {}
+    var r = (d && d.releases && d.releases[0]) || null;
+    if (!d || !(d.unread > 0) || !r || dismissed === d.latest || $('#panel-pembaruan').classList.contains('active')) { el.style.display = 'none'; return; }
+    el.innerHTML = '<div class="rb"><span class="rb-ic">' + ico('sparkles', 18) + '</span>' +
+      '<div class="rb-tx"><b>Pembaruan baru ' + esc(r.version) + '</b>' + (r.title ? ' — ' + esc(r.title) : '') +
+      (d.unread > 1 ? ' <span style="color:var(--muted)">(+' + (d.unread - 1) + ' lainnya)</span>' : '') + '</div>' +
+      '<button class="btn sm" type="button" id="rbOpen">Lihat apa yang baru</button>' +
+      '<button class="rb-x" type="button" id="rbClose" title="Tutup">' + ico('x', 16) + '</button></div>';
+    el.style.display = 'block';
+    $('#rbOpen').onclick = function () { showTab('pembaruan'); };
+    $('#rbClose').onclick = function () {
+      try { sessionStorage.setItem(relDismissKey(), d.latest); } catch (e) {}
+      el.style.display = 'none';
+    };
+  }
+  function relCheck() {
+    if (!relCanSee()) return;
+    api('release_notes', { query: '&summary=1' }).then(function (res) {
+      if (!res || !res.ok) return;
+      relSetBadge(res.unread || 0);
+      relRenderBanner(res);
+      if (res.unread > 0) loaded.pembaruan = false;   // buka tab lagi -> muat ulang daftar
+    }).catch(function () {});
+  }
+  function renderPembaruan() {
+    var d = relState.data || {};
+    var rel = d.releases || [];
+    var inst = d.installed_version || '';
+    $('#relInstalled').textContent = inst || '–';
+    $('#relLatest').textContent = d.latest || '–';
+    var st = $('#relStatus'), go = $('#relGoUpdate');
+    var behind = d.latest && inst && relVerCmp(d.latest, inst) > 0;
+    st.style.display = d.latest ? '' : 'none';
+    st.className = 'rel-status' + (behind ? ' up' : '');
+    st.innerHTML = behind ? ico('clock-3', 14) + ' Pembaruan tersedia' : ico('check-circle-2', 14) + ' Sudah versi terbaru';
+    go.style.display = (behind && role === 'super_admin') ? '' : 'none';
+    var note = [];
+    if (behind && role !== 'super_admin') note.push('Versi baru tersedia. Minta Super Admin memasangnya dari menu Widget &amp; API.');
+    if (d.stale && d.error) note.push(ico('triangle-alert', 13, 'style="vertical-align:-2px"') + ' ' + esc(d.error) + (rel.length ? ' Menampilkan data tersimpan.' : ''));
+    if (d.fetched_at_wib) note.push('Diperbarui ' + esc(d.fetched_at_wib) + ' WIB');
+    $('#relNote').innerHTML = note.join(' · ');
+    var seen = d.seen || '';
+    var list = rel.filter(function (r) { return relState.filter === 'all' || r.type === relState.filter; });
+    if (!list.length) {
+      $('#relList').innerHTML = '<div class="rel-empty">' + (rel.length ? 'Tidak ada rilis untuk filter ini.' : 'Belum ada catatan rilis.') + '</div>';
+      return;
+    }
+    var html = '', month = null;
+    list.forEach(function (r, i) {
+      var mo = relMonth(r.released_at);
+      if (mo !== month) { html += '<div class="rel-month">' + esc(mo) + '</div>'; month = mo; }
+      var isNew = seen ? relVerCmp(r.version, seen) > 0 : (r.version === d.latest);
+      var pending = inst && relVerCmp(r.version, inst) > 0;
+      var hl = (r.highlights || []).length ? '<ul>' + r.highlights.map(function (h) { return '<li>' + esc(h) + '</li>'; }).join('') + '</ul>' : '';
+      html += '<div class="rel-item' + (isNew ? ' new' : '') + '"><span class="rel-dot"></span><div class="rel-card">' +
+        '<div class="rel-meta"><span class="rel-ver">' + esc(r.version) + '</span>' +
+        '<span class="rel-type ' + esc(r.type) + '">' + esc(REL_TYPE[r.type] || r.type) + '</span>' +
+        (isNew ? '<span class="rel-new">Baru</span>' : '') +
+        (pending ? '<span class="rel-pend">Belum terpasang</span>' : '') +
+        '<span>' + esc(relDate(r.released_at)) + '</span></div>' +
+        (r.title ? '<h3>' + esc(r.title) + '</h3>' : '') +
+        '<p>' + esc(r.changelog) + '</p>' + hl + '</div></div>';
+    });
+    $('#relList').innerHTML = html;
+  }
+  function loadPembaruan(force) {
+    if (!relCanSee()) return;
+    if (!relState.wired) {
+      relState.wired = true;
+      $$('#relFilters button').forEach(function (b) {
+        b.onclick = function () {
+          relState.filter = b.dataset.f;
+          $$('#relFilters button').forEach(function (x) { x.classList.toggle('on', x === b); });
+          renderPembaruan();
+        };
+      });
+      $('#relRefresh').onclick = function () { loadPembaruan(true); };
+      $('#relGoUpdate').onclick = function () { showTab('widget'); };
+    }
+    if (!relState.data) $('#relList').innerHTML = '<div class="rel-empty">Memuat catatan rilis…</div>';
+    var btn = $('#relRefresh'); btn.disabled = true;
+    api('release_notes', { query: force ? '&refresh=1' : '' }).then(function (res) {
+      btn.disabled = false;
+      if (!res || !res.ok) { $('#relList').innerHTML = '<div class="rel-empty">' + esc((res && res.error) || 'Gagal memuat catatan rilis.') + '</div>'; return; }
+      relState.data = res;
+      renderPembaruan();
+      if (force) toast(res.stale ? 'Pusat tidak terjangkau — menampilkan data tersimpan.' : 'Catatan rilis diperbarui.', !!res.stale);
+      if (res.latest && res.unread > 0) {
+        api('release_seen', { method: 'POST', body: { version: res.latest } }).then(function () {
+          relSetBadge(0);
+          var bn = document.getElementById('releaseBanner'); if (bn) bn.style.display = 'none';
+        });
+      }
+    }).catch(function () { btn.disabled = false; });
+  }
+
   var loaders = {
     eskalasi: loadEskalasi,   // v1.2.56
     reports: function () { initReportsControls(); loadUsageCard(); loadReports(); },
@@ -4206,7 +4337,8 @@
     users: loadUsers,
     tim: loadTim,             // v1.2.58
     install: loadInstall,
-    profile: loadProfile
+    profile: loadProfile,
+    pembaruan: function () { loadPembaruan(false); }   // v1.2.65
   };
 
   // first tab per role
@@ -4214,8 +4346,13 @@
                : role === 'supervisor' ? 'wachat'   // v1.2.58
                : role === 'admin'    ? 'reports'
                :                       'reports';   // super_admin
+  // v1.2.65: tautan langsung #pembaruan (mis. dari notifikasi push rilis baru)
+  if (location.hash === '#pembaruan' && relCanSee()) firstTab = 'pembaruan';
+  window.addEventListener('hashchange', function () { if (location.hash === '#pembaruan' && relCanSee()) showTab('pembaruan'); });
   showTab(firstTab);
   maybeAutoCheck();
   renderLicenseBanner();
   renderCapBanner();
+  relCheck();                                   // v1.2.65: lencana + banner rilis baru (admin)
+  if (relCanSee()) setInterval(relCheck, 30 * 60 * 1000);
 })();

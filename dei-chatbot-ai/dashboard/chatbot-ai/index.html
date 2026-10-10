@@ -485,6 +485,65 @@
     .kb-md:not(.has-sel) .kb-ed{display:none}
     .kb-ed .kb-back{display:inline-flex}
   }
+  /* v1.2.65: halaman Pembaruan (catatan rilis) */
+  .rel-hero{position:relative;overflow:hidden;border-radius:16px;padding:30px 30px 26px;margin-bottom:20px;color:#fff;
+    background:radial-gradient(120% 140% at 100% 0%,#5b4fe0 0%,rgba(91,79,224,0) 55%),linear-gradient(135deg,#140383 0%,#2a1fa8 60%,#3b2fb8 100%)}
+  .rel-hero::after{content:"";position:absolute;right:-60px;bottom:-80px;width:260px;height:260px;border-radius:50%;border:38px solid rgba(255,255,255,.06)}
+  .rel-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:rgba(255,255,255,.14);padding:5px 11px;border-radius:20px}
+  .rel-hero h2{font-size:27px;font-weight:700;letter-spacing:-.02em;margin:14px 0 6px;line-height:1.2}
+  .rel-hero p{color:rgba(255,255,255,.78);max-width:560px;line-height:1.55}
+  .rel-hero-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px;align-items:stretch;position:relative;z-index:1}
+  .rel-stat{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:11px 16px;min-width:140px}
+  .rel-stat small{display:block;font-size:11px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.05em}
+  .rel-stat b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:17px;font-weight:600}
+  .rel-hero .rel-act{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+  .rel-hero .btn{background:#fff;color:var(--brand)}
+  .rel-hero .btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.45)}
+  .rel-hero .btn.ghost:hover{background:rgba(255,255,255,.1)}
+  .rel-status{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:20px;background:rgba(255,255,255,.14)}
+  .rel-status.up{background:#fef3c7;color:#854d0e}
+  .rel-filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}
+  .rel-filters button{border:1px solid var(--line);background:#fff;color:var(--muted);padding:7px 13px;border-radius:20px;font:inherit;font-size:12.5px;font-weight:500;cursor:pointer}
+  .rel-filters button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .rel-month{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:22px 0 10px 30px}
+  .rel-month:first-child{margin-top:0}
+  .rel-item{position:relative;padding-left:30px;margin-bottom:12px}
+  .rel-item::before{content:"";position:absolute;left:8px;top:0;bottom:-12px;width:2px;background:var(--line)}
+  .rel-item:last-child::before{bottom:auto;height:22px}
+  .rel-dot{position:absolute;left:2px;top:20px;width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #c7c3ee}
+  .rel-item.new .rel-dot{border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-soft)}
+  .rel-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .rel-item.new .rel-card{border-color:#cbc6f3;box-shadow:0 4px 18px -10px rgba(20,3,131,.35)}
+  .rel-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:12px;color:var(--muted)}
+  .rel-ver{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;color:var(--brand);background:var(--brand-soft);padding:2px 8px;border-radius:6px;font-size:12px}
+  .rel-type{font-weight:600;padding:2px 8px;border-radius:6px;font-size:11.5px}
+  .rel-type.fitur{background:#e6f6ec;color:#1f7a45}
+  .rel-type.peningkatan{background:#e8f0fe;color:#1d4fb8}
+  .rel-type.perbaikan{background:#fff4e5;color:#a35a00}
+  .rel-new{font-weight:700;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:#fff;background:#ef4444;padding:2px 7px;border-radius:6px}
+  .rel-pend{font-weight:600;font-size:11.5px;color:#854d0e;background:#fef3c7;padding:2px 8px;border-radius:6px}
+  .rel-card h3{font-size:15.5px;font-weight:650;letter-spacing:-.01em;margin-bottom:5px;color:var(--ink)}
+  .rel-card p{color:#45455c;line-height:1.6;font-size:13.5px}
+  .rel-card ul{margin:8px 0 0 18px;color:#45455c;line-height:1.6;font-size:13.5px}
+  .rel-empty{background:#fff;border:1px dashed var(--line);border-radius:12px;padding:34px;text-align:center;color:var(--muted)}
+  .rel-note{font-size:12px;color:var(--muted);margin:-8px 0 16px}
+  #releaseBanner{display:none;margin:0 0 14px;padding:12px 14px 12px 16px;border-radius:10px;font-size:14px;border:1px solid #cbc6f3;background:linear-gradient(90deg,#f1effd,#fff);color:var(--ink)}
+  #releaseBanner .rb{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  #releaseBanner .rb-ic{color:var(--brand);display:inline-flex;flex-shrink:0}
+  #releaseBanner .rb-tx{flex:1;min-width:200px}
+  #releaseBanner .rb-x{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;display:inline-flex}
+  @media(max-width:860px){
+    .rel-hero{padding:22px 18px 20px;border-radius:14px}
+    .rel-hero h2{font-size:22px}
+    .rel-hero .rel-act{margin-left:0;width:100%}
+    .rel-hero .rel-act .btn{flex:1 1 auto}
+    .rel-stat{flex:1 1 120px;min-width:0}
+    .rel-month{margin-left:24px}
+    .rel-item{padding-left:24px}
+    .rel-item::before{left:6px}
+    .rel-dot{left:0;width:14px;height:14px}
+    .rel-card{padding:14px}
+  }
 </style>
 </head>
 <body>
@@ -511,6 +570,7 @@
       <button data-tab="users"    data-role="super_admin,admin,supervisor" data-icon="users"><span class="ic"></span> Pengguna</button>
       <button data-tab="profile"  data-role="super_admin,admin,supervisor,wa_agent" data-icon="user"><span class="ic"></span> Profil Saya</button>
       <button data-tab="install"  data-role="super_admin,admin" data-icon="rocket"><span class="ic"></span> Pemasangan (GTM)</button>
+      <button data-tab="pembaruan" data-role="super_admin,admin" data-icon="sparkles"><span class="ic"></span> Pembaruan</button>
     </nav>
     <div class="who">
       <div class="nm" id="whoName">—</div>
@@ -524,6 +584,8 @@
     <div id="licenseBanner" style="display:none;margin:0 0 14px;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:500;border:1px solid"></div>
     <!-- CAP BANNER (all roles) -->
     <div id="capBanner" style="display:none;margin:0 0 14px;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:500;border:1px solid"></div>
+    <!-- v1.2.65: RELEASE BANNER (super_admin/admin) -->
+    <div id="releaseBanner"></div>
 
     <!-- REPORTS -->
     <section class="panel" id="panel-reports">
@@ -1379,9 +1441,35 @@
       </div>
     </section>
 
+    <!-- v1.2.65: PEMBARUAN (catatan rilis, khusus super_admin/admin) -->
+    <section class="panel" id="panel-pembaruan">
+      <div class="rel-hero">
+        <span class="rel-eyebrow"><span data-ico="sparkles" data-ico-size="13"></span> Catatan Rilis</span>
+        <h2>Apa yang baru di DEI Chatbot</h2>
+        <p>Semua fitur baru, peningkatan, dan perbaikan yang kami rilis. Anda akan mendapat notifikasi setiap kali ada versi baru.</p>
+        <div class="rel-hero-row">
+          <div class="rel-stat"><small>Versi Anda</small><b id="relInstalled">–</b></div>
+          <div class="rel-stat"><small>Rilis terbaru</small><b id="relLatest">–</b></div>
+          <div class="rel-act">
+            <span class="rel-status" id="relStatus" style="display:none"></span>
+            <button class="btn sm" id="relGoUpdate" type="button" style="display:none"><span data-ico="rocket"></span> Pasang pembaruan</button>
+            <button class="btn ghost sm" id="relRefresh" type="button"><span data-ico="rotate-cw"></span> Periksa lagi</button>
+          </div>
+        </div>
+      </div>
+      <div class="rel-filters" id="relFilters">
+        <button type="button" data-f="all" class="on">Semua</button>
+        <button type="button" data-f="fitur">Fitur baru</button>
+        <button type="button" data-f="peningkatan">Peningkatan</button>
+        <button type="button" data-f="perbaikan">Perbaikan</button>
+      </div>
+      <div class="rel-note" id="relNote"></div>
+      <div id="relList"><div class="rel-empty">Memuat catatan rilis…</div></div>
+    </section>
+
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.64"></script>
+<script src="app.js?v=1.2.65"></script>
 </body>
 </html>
