@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.66');
+define('DEI_VERSION', 'v1.2.67');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2360,6 +2360,63 @@ function deiLogStatusLabel($st) {
     return ['ai' => 'Dijawab AI', 'awaiting' => 'Menunggu balasan', 'manual' => 'Balasan agent', 'closing' => 'Closing otomatis', 'error' => 'Gagal / error'][$st] ?? $st;
 }
 /* ====== /v1.2.66 ====== */
+
+/* ======================================================================
+ * v1.2.67: Scan Topik Percakapan per periode (AI) — hasil disimpan di
+ * data/topic-scans.json per (periode, channel) supaya tidak scan ulang tiap buka.
+ * Unit = satu percakapan: pesan pengunjung dari kontak yang sama di hari yang sama.
+ * ==================================================================== */
+define('TOPIC_SCANS_FILE', DATA_DIR . '/topic-scans.json');
+define('TOPIC_SAMPLE_MAX', 300);
+function deiTopicPeriods() { return [7, 14, 30, 60, 90, 180, 365]; }
+
+// Kumpulkan unit percakapan dalam periode. Kembalikan [units, meta].
+function deiTopicUnits($days, $channel) {
+    $from = wibDate('Y-m-d', time() - ($days - 1) * 86400);
+    $to   = wibDate('Y-m-d');
+    $logs = readJson(LOG_FILE, []);
+    $oldest = '';
+    $units = [];
+    foreach ($logs as $e) {
+        $ts = (string)($e['ts'] ?? '');
+        $day = substr($ts, 0, 10);
+        if ($day !== '' && ($oldest === '' || $day < $oldest)) $oldest = $day;
+        if ($day === '' || $day < $from || $day > $to) continue;
+        if (in_array(($e['dir'] ?? ''), ['manual', 'closing'], true)) continue;          // balasan agent
+        if (($e['utm_source'] ?? '') === 'dashboard' && ($e['utm_medium'] ?? '') === 'test') continue;   // Tes Chatbot
+        $ch = (string)($e['channel'] ?? 'web');
+        if ($channel !== '' && $ch !== $channel) continue;
+        $q = trim(preg_replace('/\s+/u', ' ', (string)($e['q'] ?? '')));
+        if ($q === '') continue;
+        $k = $ch . '|' . (string)($e['ip'] ?? '') . '|' . $day;
+        if (!isset($units[$k])) $units[$k] = ['ch' => $ch, 'day' => $day, 'msgs' => [], 'ts' => $ts];
+        $units[$k]['msgs'][] = ['ts' => $ts, 'q' => $q];
+    }
+    $out = [];
+    foreach ($units as $u) {
+        usort($u['msgs'], function ($a, $b) { return strcmp($a['ts'], $b['ts']); });
+        $t = '';
+        foreach ($u['msgs'] as $m) {
+            if (mb_strlen($t) >= 280) break;
+            $t .= ($t === '' ? '' : ' / ') . $m['q'];
+        }
+        $t = mb_substr($t, 0, 300);
+        if (mb_strlen(preg_replace('/[^\p{L}\p{N}]/u', '', $t)) < 2) continue;   // "1", "👍" saja
+        $out[] = ['ch' => $u['ch'], 'day' => $u['day'], 'text' => $t, 'n' => count($u['msgs'])];
+    }
+    usort($out, function ($a, $b) { return strcmp($b['day'], $a['day']); });
+    return [$out, ['from' => $from, 'to' => $to, 'oldest' => $oldest, 'log_entries' => count($logs)]];
+}
+// Ambil sampel merata (bukan hanya yang terbaru) supaya periode panjang terwakili.
+function deiTopicSample($units, $max) {
+    $n = count($units);
+    if ($n <= $max) return $units;
+    $o = [];
+    for ($i = 0; $i < $max; $i++) $o[] = $units[(int)floor($i * $n / $max)];
+    return $o;
+}
+function deiTopicKey($days, $channel) { return $days . '|' . ($channel === '' ? 'all' : $channel); }
+/* ====== /v1.2.67 ====== */
 
 function deiApplyPushedFeatures($raw) {
     $j = json_decode((string)$raw, true);
@@ -5481,6 +5538,133 @@ switch ($action) {
 
     /* ---------- export logs to CSV with date range (admin only) ---------- */
     /* ---------- v1.2.66: log percakapan terstruktur ---------- */
+    /* ---------- v1.2.67: Scan Topik Percakapan ---------- */
+    case 'topic_scan_get': {
+        requireAuth(['super_admin', 'admin', 'supervisor']);
+        $all = readJson(TOPIC_SCANS_FILE, []);
+        $s = getSettings();
+        jsonOut(['ok' => true, 'scans' => is_array($all) ? $all : new stdClass(), 'periods' => deiTopicPeriods(),
+                 'log_limit' => (int)($s['api']['log_limit'] ?? 500)]);
+        break;
+    }
+
+    case 'topic_scan_run': {
+        requireAuth(['super_admin', 'admin']);
+        @set_time_limit(150);
+        $in = bodyInput();
+        $days = (int)($in['days'] ?? 30);
+        if (!in_array($days, deiTopicPeriods(), true)) jsonOut(['ok' => false, 'error' => 'Periode tidak valid.'], 400);
+        $channel = (string)($in['channel'] ?? '');
+        if (!in_array($channel, ['', 'web', 'whatsapp'], true)) $channel = '';
+        $s = getSettings();
+        $aiProv = $s['api']['provider'] ?? 'anthropic';
+        if (($aiProv === 'openrouter') ? empty($s['api']['openrouter_api_key']) : empty($s['api']['claude_api_key'])) {
+            jsonOut(['ok' => false, 'error' => 'API key AI belum dikonfigurasi (menu Widget & API).'], 400);
+        }
+        list($units, $meta) = deiTopicUnits($days, $channel);
+        $total = count($units);
+        $base = ['days' => $days, 'channel' => $channel, 'from' => $meta['from'], 'to' => $meta['to'],
+                 'oldest_log' => $meta['oldest'], 'log_entries' => $meta['log_entries'],
+                 'scanned_at' => wibDate('Y-m-d H:i:s'), 'total' => $total];
+        $base['by_channel'] = ['web' => 0, 'whatsapp' => 0];
+        foreach ($units as $u) $base['by_channel'][$u['ch']] = ($base['by_channel'][$u['ch']] ?? 0) + 1;
+        if ($total < 3) {
+            $res = $base + ['sampled' => $total, 'topics' => [], 'insight' => '', 'empty' => true];
+            $all = readJson(TOPIC_SCANS_FILE, []); if (!is_array($all)) $all = [];
+            $all[deiTopicKey($days, $channel)] = $res; writeJson(TOPIC_SCANS_FILE, $all);
+            jsonOut(['ok' => true, 'scan' => $res]);
+        }
+        $sample = deiTopicSample($units, TOPIC_SAMPLE_MAX);
+        $list = '';
+        foreach ($sample as $i => $u) $list .= $i . '. [' . ($u['ch'] === 'whatsapp' ? 'WA' : 'Web') . '] ' . $u['text'] . "\n";
+
+        $hint = [];
+        foreach (readJson(KB_FILE, []) as $e) { $c = trim((string)($e['category'] ?? '')); if ($c !== '') $hint[$c] = true; }
+        $bot = trim((string)($s['bot']['persona_company'] ?? '')) ?: trim((string)($s['bot']['bot_name'] ?? ''));
+        $sys = "Anda analis customer service. Di bawah ada daftar percakapan pelanggan dengan chatbot"
+             . ($bot !== '' ? " \"" . $bot . "\"" : '') . " (hanya pesan pelanggan, digabung dengan \" / \").\n"
+             . "Kelompokkan SEMUA percakapan ke dalam 4-10 topik utama berdasarkan maksud/kebutuhan pelanggan.\n\n"
+             . "ATURAN:\n"
+             . "- name: nama topik 2-5 kata, spesifik (mis. \"Harga & paket kamar\", \"Jadwal & rute bus\"), bukan generik seperti \"Pertanyaan umum\".\n"
+             . "- Sapaan/basa-basi tanpa maksud jelas masuk topik \"Sapaan & basa-basi\". Yang tidak cocok mana pun masuk \"Lainnya\".\n"
+             . "- ids: nomor percakapan yang termasuk topik itu. Setiap nomor tepat di SATU topik.\n"
+             . "- summary: 1 kalimat apa yang paling sering ditanyakan.\n"
+             . "- sentiment: positif | netral | negatif (nada umum pelanggan di topik itu).\n"
+             . "- action: 1 kalimat saran konkret untuk bisnis/admin (mis. tambah info X ke Knowledge Base, buat promo, perbaiki proses).\n"
+             . "- examples: 2-3 nomor percakapan yang paling mewakili.\n"
+             . "- insight: 2-3 kalimat kesimpulan keseluruhan periode ini.\n"
+             . ($hint ? "- Bila cocok, pakai istilah kategori bisnis ini: " . implode(', ', array_slice(array_keys($hint), 0, 20)) . ".\n" : '')
+             . "- Tulis dalam Bahasa Indonesia.\n\n"
+             . "Kembalikan HANYA JSON: {\"topics\":[{\"name\":\"\",\"summary\":\"\",\"sentiment\":\"\",\"action\":\"\",\"ids\":[0,1],\"examples\":[0]}],\"insight\":\"\"}";
+
+        $s['api']['max_tokens'] = 4096;
+        $s['api']['_timeout']   = 120;
+        list($okAi, $answer, $usage) = callClaude($s, $sys, [['role' => 'user', 'content' => "Periode: " . $meta['from'] . " s/d " . $meta['to'] . "\n\n" . $list]]);
+        if (!$okAi) jsonOut(['ok' => false, 'error' => 'AI gagal: ' . $answer], 502);
+        recordUsage($usage);
+        $raw = trim((string)$answer);
+        $a = strpos($raw, '{'); $b = strrpos($raw, '}');
+        $data = ($a !== false && $b !== false) ? json_decode(substr($raw, $a, $b - $a + 1), true) : null;
+        if (!is_array($data) || !is_array($data['topics'] ?? null)) {
+            error_log('topic_scan_run: respons bukan JSON: ' . mb_substr($raw, 0, 200));
+            jsonOut(['ok' => false, 'error' => 'Jawaban AI tidak terbaca (mungkin terpotong). Coba periode lebih pendek.'], 502);
+        }
+        $n = count($sample);
+        $used = [];
+        $topics = [];
+        foreach ($data['topics'] as $t) {
+            if (!is_array($t)) continue;
+            $name = mb_substr(trim((string)($t['name'] ?? '')), 0, 60);
+            if ($name === '') continue;
+            $ids = [];
+            foreach ((array)($t['ids'] ?? []) as $id) { $id = (int)$id; if ($id >= 0 && $id < $n && !isset($used[$id])) { $ids[] = $id; $used[$id] = true; } }
+            if (!$ids) continue;
+            $ch = ['web' => 0, 'whatsapp' => 0];
+            foreach ($ids as $id) $ch[$sample[$id]['ch']]++;
+            $ex = [];
+            foreach (array_merge((array)($t['examples'] ?? []), $ids) as $id) {
+                $id = (int)$id;
+                if (!in_array($id, $ids, true) || isset($ex[$id])) continue;
+                $ex[$id] = ['text' => mb_substr($sample[$id]['text'], 0, 200), 'ch' => $sample[$id]['ch'], 'day' => $sample[$id]['day']];
+                if (count($ex) >= 3) break;
+            }
+            $sent = in_array(($t['sentiment'] ?? ''), ['positif', 'netral', 'negatif'], true) ? $t['sentiment'] : 'netral';
+            $topics[] = [
+                'name' => $name,
+                'summary' => mb_substr(trim((string)($t['summary'] ?? '')), 0, 300),
+                'action'  => mb_substr(trim((string)($t['action'] ?? '')), 0, 300),
+                'sentiment' => $sent,
+                'count' => count($ids),
+                'pct' => round(count($ids) * 100 / $n, 1),
+                'est' => (int)round(count($ids) * $total / $n),
+                'by_channel' => $ch,
+                'examples' => array_values($ex),
+            ];
+        }
+        $rest = $n - count($used);
+        if ($rest > 0) {
+            $found = false;
+            foreach ($topics as &$t) {
+                if (mb_strtolower($t['name']) === 'lainnya') { $t['count'] += $rest; $found = true; }
+            }
+            unset($t);
+            if (!$found) $topics[] = ['name' => 'Lainnya', 'summary' => 'Percakapan yang tidak masuk topik mana pun.', 'action' => '', 'sentiment' => 'netral',
+                                      'count' => $rest, 'pct' => 0, 'est' => 0, 'by_channel' => ['web' => 0, 'whatsapp' => 0], 'examples' => [], 'unassigned' => true];
+            foreach ($topics as &$t) { $t['pct'] = round($t['count'] * 100 / $n, 1); $t['est'] = (int)round($t['count'] * $total / $n); }
+            unset($t);
+        }
+        usort($topics, function ($x, $y) {
+            $lx = in_array(mb_strtolower($x['name']), ['lainnya'], true) ? 1 : 0; $ly = in_array(mb_strtolower($y['name']), ['lainnya'], true) ? 1 : 0;
+            return $lx !== $ly ? $lx - $ly : $y['count'] - $x['count'];
+        });
+        $res = $base + ['sampled' => $n, 'topics' => $topics, 'insight' => mb_substr(trim((string)($data['insight'] ?? '')), 0, 800)];
+        $all = readJson(TOPIC_SCANS_FILE, []); if (!is_array($all)) $all = [];
+        $all[deiTopicKey($days, $channel)] = $res;
+        writeJson(TOPIC_SCANS_FILE, $all);
+        jsonOut(['ok' => true, 'scan' => $res]);
+        break;
+    }
+
     case 'logs_query': {
         requireAuth(['super_admin', 'admin', 'supervisor']);
         $f = deiLogParams($_GET);

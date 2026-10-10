@@ -616,7 +616,7 @@
   @media(max-width:1100px){ .lg-grid{grid-template-columns:repeat(3,minmax(0,1fr))} .lg-search{grid-column:span 3} }
   @media(max-width:860px){
     .rep-seg{display:flex}
-    .rep-seg button{flex:1;justify-content:center}
+    .rep-seg button{flex:1;justify-content:center;padding:8px 8px;white-space:nowrap;font-size:13px;gap:5px}
     .lg-grid{grid-template-columns:1fr 1fr}
     .lg-search{grid-column:span 2}
     .lg-f input,.lg-f select{font-size:16px}
@@ -635,6 +635,64 @@
     .lg-tbl td.c-st{margin-top:6px}
     .lg-pager{flex-wrap:wrap}
     .lg-meta{grid-template-columns:100px 1fr}
+  }
+  /* v1.2.67: Scan Topik */
+  .tp-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px}
+  .tp-periods{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+  .tp-periods button{position:relative;border:1px solid var(--line);background:#fff;color:var(--muted);padding:7px 13px;border-radius:20px;font:inherit;font-size:12.5px;font-weight:500;cursor:pointer}
+  .tp-periods button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .tp-has{position:absolute;top:3px;right:4px;width:6px;height:6px;border-radius:50%;background:#16a34a}
+  .tp-ctrl{display:flex;gap:8px;align-items:center}
+  .tp-ctrl select{width:auto;padding:8px 10px;font-size:13px}
+  .tp-ctrl .btn{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+  .tp-note{font-size:12.5px;color:#854d0e;margin:-6px 0 14px;line-height:1.55}
+  .tp-note:empty{display:none}
+  .tp-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}
+  .tp-stats div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+  .tp-stats small{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .tp-stats b{font-size:14.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+  .tp-stats em{font-style:normal;font-size:11px;font-weight:600;color:var(--muted)}
+  .tp-insight{display:flex;gap:10px;background:linear-gradient(90deg,#f1effd,#fff);border:1px solid #cbc6f3;border-radius:12px;padding:13px 15px;margin-bottom:14px;color:var(--brand)}
+  .tp-insight p{color:var(--ink);line-height:1.6;font-size:13.5px}
+  .tp-list{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tp-item+.tp-item{border-top:1px solid var(--line)}
+  .tp-row{display:grid;grid-template-columns:28px minmax(0,1fr) 92px 78px 20px;gap:12px;align-items:center;width:100%;background:none;border:none;font:inherit;text-align:left;padding:12px 16px;cursor:pointer;color:var(--ink)}
+  .tp-row:hover{background:#faf9ff}
+  .tp-rank{width:26px;height:26px;border-radius:8px;background:var(--brand-soft);color:var(--brand);font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center}
+  .tp-name{display:block;font-weight:600;font-size:14px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tp-track{display:block;height:8px;background:#f0f0f6;border-radius:4px;overflow:hidden}
+  .tp-fill{display:block;height:100%;border-radius:4px;transition:width .4s}
+  .tp-num{text-align:right}
+  .tp-num b{display:block;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px}
+  .tp-num small{font-size:11px;color:var(--muted)}
+  .tp-sent{font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;text-align:center}
+  .tp-sent.positif{background:#e7f8ee;color:#137a3d}
+  .tp-sent.netral{background:#f0f0f4;color:var(--muted)}
+  .tp-sent.negatif{background:#fdecec;color:#b42318}
+  .tp-chev{color:var(--muted);transition:transform .2s;display:inline-flex}
+  .tp-item.open .tp-chev{transform:rotate(180deg)}
+  .tp-det{display:none;padding:0 16px 14px 56px;font-size:13.5px;line-height:1.6;color:#45455c}
+  .tp-item.open .tp-det{display:block}
+  .tp-act{background:#fff8e6;border-radius:8px;padding:8px 11px;margin:8px 0;color:#6b4a00}
+  .tp-act b{color:#854d0e;margin-right:4px}
+  .tp-split{font-size:12px;color:var(--muted);margin:6px 0}
+  .tp-split span{opacity:.8}
+  .tp-ex small{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px}
+  .tp-ex blockquote{margin:0 0 6px;padding:7px 11px;border-left:3px solid #cbc6f3;background:#fafbfd;border-radius:0 8px 8px 0}
+  .tp-ex cite{display:block;font-style:normal;font-size:11px;color:var(--muted);margin-top:2px}
+  .tp-empty{background:#fff;border:1px dashed var(--line);border-radius:12px;padding:36px 20px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:8px}
+  .tp-empty b{color:var(--ink)}
+  .tp-empty span{max-width:460px;line-height:1.55}
+  .tp-loading{opacity:.45;pointer-events:none}
+  .tp-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:tpSpin .8s linear infinite}
+  @keyframes tpSpin{to{transform:rotate(360deg)}}
+  @media(max-width:860px){
+    .tp-stats{grid-template-columns:1fr 1fr}
+    .tp-ctrl{width:100%}
+    .tp-ctrl select{flex:1;font-size:16px}
+    .tp-row{grid-template-columns:24px minmax(0,1fr) 64px 18px;gap:10px;padding:12px}
+    .tp-sent{display:none}
+    .tp-det{padding:0 12px 12px 12px}
   }
 </style>
 </head>
@@ -686,6 +744,7 @@
       <div class="rep-seg" id="repSeg">
         <button type="button" data-v="summary" class="on"><span data-ico="bar-chart-3"></span> Ringkasan</button>
         <button type="button" data-v="logs"><span data-ico="clipboard-list"></span> Log Percakapan</button>
+        <button type="button" data-v="topics"><span data-ico="sparkles"></span> Topik</button>
       </div>
       <div id="repSummary">
 
@@ -785,6 +844,19 @@
       </div>
 
       </div><!-- /repSummary -->
+
+      <!-- v1.2.67: SCAN TOPIK -->
+      <div id="repTopics" style="display:none">
+        <div class="card tp-bar">
+          <div class="tp-periods" id="tpPeriods"></div>
+          <div class="tp-ctrl">
+            <select id="tpChannel"><option value="">Semua channel</option><option value="web">Web</option><option value="whatsapp">WhatsApp</option></select>
+            <button class="btn sm" type="button" id="tpRun">Scan topik</button>
+          </div>
+        </div>
+        <div class="tp-note" id="tpNote"></div>
+        <div id="tpResult"></div>
+      </div>
 
       <!-- v1.2.66: LOG PERCAKAPAN terstruktur -->
       <div id="repLogs" style="display:none">
@@ -1616,6 +1688,6 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.66"></script>
+<script src="app.js?v=1.2.67"></script>
 </body>
 </html>

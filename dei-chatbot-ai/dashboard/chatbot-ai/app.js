@@ -504,12 +504,115 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('#lgDrawer').classList.contains('open')) lgClose(); });
     lgLoad();
   }
+  /* ====================================================================== *
+   *  SCAN TOPIK (v1.2.67) — topik percakapan per periode (AI)
+   * ====================================================================== */
+  var TP_PER = [[7, '7 hari'], [14, '14 hari'], [30, '30 hari'], [60, '60 hari'], [90, '90 hari'], [180, '6 bulan'], [365, '1 tahun']];
+  var TP_SENT = { positif: 'Positif', netral: 'Netral', negatif: 'Negatif' };
+  var TP_COL = ['#140383', '#3b2fb8', '#5b4fe0', '#7c6ff0', '#8b5cf6', '#a855f7', '#c084fc', '#6366f1', '#4338ca', '#818cf8'];
+  var tp = { days: 30, scans: {}, loaded: false, busy: false, logLimit: 500 };
+  try { var _td = +localStorage.getItem('dei_tp_days'); if (TP_PER.some(function (p) { return p[0] === _td; })) tp.days = _td; } catch (e) {}
+  function tpKey() { return tp.days + '|' + ($('#tpChannel').value || 'all'); }
+  function tpDate(d) { var x = lgTsParts((d || '') + ' 00:00'); return x[0]; }
+  function tpRenderPeriods() {
+    var ch = $('#tpChannel').value || 'all';
+    $('#tpPeriods').innerHTML = TP_PER.map(function (p) {
+      var has = !!tp.scans[p[0] + '|' + ch];
+      return '<button type="button" data-d="' + p[0] + '" class="' + (p[0] === tp.days ? 'on' : '') + '">' + p[1] + (has ? '<i class="tp-has" title="Sudah pernah dipindai"></i>' : '') + '</button>';
+    }).join('');
+    $$('#tpPeriods button').forEach(function (b) {
+      b.onclick = function () { if (tp.busy) return; tp.days = +b.dataset.d; try { localStorage.setItem('dei_tp_days', tp.days); } catch (e) {} tpRenderPeriods(); tpRender(); };
+    });
+  }
+  function tpRender() {
+    var r = tp.scans[tpKey()];
+    var lbl = (TP_PER.filter(function (p) { return p[0] === tp.days; })[0] || [0, ''])[1];
+    var canRun = can('super_admin,admin');
+    $('#tpRun').style.display = canRun ? '' : 'none';
+    $('#tpRun').innerHTML = ico('sparkles', 15) + (r ? ' Scan ulang' : ' Scan topik');
+    if (!r) {
+      $('#tpNote').innerHTML = '';
+      $('#tpResult').innerHTML = '<div class="tp-empty">' + ico('sparkles', 28) + '<b>Belum ada hasil scan untuk ' + esc(lbl) + '</b>' +
+        '<span>' + (canRun ? 'Tekan <b>Scan topik</b>. AI akan membaca percakapan pelanggan di periode ini dan mengelompokkannya menjadi topik (sekitar 15–60 detik, memakai kuota AI).' : 'Minta Admin menjalankan scan topik.') + '</span></div>';
+      return;
+    }
+    var note = [];
+    if (r.oldest_log && r.from < r.oldest_log && r.log_entries >= tp.logLimit * 0.98) note.push(ico('triangle-alert', 13, 'style="vertical-align:-2px"') + ' Log terlama yang masih tersimpan dari <b>' + esc(tpDate(r.oldest_log)) + '</b> (batas ' + tp.logLimit + ' entri sudah penuh), jadi periode ini belum tercakup penuh.' + (role === 'super_admin' ? ' Naikkan <i>Batas log</i> di Widget &amp; API untuk periode panjang.' : ''));
+    $('#tpNote').innerHTML = note.join('<br>');
+    var head = '<div class="tp-stats">' +
+      '<div><small>Periode</small><b>' + esc(tpDate(r.from)) + ' – ' + esc(tpDate(r.to)) + '</b></div>' +
+      '<div><small>Percakapan</small><b>' + r.total.toLocaleString('id-ID') + '</b></div>' +
+      '<div><small>Dianalisis AI</small><b>' + r.sampled.toLocaleString('id-ID') + (r.sampled < r.total ? ' <em>sampel</em>' : '') + '</b></div>' +
+      '<div><small>Web · WhatsApp</small><b>' + (r.by_channel.web || 0) + ' · ' + (r.by_channel.whatsapp || 0) + '</b></div>' +
+      '<div><small>Dipindai</small><b>' + esc(lgTsParts(r.scanned_at).join(' · ')) + '</b></div></div>';
+    if (r.empty || !r.topics.length) {
+      $('#tpResult').innerHTML = head + '<div class="tp-empty"><b>Percakapan di periode ini terlalu sedikit untuk dianalisis.</b><span>Coba periode yang lebih panjang.</span></div>';
+      return;
+    }
+    var max = Math.max.apply(null, r.topics.map(function (t) { return t.pct; }));
+    var html = head + (r.insight ? '<div class="tp-insight">' + ico('sparkles', 16) + '<p>' + esc(r.insight) + '</p></div>' : '') + '<div class="tp-list">';
+    r.topics.forEach(function (t, i) {
+      var col = t.unassigned || t.name.toLowerCase() === 'lainnya' ? '#94a3b8' : TP_COL[i % TP_COL.length];
+      var wa = t.by_channel.whatsapp || 0, web = t.by_channel.web || 0;
+      html += '<div class="tp-item" data-i="' + i + '">' +
+        '<button type="button" class="tp-row">' +
+          '<span class="tp-rank">' + (i + 1) + '</span>' +
+          '<span class="tp-main"><span class="tp-name">' + esc(t.name) + '</span>' +
+            '<span class="tp-track"><span class="tp-fill" style="width:' + Math.max(3, t.pct / max * 100).toFixed(1) + '%;background:' + col + '"></span></span></span>' +
+          '<span class="tp-num"><b>' + t.pct.toLocaleString('id-ID') + '%</b><small>≈ ' + t.est.toLocaleString('id-ID') + ' chat</small></span>' +
+          '<span class="tp-sent ' + esc(t.sentiment) + '">' + esc(TP_SENT[t.sentiment] || t.sentiment) + '</span>' +
+          '<span class="tp-chev">' + ico('chevron-down', 16) + '</span>' +
+        '</button>' +
+        '<div class="tp-det">' +
+          (t.summary ? '<p>' + esc(t.summary) + '</p>' : '') +
+          (t.action ? '<div class="tp-act"><b>Saran</b> ' + esc(t.action) + '</div>' : '') +
+          '<div class="tp-split">' + ico('message-circle', 13) + ' WhatsApp ' + wa + ' &nbsp;·&nbsp; ' + ico('globe', 13) + ' Web ' + web + ' <span>(dari sampel)</span></div>' +
+          (t.examples && t.examples.length ? '<div class="tp-ex"><small>Contoh pesan pelanggan</small>' + t.examples.map(function (e) {
+            return '<blockquote>“' + esc(e.text) + '”<cite>' + (e.ch === 'whatsapp' ? 'WA' : 'Web') + ' · ' + esc(tpDate(e.day)) + '</cite></blockquote>';
+          }).join('') + '</div>' : '') +
+        '</div></div>';
+    });
+    html += '</div>';
+    $('#tpResult').innerHTML = html;
+    $$('#tpResult .tp-row').forEach(function (b) { b.onclick = function () { b.parentNode.classList.toggle('open'); }; });
+    var first = document.querySelector('#tpResult .tp-item'); if (first) first.classList.add('open');
+  }
+  function tpRun() {
+    if (tp.busy) return;
+    tp.busy = true;
+    var btn = $('#tpRun'); btn.disabled = true;
+    btn.innerHTML = '<span class="tp-spin"></span> Menganalisis…';
+    $('#tpResult').classList.add('tp-loading');
+    api('topic_scan_run', { method: 'POST', body: { days: tp.days, channel: $('#tpChannel').value } }).then(function (res) {
+      tp.busy = false; btn.disabled = false; $('#tpResult').classList.remove('tp-loading');
+      if (!res || !res.ok) { toast((res && res.error) || 'Scan topik gagal.', true); tpRender(); return; }
+      tp.scans[tpKey()] = res.scan;
+      tpRenderPeriods(); tpRender();
+      toast('Scan topik selesai.');
+    }).catch(function () { tp.busy = false; btn.disabled = false; $('#tpResult').classList.remove('tp-loading'); tpRender(); toast('Koneksi terputus saat scan.', true); });
+  }
+  function tpInit() {
+    if (!tp.wired) {
+      tp.wired = true;
+      $('#tpRun').onclick = tpRun;
+      $('#tpChannel').onchange = function () { tpRenderPeriods(); tpRender(); };
+    }
+    tpRenderPeriods(); tpRender();
+    api('topic_scan_get').then(function (res) {
+      if (!res || !res.ok) return;
+      tp.scans = res.scans || {}; tp.logLimit = res.log_limit || 500;
+      if (!tp.busy) { tpRenderPeriods(); tpRender(); }
+    });
+  }
   function repView(v) {
+    if (['summary', 'logs', 'topics'].indexOf(v) === -1) v = 'summary';
     $$('#repSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.v === v); });
-    $('#repSummary').style.display = v === 'logs' ? 'none' : '';
+    $('#repSummary').style.display = v === 'summary' ? '' : 'none';
     $('#repLogs').style.display = v === 'logs' ? '' : 'none';
+    $('#repTopics').style.display = v === 'topics' ? '' : 'none';
     try { localStorage.setItem('dei_rep_view', v); } catch (e) {}
     if (v === 'logs') lgInit();
+    if (v === 'topics') tpInit();   // v1.2.67
   }
   $$('#repSeg button').forEach(function (b) { b.onclick = function () { repView(b.dataset.v); }; });
 
@@ -4494,7 +4597,7 @@
     reports: function () {
       initReportsControls(); loadUsageCard(); loadReports();
       var v = 'summary'; try { v = localStorage.getItem('dei_rep_view') || 'summary'; } catch (e) {}
-      repView(v === 'logs' ? 'logs' : 'summary');   // v1.2.66
+      repView(v);   // v1.2.66/67
     },
     wachat: loadWachat,
     webchat: loadWebchat,
