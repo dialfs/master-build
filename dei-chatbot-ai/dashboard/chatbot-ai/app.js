@@ -51,6 +51,7 @@
     'user':              '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
     'search':        '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     'circle-help':   '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    'file-text':     '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
     'upload':        '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
     'download':      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
     'copy':          '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
@@ -432,8 +433,10 @@
       api('get_kb').then(function (res) { if (res.ok) { kbData = res.kb || []; renderKb(); } });
     });
     $('#btnAddKb').onclick = function () {
-      kbData.unshift({ id: 'kb_' + Date.now(), category: '', title: '', content: '', topic: '' });
-      renderKb();
+      var nid = 'kb_' + Date.now();
+      kbData.unshift({ id: nid, category: kbCatFilter && kbCatFilter !== 'Tanpa kategori' ? kbCatFilter : '', title: '', content: '', topic: '' });
+      kbSelId = nid; $('#kbSearch').value = ''; kbMarkDirty(); renderKb();
+      var t = document.querySelector('#kbList .kb-title'); if (t) t.focus();
     };
     $('#btnSaveKb').onclick = saveKb;
     $('#kbSearch').oninput = renderKb;
@@ -449,6 +452,8 @@
       renderPricelist();
     };
     $('#btnSavePrice').onclick = savePricelist;
+    $('#btnImportPdf').onclick = function () { var f = $('#kbPdfFile'); f.value = ''; f.click(); };   // v1.2.62
+    $('#kbPdfFile').onchange = function (e) { importKbPdf(e.target.files && e.target.files[0]); e.target.value = ''; };
     $('#btnFindDup').onclick = findKbDuplicates;   // v1.2.23
     $('#btnFindGaps').onclick = findKbGaps;       // v1.2.24
   }
@@ -702,36 +707,215 @@
       return '<option value="' + t + '"' + sel + '>' + label + '</option>';
     }).join('');
   }
+  /* ---- v1.2.62: KB tampilan master-detail (daftar ringkas + editor) ---- */
+  var kbSelId = null, kbCatFilter = '', kbDirty = false;
+  function kbMarkDirty() {
+    kbDirty = true;
+    var b = document.getElementById('btnSaveKb'); if (b) b.classList.add('kb-dirty');
+  }
+  function kbIdx(id) { for (var i = 0; i < kbData.length; i++) if (kbData[i].id === id) return i; return -1; }
   function renderKb() {
     var term = ($('#kbSearch').value || '').toLowerCase();
-    var html = kbData.map(function (e, i) {
-      if (term && (e.title + ' ' + e.content + ' ' + e.category).toLowerCase().indexOf(term) === -1) return '';
-      return '<div class="card" data-i="' + i + '">' +
+    var cats = {};
+    kbData.forEach(function (e) { var c = (e.category || '').trim() || 'Tanpa kategori'; cats[c] = (cats[c] || 0) + 1; });
+    var catNames = Object.keys(cats).sort(function (x, y) { return x.localeCompare(y); });
+    if (kbCatFilter && !cats[kbCatFilter]) kbCatFilter = '';
+    var chips = '<button class="kb-chip' + (kbCatFilter ? '' : ' on') + '" data-cat="">Semua <span>' + kbData.length + '</span></button>' +
+      catNames.map(function (c) {
+        return '<button class="kb-chip' + (kbCatFilter === c ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + ' <span>' + cats[c] + '</span></button>';
+      }).join('');
+    var shown = [];
+    kbData.forEach(function (e, i) {
+      var c = (e.category || '').trim() || 'Tanpa kategori';
+      if (kbCatFilter && c !== kbCatFilter) return;
+      if (term && ((e.title || '') + ' ' + (e.content || '') + ' ' + (e.category || '')).toLowerCase().indexOf(term) === -1) return;
+      shown.push(i);
+    });
+    if (kbSelId && kbIdx(kbSelId) === -1) kbSelId = null;
+    var wide = window.matchMedia('(min-width: 861px)').matches;
+    if (!kbSelId && wide && shown.length) kbSelId = kbData[shown[0]].id;
+    var items = shown.map(function (i) {
+      var e = kbData[i];
+      var snip = (e.content || '').replace(/\s+/g, ' ').slice(0, 90);
+      return '<button class="kb-item' + (e.id === kbSelId ? ' on' : '') + '" data-id="' + esc(e.id) + '">' +
+        '<b>' + (esc(e.title) || '<i style="color:var(--muted)">(tanpa judul)</i>') + '</b>' +
+        '<small>' + (e.category ? '<em>' + esc(e.category) + '</em> · ' : '') + (esc(snip) || '—') + '</small></button>';
+    }).join('') || '<div class="kb-empty">Tidak ada entri yang cocok.</div>';
+    var si = kbSelId ? kbIdx(kbSelId) : -1, ed;
+    if (si === -1) {
+      ed = '<div class="kb-empty" style="padding:60px 20px">Pilih entri di kiri untuk melihat &amp; mengedit,<br>atau klik <b>+ Tambah Entri</b>.</div>';
+    } else {
+      var e = kbData[si];
+      ed = '<div class="kb-ed-head"><button class="btn ghost sm kb-back">&larr; Daftar</button>' +
+          '<span class="help">Entri ' + (shown.indexOf(si) + 1 || '-') + ' dari ' + shown.length + '</span>' +
+          '<span style="margin-left:auto;display:flex;gap:6px">' +
+          '<button class="btn ghost sm kb-prev" title="Sebelumnya">&uarr;</button>' +
+          '<button class="btn ghost sm kb-next" title="Berikutnya">&darr;</button></span></div>' +
+        '<div class="row"><label class="fl">Judul / Pertanyaan</label><input type="text" class="kb-title" value="' + esc(e.title) + '"></div>' +
         '<div class="grid2">' +
-        '<div class="row"><label class="fl">Judul</label><input type="text" class="kb-title" value="' + esc(e.title) + '"></div>' +
-        '<div class="row"><label class="fl">Kategori</label><input type="text" class="kb-cat" value="' + esc(e.category) + '"></div>' +
+          '<div class="row"><label class="fl">Kategori</label><input type="text" class="kb-cat" list="kbCatDl" value="' + esc(e.category) + '"></div>' +
+          '<div class="row"><label class="fl">Topik (routing notif)</label><select class="kb-topic">' + kbTopicOptions(e.topic || '') + '</select></div>' +
         '</div>' +
-        '<div class="row"><label class="fl">Topik (routing notif)</label>' +
-          '<select class="kb-topic">' + kbTopicOptions(e.topic || '') + '</select>' +
-        '</div>' +
-        '<div class="row"><label class="fl">Isi</label><textarea class="kb-content">' + esc(e.content) + '</textarea></div>' +
-        '<button class="btn danger sm kb-del">' + ico('trash-2',14) + ' Hapus entri</button>' +
-        '</div>';
-    }).join('');
-    $('#kbList').innerHTML = html || '<div class="card" style="text-align:center;color:var(--muted)">Tidak ada entri.</div>';
-    $$('#kbList .card[data-i]').forEach(function (card) {
-      var i = +card.dataset.i;
-      card.querySelector('.kb-title').oninput = function (e) { kbData[i].title = e.target.value; };
-      card.querySelector('.kb-cat').oninput = function (e) { kbData[i].category = e.target.value; };
-      card.querySelector('.kb-content').oninput = function (e) { kbData[i].content = e.target.value; };
-      var _kbTopicEl = card.querySelector('.kb-topic');
-      if (_kbTopicEl) _kbTopicEl.onchange = function (e) { kbData[i].topic = e.target.value; };  // v1.2.12
-      card.querySelector('.kb-del').onclick = function () { kbData.splice(i, 1); renderKb(); };
+        '<div class="row"><label class="fl">Isi / Jawaban</label><textarea class="kb-content">' + esc(e.content) + '</textarea></div>' +
+        '<datalist id="kbCatDl">' + catNames.filter(function (c) { return c !== 'Tanpa kategori'; }).map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn danger sm kb-del">' + ico('trash-2',14) + ' Hapus entri</button>' +
+        '<span class="help" style="margin-left:auto;align-self:center">Perubahan tersimpan setelah klik <b>Simpan Perubahan</b>.</span></div>';
+    }
+    var wrap = $('#kbList');
+    wrap.innerHTML =
+      '<div class="kb-chips">' + chips + '</div>' +
+      '<div class="kb-md' + (si !== -1 ? ' has-sel' : '') + '">' +
+        '<div class="kb-side"><div class="kb-count">' + shown.length + ' entri</div><div class="kb-items">' + items + '</div></div>' +
+        '<div class="kb-ed card">' + ed + '</div>' +
+      '</div>';
+    $$('#kbList .kb-chip').forEach(function (c) { c.onclick = function () { kbCatFilter = c.dataset.cat; kbSelId = null; renderKb(); }; });
+    $$('#kbList .kb-item').forEach(function (it) {
+      it.onclick = function () { kbSelId = it.dataset.id; renderKb(); var t = wrap.querySelector('.kb-ed'); if (t && !wide) t.scrollIntoView({ block: 'start' }); };
+    });
+    var sel = wrap.querySelector('.kb-item.on'); if (sel && sel.scrollIntoViewIfNeeded) sel.scrollIntoViewIfNeeded(false);
+    if (si === -1) return;
+    var edEl = wrap.querySelector('.kb-ed');
+    var listItem = function () { return wrap.querySelector('.kb-item.on'); };
+    edEl.querySelector('.kb-title').oninput = function (ev) {
+      kbData[si].title = ev.target.value; kbMarkDirty();
+      var li = listItem(); if (li) li.querySelector('b').textContent = ev.target.value || '(tanpa judul)';
+    };
+    edEl.querySelector('.kb-cat').oninput = function (ev) { kbData[si].category = ev.target.value; kbMarkDirty(); };
+    edEl.querySelector('.kb-cat').onchange = function () { renderKb(); };
+    edEl.querySelector('.kb-content').oninput = function (ev) { kbData[si].content = ev.target.value; kbMarkDirty(); };
+    edEl.querySelector('.kb-topic').onchange = function (ev) { kbData[si].topic = ev.target.value; kbMarkDirty(); };
+    edEl.querySelector('.kb-del').onclick = function () {
+      if (!confirm('Hapus entri "' + (kbData[si].title || 'tanpa judul') + '"?')) return;
+      var pos = shown.indexOf(si);
+      var rest = shown.filter(function (x) { return x !== si; });
+      var nxIdx = rest.length ? rest[Math.min(pos, rest.length - 1)] : null;
+      var nxId = nxIdx != null ? kbData[nxIdx].id : null;
+      kbData.splice(si, 1); kbMarkDirty();
+      kbSelId = nxId;
+      renderKb();
+    };
+    edEl.querySelector('.kb-back').onclick = function () { kbSelId = null; renderKb(); };
+    var step = function (d) { var p = shown.indexOf(si) + d; if (p >= 0 && p < shown.length) { kbSelId = kbData[shown[p]].id; renderKb(); } };
+    edEl.querySelector('.kb-prev').onclick = function () { step(-1); };
+    edEl.querySelector('.kb-next').onclick = function () { step(1); };
+  }
+  /* ---- v1.2.62: impor PDF -> entri KB (ekstrak teks di browser, AI menyusun entri) ---- */
+  var PDFJS_VER = '3.11.174';
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    return new Promise(function (ok, fail) {
+      var sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_VER + '/pdf.min.js';
+      sc.onload = function () {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_VER + '/pdf.worker.min.js';
+        ok(window.pdfjsLib);
+      };
+      sc.onerror = function () { fail(new Error('Gagal memuat pembaca PDF (cek koneksi internet).')); };
+      document.head.appendChild(sc);
+    });
+  }
+  function pdfExtractText(file, onPage) {
+    return loadPdfJs().then(function (lib) {
+      return file.arrayBuffer().then(function (buf) { return lib.getDocument({ data: buf }).promise; });
+    }).then(function (pdf) {
+      var pages = [], n = pdf.numPages, chain = Promise.resolve();
+      for (var p = 1; p <= n; p++) (function (p) {
+        chain = chain.then(function () { return pdf.getPage(p); }).then(function (pg) { return pg.getTextContent(); })
+          .then(function (tc) {
+            var out = '', lastY = null;
+            tc.items.forEach(function (it) {
+              var y = it.transform ? Math.round(it.transform[5]) : null;
+              if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) out += '\n';
+              out += it.str + (it.hasEOL ? '\n' : '');
+              lastY = y;
+            });
+            pages.push(out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
+            if (onPage) onPage(p, n);
+          });
+      })(p);
+      return chain.then(function () { return pages; });
+    });
+  }
+  function chunkText(pages, max) {
+    var chunks = [], cur = '';
+    pages.forEach(function (pg) {
+      pg.split(/\n{2,}/).forEach(function (para) {
+        while (para.length > max) {           // paragraf raksasa: potong paksa
+          if (cur) { chunks.push(cur); cur = ''; }
+          chunks.push(para.slice(0, max)); para = para.slice(max);
+        }
+        if ((cur + '\n\n' + para).length > max && cur) { chunks.push(cur); cur = ''; }
+        cur += (cur ? '\n\n' : '') + para;
+      });
+    });
+    if (cur.trim()) chunks.push(cur);
+    return chunks;
+  }
+  function importKbPdf(file) {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) { toast('PDF terlalu besar (maks 25 MB).', true); return; }
+    var box = document.getElementById('pdfResult');
+    var src = file.name.replace(/\.pdf$/i, '');
+    var stop = false;
+    box.style.display = '';
+    var show = function (html) { box.innerHTML = '<h3 style="margin-top:0">Impor PDF: ' + esc(file.name) + '</h3>' + html; };
+    show('<p class="help">Membaca PDF…</p>');
+    pdfExtractText(file, function (p, n) { show('<p class="help">Membaca halaman ' + p + ' / ' + n + '…</p>'); })
+    .then(function (pages) {
+      var total = pages.join('').replace(/\s/g, '').length;
+      if (total < 50) {
+        show('<p style="color:var(--warn)">PDF ini tidak memuat teks yang bisa dibaca (kemungkinan hasil scan/gambar). ' +
+             'Gunakan PDF hasil ekspor dari Word/Google Docs, atau jalankan OCR dulu.</p>');
+        return;
+      }
+      var chunks = chunkText(pages, 7000);
+      if (chunks.length > 40 && !confirm('Dokumen ini besar (' + chunks.length + ' bagian, ' + pages.length + ' halaman). ' +
+          'Proses akan memakai kuota AI cukup banyak. Lanjutkan?')) { box.style.display = 'none'; return; }
+      var added = 0, failed = 0, i = 0, lastErr = '';
+      var progress = function () {
+        show('<div style="display:flex;align-items:center;gap:12px">' +
+          '<div style="flex:1;height:8px;background:var(--bg);border-radius:6px;overflow:hidden">' +
+          '<div style="height:100%;width:' + Math.round(i / chunks.length * 100) + '%;background:var(--brand);transition:width .3s"></div></div>' +
+          '<span class="help">' + i + ' / ' + chunks.length + ' bagian · ' + added + ' entri</span>' +
+          '<button class="btn ghost sm" id="btnPdfStop">Hentikan</button></div>' +
+          '<p class="help" style="margin-top:8px">AI sedang menyusun entri dari ' + pages.length + ' halaman. Jangan tutup halaman ini.</p>');
+        var b = document.getElementById('btnPdfStop'); if (b) b.onclick = function () { stop = true; b.disabled = true; b.textContent = 'Menghentikan…'; };
+      };
+      var next = function () {
+        if (stop || i >= chunks.length) return finish();
+        progress();
+        return api('kb_from_text', { method: 'POST', body: { text: chunks[i], source: src } }).then(function (res) {
+          if (res && res.ok) {
+            (res.entries || []).forEach(function (e, k) {
+              kbData.unshift({ id: 'kb_' + Date.now() + '_' + i + '_' + k, category: e.category || src, title: e.title || '', content: e.content || '', topic: '' });
+              added++;
+            });
+            if ((res.entries || []).length) { kbMarkDirty(); renderKb(); }
+          } else {
+            failed++; lastErr = (res && res.error) || 'Respons tidak valid dari server.';
+            if (/API key|belum dikonfigurasi/i.test(lastErr)) stop = true;   // salah konfigurasi: jangan buang waktu ke bagian berikutnya
+          }
+        }).catch(function (er) { failed++; lastErr = (er && er.message) || 'Koneksi gagal.'; }).then(function () { i++; return next(); });
+      };
+      var finish = function () {
+        progress();
+        show('<p><b>' + added + ' entri</b> ditambahkan dari ' + esc(file.name) + (stop ? ' (dihentikan di bagian ' + i + ' dari ' + chunks.length + ')' : '') + '.' +
+          (failed ? ' <span style="color:var(--warn)">' + failed + ' bagian gagal diproses.</span>' : '') + '</p>' +
+          (lastErr ? '<p style="color:var(--warn);margin-top:6px">Penyebab: ' + esc(lastErr) + '</p>' : '') +
+          '<p class="help" style="margin-top:6px">Entri belum tersimpan. Periksa isinya di daftar, jalankan <b>Analisa Duplikat</b> bila perlu, lalu klik <b>Simpan Perubahan</b>.</p>' +
+          '<button class="btn ghost sm" id="btnPdfClose" style="margin-top:10px">Tutup</button>');
+        document.getElementById('btnPdfClose').onclick = function () { box.style.display = 'none'; };
+        if (added) toast(added + ' entri dari PDF ditambahkan — klik "Simpan Perubahan" untuk menyimpan.');
+      };
+      return next();
+    })
+    .catch(function (err) {
+      show('<p style="color:var(--warn)">Gagal membaca PDF: ' + esc(err && err.message ? err.message : 'format tidak dikenali') + '</p>');
     });
   }
   function saveKb() {
     api('save_kb', { method: 'POST', body: { kb: kbData } }).then(function (res) {
-      if (res.ok) toast('Knowledge base disimpan (' + res.count + ' entri).');
+      if (res.ok) { kbDirty = false; var sb = document.getElementById('btnSaveKb'); if (sb) sb.classList.remove('kb-dirty'); toast('Knowledge base disimpan (' + res.count + ' entri).'); }
       else toast(res.error || 'Gagal menyimpan.', true);
     });
   }
@@ -786,7 +970,7 @@
           if (!category && !question && !answer) continue;   // baris kosong
           if (!answer) { skipped++; continue; }               // wajib ada jawaban
           kbData.unshift({ id: 'kb_' + Date.now() + '_' + r, category: category, title: question, content: answer, topic: '' });
-          added++;
+          added++; kbMarkDirty();
         }
         renderKb();
         if (added) {

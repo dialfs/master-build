@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.61');
+define('DEI_VERSION', 'v1.2.62');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -865,7 +865,7 @@ function callOpenRouter($settings, $systemBlocks, $messages) {
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_TIMEOUT        => 45,
+        CURLOPT_TIMEOUT        => (int)($settings['api']['_timeout'] ?? 45),
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $key,
@@ -920,7 +920,7 @@ function callClaude($settings, $systemBlocks, $messages) {
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_TIMEOUT        => (int)($settings['api']['_timeout'] ?? 30),
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
             'x-api-key: ' . $key,
@@ -5163,6 +5163,56 @@ switch ($action) {
         writeJson(KB_FILE, $hasil);
         error_log('kb_merge_duplicates: ' . count($kb) . ' -> ' . count($hasil) . ', cadangan: ' . $bak);
         jsonOut(['ok' => true, 'before' => count($kb), 'after' => count($hasil), 'backup' => basename($bak)]);
+        break;
+    }
+
+    case 'kb_from_text': {
+        // v1.2.62: potongan teks dokumen (hasil ekstrak PDF di browser) -> entri KB via AI.
+        // Tidak menyimpan apa pun; hasil dikembalikan ke dashboard untuk diperiksa dulu.
+        requireAuth(['super_admin', 'admin']);
+        @set_time_limit(150);
+        $s = getSettings();
+        $aiProv = $s['api']['provider'] ?? 'anthropic';
+        $aiKeyEmpty = ($aiProv === 'openrouter') ? empty($s['api']['openrouter_api_key']) : empty($s['api']['claude_api_key']);
+        if ($aiKeyEmpty) jsonOut(['ok' => false, 'error' => 'API key AI belum dikonfigurasi.'], 400);
+        $in = bodyInput();
+        $text = trim((string)($in['text'] ?? ''));
+        $src  = mb_substr(trim((string)($in['source'] ?? 'Dokumen')), 0, 80);
+        if (mb_strlen($text) < 40) jsonOut(['ok' => true, 'entries' => []]);
+        $text = mb_substr($text, 0, 12000);
+
+        $sys = "Anda menyusun Knowledge Base untuk chatbot customer service dari potongan dokumen.\n"
+             . "Ubah teks menjadi entri-entri KB yang berdiri sendiri.\n\n"
+             . "ATURAN:\n"
+             . "- title: pertanyaan singkat yang mungkin ditanyakan customer (mis. \"Jam check-in berapa?\").\n"
+             . "- content: jawaban lengkap & faktual, HANYA dari teks. Salin angka, harga, jam, alamat, nama persis apa adanya. Jangan mengarang atau menambah info.\n"
+             . "- category: 1-3 kata pengelompokan (mis. Fasilitas, Harga, Kebijakan, Lokasi, Layanan).\n"
+             . "- Satu topik per entri. Gabungkan info yang berkaitan, jangan pecah terlalu kecil.\n"
+             . "- Abaikan daftar isi, header/footer, nomor halaman, dan teks yang tidak berguna bagi customer.\n"
+             . "- Gunakan bahasa yang sama dengan dokumen.\n"
+             . "- Jika tidak ada info berguna, kembalikan entries kosong.\n\n"
+             . "Kembalikan HANYA JSON: {\"entries\":[{\"category\":\"...\",\"title\":\"...\",\"content\":\"...\"}]}";
+
+        $s['api']['max_tokens'] = 4096;
+        $s['api']['_timeout']   = 120;
+        list($okAi, $answer, $usage) = callClaude($s, $sys, [['role' => 'user', 'content' => "Dokumen: " . $src . "\n\n" . $text]]);
+        if (!$okAi) jsonOut(['ok' => false, 'error' => 'AI gagal: ' . $answer], 502);
+        recordUsage($usage);
+
+        $raw = trim((string)$answer);
+        $a = strpos($raw, '{'); $b = strrpos($raw, '}');
+        $data = ($a !== false && $b !== false) ? json_decode(substr($raw, $a, $b - $a + 1), true) : null;
+        if (!is_array($data) || !isset($data['entries']) || !is_array($data['entries'])) {
+            error_log('kb_from_text: respons bukan JSON: ' . mb_substr($raw, 0, 200));
+            jsonOut(['ok' => false, 'error' => 'Jawaban AI tidak terbaca (mungkin terpotong).'], 502);
+        }
+        $out = [];
+        foreach ($data['entries'] as $e) {
+            $t = trim((string)($e['title'] ?? '')); $c = trim((string)($e['content'] ?? ''));
+            if ($c === '') continue;
+            $out[] = ['category' => trim((string)($e['category'] ?? '')), 'title' => $t, 'content' => $c];
+        }
+        jsonOut(['ok' => true, 'entries' => $out]);
         break;
     }
 
