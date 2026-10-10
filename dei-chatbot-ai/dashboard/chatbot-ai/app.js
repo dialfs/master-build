@@ -448,10 +448,13 @@
       b.onclick = function () { switchKbTab(b.dataset.kbtab); };
     });
     $('#btnAddPrice').onclick = function () {
-      priceData.push({ id: 'pr_' + Date.now(), item: '', price: '', note: '' });
-      renderPricelist();
+      var nid = 'pr_' + Date.now();
+      priceData.unshift({ id: nid, item: '', price: '', note: '' });
+      prSelId = nid; var ps = $('#priceSearch'); if (ps) ps.value = ''; prMarkDirty(); renderPricelist();
+      var t = document.querySelector('#priceList .pr-item'); if (t) t.focus();
     };
     $('#btnSavePrice').onclick = savePricelist;
+    var _ps = $('#priceSearch'); if (_ps) _ps.oninput = renderPricelist;   // v1.2.64
     $('#btnImportPdf').onclick = function () { var f = $('#kbPdfFile'); f.value = ''; f.click(); };   // v1.2.62
     $('#kbPdfFile').onchange = function (e) { importKbPdf(e.target.files && e.target.files[0]); e.target.value = ''; };
     if (!window._kbSaveKey) {   // v1.2.63: Ctrl/Cmd+S simpan KB
@@ -460,6 +463,8 @@
         if ((ev.ctrlKey || ev.metaKey) && (ev.key === 's' || ev.key === 'S')) {
           var p = document.getElementById('panel-kb'), t = document.getElementById('kbTabEntri');
           if (p && p.classList.contains('active') && t && t.style.display !== 'none') { ev.preventDefault(); saveKb(); }
+          var th = document.getElementById('kbTabHarga');
+          if (p && p.classList.contains('active') && th && th.style.display !== 'none') { ev.preventDefault(); savePricelist(); }
         }
       });
     }
@@ -672,27 +677,81 @@
     });
   }
 
+  /* ---- v1.2.64: Daftar Harga master-detail (sama dengan KB) ---- */
+  var prSelId = null, prDirty = false;
+  function prIdx(id) { for (var i = 0; i < priceData.length; i++) if (priceData[i].id === id) return i; return -1; }
+  function prSaveUi() {
+    var b = document.getElementById('btnSavePrice'); if (b) b.classList.toggle('kb-dirty', prDirty);
+    var eb = document.querySelector('#priceList .pr-save'), h = document.querySelector('#priceList .kb-save-hint');
+    if (eb) eb.classList.toggle('kb-dirty', prDirty);
+    if (h) h.textContent = prDirty ? 'Ada perubahan belum disimpan' : 'Tersimpan';
+  }
+  function prMarkDirty() { prDirty = true; prSaveUi(); }
   function renderPricelist() {
-    if (!priceData.length) {
-      $('#priceList').innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">' +
-        'Belum ada harga. Klik "+ Tambah Baris" untuk mulai.</div>';
-      return;
-    }
-    $('#priceList').innerHTML = priceData.map(function (p, i) {
-      return '<div class="row" data-pi="' + i + '" style="gap:8px;align-items:flex-start">' +
-        '<input type="text" class="pr-item"  placeholder="Nama item"  value="' + esc(p.item || '') + '" style="flex:2">' +
-        '<input type="text" class="pr-price" placeholder="Harga"      value="' + esc(p.price || '') + '" style="flex:1">' +
-        '<input type="text" class="pr-note"  placeholder="Catatan (opsional)" value="' + esc(p.note || '') + '" style="flex:2">' +
-        '<button class="btn danger sm pr-del" title="Hapus baris">&times;</button>' +
-      '</div>';
-    }).join('');
-    $$('#priceList .row[data-pi]').forEach(function (row) {
-      var i = +row.dataset.pi;
-      row.querySelector('.pr-item').oninput  = function (e) { priceData[i].item  = e.target.value; };
-      row.querySelector('.pr-price').oninput = function (e) { priceData[i].price = e.target.value; };
-      row.querySelector('.pr-note').oninput  = function (e) { priceData[i].note  = e.target.value; };
-      row.querySelector('.pr-del').onclick   = function () { priceData.splice(i, 1); renderPricelist(); };
+    var term = (($('#priceSearch') || {}).value || '').toLowerCase();
+    var shown = [];
+    priceData.forEach(function (p, i) {
+      if (term && ((p.item || '') + ' ' + (p.price || '') + ' ' + (p.note || '')).toLowerCase().indexOf(term) === -1) return;
+      shown.push(i);
     });
+    if (prSelId && prIdx(prSelId) === -1) prSelId = null;
+    var wide = window.matchMedia('(min-width: 861px)').matches;
+    if (!prSelId && wide && shown.length) prSelId = priceData[shown[0]].id;
+    var items = shown.map(function (i) {
+      var p = priceData[i];
+      return '<button class="kb-item' + (p.id === prSelId ? ' on' : '') + '" data-id="' + esc(p.id) + '">' +
+        '<span class="pr-row"><b>' + (esc(p.item) || '<i style="color:var(--muted)">(tanpa nama)</i>') + '</b>' +
+        '<span class="pr-amt' + ((p.price || '').trim() ? '' : ' empty') + '">' + (esc(p.price) || 'belum ada harga') + '</span></span>' +
+        (p.note ? '<small>' + esc(p.note) + '</small>' : '') + '</button>';
+    }).join('') || '<div class="kb-empty">' + (priceData.length ? 'Tidak ada item yang cocok.' : 'Belum ada harga. Klik "+ Tambah Baris" untuk mulai.') + '</div>';
+    var si = prSelId ? prIdx(prSelId) : -1, ed;
+    if (si === -1) {
+      ed = '<div class="kb-empty" style="padding:60px 20px">Pilih item di kiri untuk melihat &amp; mengedit,<br>atau klik <b>+ Tambah Baris</b>.</div>';
+    } else {
+      var p = priceData[si];
+      ed = '<div class="kb-ed-head"><button class="btn ghost sm kb-back">&larr; Daftar</button>' +
+          '<span class="help">Item ' + (shown.indexOf(si) + 1 || '-') + ' dari ' + shown.length + '</span>' +
+          '<span style="margin-left:auto;display:flex;gap:6px">' +
+          '<button class="btn ghost sm kb-prev" title="Sebelumnya">&uarr;</button>' +
+          '<button class="btn ghost sm kb-next" title="Berikutnya">&darr;</button></span></div>' +
+        '<div class="row"><label class="fl">Nama item</label><input type="text" class="pr-item" maxlength="150" value="' + esc(p.item || '') + '" placeholder="mis. Deluxe Room (weekday)"></div>' +
+        '<div class="row"><label class="fl">Harga</label><input type="text" class="pr-price" maxlength="100" value="' + esc(p.price || '') + '" placeholder="mis. Rp 750.000 / malam"></div>' +
+        '<div class="row"><label class="fl">Catatan (opsional)</label><textarea class="pr-note" style="min-height:120px" placeholder="mis. termasuk sarapan 2 orang">' + esc(p.note || '') + '</textarea></div>' +
+        '<div class="kb-ed-foot"><button class="btn danger sm pr-del">' + ico('trash-2',14) + ' Hapus item</button>' +
+        '<span class="help kb-save-hint">' + (prDirty ? 'Ada perubahan belum disimpan' : 'Tersimpan') + '</span>' +
+        '<button class="btn pr-save' + (prDirty ? ' kb-dirty' : '') + '">' + ico('save',14) + ' Simpan</button></div>';
+    }
+    var wrap = $('#priceList');
+    wrap.innerHTML = '<div class="kb-md' + (si !== -1 ? ' has-sel' : '') + '">' +
+        '<div class="kb-side"><div class="kb-count">' + shown.length + ' item</div><div class="kb-items">' + items + '</div></div>' +
+        '<div class="kb-ed card">' + ed + '</div></div>';
+    $$('#priceList .kb-item').forEach(function (it) {
+      it.onclick = function () { prSelId = it.dataset.id; renderPricelist(); var t = wrap.querySelector('.kb-ed'); if (t && !wide) t.scrollIntoView({ block: 'start' }); };
+    });
+    if (si === -1) return;
+    var edEl = wrap.querySelector('.kb-ed');
+    var li = function () { return wrap.querySelector('.kb-item.on'); };
+    edEl.querySelector('.pr-item').oninput = function (ev) {
+      priceData[si].item = ev.target.value; prMarkDirty();
+      var l = li(); if (l) l.querySelector('b').textContent = ev.target.value || '(tanpa nama)';
+    };
+    edEl.querySelector('.pr-price').oninput = function (ev) {
+      priceData[si].price = ev.target.value; prMarkDirty();
+      var l = li(); if (l) { var a = l.querySelector('.pr-amt'); a.textContent = ev.target.value || 'belum ada harga'; a.classList.toggle('empty', !ev.target.value.trim()); }
+    };
+    edEl.querySelector('.pr-note').oninput = function (ev) { priceData[si].note = ev.target.value; prMarkDirty(); };
+    edEl.querySelector('.pr-del').onclick = function () {
+      if (!confirm('Hapus item "' + (priceData[si].item || 'tanpa nama') + '"?')) return;
+      var pos = shown.indexOf(si), rest = shown.filter(function (x) { return x !== si; });
+      var nx = rest.length ? rest[Math.min(pos, rest.length - 1)] : null;
+      var nxId = nx != null ? priceData[nx].id : null;
+      priceData.splice(si, 1); prMarkDirty(); prSelId = nxId; renderPricelist();
+    };
+    edEl.querySelector('.pr-save').onclick = function () { savePricelist(); };
+    edEl.querySelector('.kb-back').onclick = function () { prSelId = null; renderPricelist(); };
+    var step = function (d) { var q = shown.indexOf(si) + d; if (q >= 0 && q < shown.length) { prSelId = priceData[shown[q]].id; renderPricelist(); } };
+    edEl.querySelector('.kb-prev').onclick = function () { step(-1); };
+    edEl.querySelector('.kb-next').onclick = function () { step(1); };
   }
 
   function savePricelist() {
@@ -702,7 +761,7 @@
     }).length;
     if (tanpaHarga && !confirm(tanpaHarga + ' baris punya nama tapi harganya kosong.\nBaris itu tidak akan dipakai bot. Tetap simpan?')) return;
     api('save_pricelist', { method: 'POST', body: { items: priceData } }).then(function (res) {
-      if (res && res.ok) { toast('Daftar harga disimpan (' + res.count + ' item).'); fetchPricelist(); }
+      if (res && res.ok) { prDirty = false; prSaveUi(); toast('Daftar harga disimpan (' + res.count + ' item).'); fetchPricelist(); }
       else toast((res && res.error) || 'Gagal menyimpan.', true);
     });
   }

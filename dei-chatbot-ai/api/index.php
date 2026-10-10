@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.63');
+define('DEI_VERSION', 'v1.2.64');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');

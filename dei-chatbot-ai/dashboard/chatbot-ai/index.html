@@ -472,6 +472,10 @@
   .kb-ed .kb-back{display:none}
   .kb-ed-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:sticky;bottom:0;background:#fff;padding:12px 0 2px;margin-top:4px;border-top:1px solid var(--line)}
   .kb-ed-foot .kb-save-hint{margin-left:auto}
+  .pr-row{display:flex;gap:10px;align-items:baseline}
+  .pr-row b{flex:1;min-width:0;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .pr-amt{flex-shrink:0;font-size:12.5px;font-weight:600;color:var(--brand);font-family:'JetBrains Mono',ui-monospace,monospace}
+  .pr-amt.empty{color:var(--warn);font-weight:500;font-family:inherit;font-style:italic}
   .kb-ed textarea.kb-content{min-height:260px;resize:vertical}
   @media(max-width:860px){
     .kb-md{grid-template-columns:1fr}
@@ -808,6 +812,7 @@
       <div id="kbTabHarga" style="display:none">
         <div class="card">
           <div class="toolbar" style="margin-bottom:0;flex-wrap:wrap">
+            <div class="row" style="flex:1;min-width:180px;margin-bottom:0"><input type="text" id="priceSearch" placeholder="Cari item / harga..."></div>
             <button class="btn" id="btnAddPrice">+ Tambah Baris</button>
             <button class="btn ghost" id="btnSavePrice"><span data-ico="save" data-ico-size="15"></span> Simpan Daftar Harga</button>
             <span id="priceMeta" class="help" style="margin-left:auto"></span>
@@ -822,9 +827,7 @@
             memuat angka berbeda, bot bisa memakai yang salah tanpa ketahuan.
           </p>
         </div>
-        <div class="card">
-          <div id="priceList"></div>
-        </div>
+        <div id="priceList"></div>
       </div>
     </section>
 
@@ -1379,6 +1382,6 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.63"></script>
+<script src="app.js?v=1.2.64"></script>
 </body>
 </html>
