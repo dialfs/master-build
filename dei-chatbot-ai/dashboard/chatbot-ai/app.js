@@ -454,6 +454,15 @@
     $('#btnSavePrice').onclick = savePricelist;
     $('#btnImportPdf').onclick = function () { var f = $('#kbPdfFile'); f.value = ''; f.click(); };   // v1.2.62
     $('#kbPdfFile').onchange = function (e) { importKbPdf(e.target.files && e.target.files[0]); e.target.value = ''; };
+    if (!window._kbSaveKey) {   // v1.2.63: Ctrl/Cmd+S simpan KB
+      window._kbSaveKey = true;
+      document.addEventListener('keydown', function (ev) {
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key === 's' || ev.key === 'S')) {
+          var p = document.getElementById('panel-kb'), t = document.getElementById('kbTabEntri');
+          if (p && p.classList.contains('active') && t && t.style.display !== 'none') { ev.preventDefault(); saveKb(); }
+        }
+      });
+    }
     $('#btnFindDup').onclick = findKbDuplicates;   // v1.2.23
     $('#btnFindGaps').onclick = findKbGaps;       // v1.2.24
   }
@@ -712,6 +721,12 @@
   function kbMarkDirty() {
     kbDirty = true;
     var b = document.getElementById('btnSaveKb'); if (b) b.classList.add('kb-dirty');
+    kbSaveUi();
+  }
+  function kbSaveUi() {   // v1.2.63: sinkron tombol Simpan di editor
+    var eb = document.querySelector('#kbList .kb-save'), h = document.querySelector('#kbList .kb-save-hint');
+    if (eb) eb.classList.toggle('kb-dirty', kbDirty);
+    if (h) h.textContent = kbDirty ? 'Ada perubahan belum disimpan' : 'Tersimpan';
   }
   function kbIdx(id) { for (var i = 0; i < kbData.length; i++) if (kbData[i].id === id) return i; return -1; }
   function renderKb() {
@@ -758,8 +773,9 @@
         '</div>' +
         '<div class="row"><label class="fl">Isi / Jawaban</label><textarea class="kb-content">' + esc(e.content) + '</textarea></div>' +
         '<datalist id="kbCatDl">' + catNames.filter(function (c) { return c !== 'Tanpa kategori'; }).map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn danger sm kb-del">' + ico('trash-2',14) + ' Hapus entri</button>' +
-        '<span class="help" style="margin-left:auto;align-self:center">Perubahan tersimpan setelah klik <b>Simpan Perubahan</b>.</span></div>';
+        '<div class="kb-ed-foot"><button class="btn danger sm kb-del">' + ico('trash-2',14) + ' Hapus entri</button>' +
+        '<span class="help kb-save-hint">' + (kbDirty ? 'Ada perubahan belum disimpan' : 'Tersimpan') + '</span>' +
+        '<button class="btn kb-save' + (kbDirty ? ' kb-dirty' : '') + '">' + ico('save',14) + ' Simpan</button></div>';
     }
     var wrap = $('#kbList');
     wrap.innerHTML =
@@ -794,6 +810,7 @@
       kbSelId = nxId;
       renderKb();
     };
+    edEl.querySelector('.kb-save').onclick = function () { saveKb(); };   // v1.2.63
     edEl.querySelector('.kb-back').onclick = function () { kbSelId = null; renderKb(); };
     var step = function (d) { var p = shown.indexOf(si) + d; if (p >= 0 && p < shown.length) { kbSelId = kbData[shown[p]].id; renderKb(); } };
     edEl.querySelector('.kb-prev').onclick = function () { step(-1); };
@@ -915,7 +932,7 @@
   }
   function saveKb() {
     api('save_kb', { method: 'POST', body: { kb: kbData } }).then(function (res) {
-      if (res.ok) { kbDirty = false; var sb = document.getElementById('btnSaveKb'); if (sb) sb.classList.remove('kb-dirty'); toast('Knowledge base disimpan (' + res.count + ' entri).'); }
+      if (res.ok) { kbDirty = false; var sb = document.getElementById('btnSaveKb'); if (sb) sb.classList.remove('kb-dirty'); kbSaveUi(); toast('Knowledge base disimpan (' + res.count + ' entri).'); }
       else toast(res.error || 'Gagal menyimpan.', true);
     });
   }
