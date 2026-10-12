@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.68');
+define('DEI_VERSION', 'v1.2.69');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -520,7 +520,10 @@ function getCapStatus($settings, $forceRefresh = false) {
     $cache = readJson(CAP_CACHE_FILE, []);
     $now = time();
     $age = $now - (int)($cache['cached_at'] ?? 0);
-    if (!$forceRefresh && !empty($cache['cached_at']) && $age < 24 * 3600) {
+    // v1.2.69: status "habis" dicek ulang tiap 10 menit (bukan 24 jam) supaya bot pulih
+    // segera setelah kuota dinaikkan / aturan pusat berubah. Status normal tetap 24 jam.
+    $ttl = !empty($cache['reached']) ? 600 : 24 * 3600;
+    if (!$forceRefresh && !empty($cache['cached_at']) && $age < $ttl) {
         return [
             'reached' => !empty($cache['reached']),
             'warning' => !empty($cache['warning']),
@@ -633,7 +636,7 @@ function deiCollectStats() {
     }
     $usage = readJson(DATA_DIR . '/usage.json', []);
     $u = array_merge(['calls' => 0, 'input' => 0, 'output' => 0, 'cache_write' => 0, 'cache_read' => 0], (array)($usage[$today] ?? []));
-    $cost_today = round(($u['input']/1e6 * 1.00) + ($u['output']/1e6 * 5.00) + ($u['cache_write']/1e6 * 1.25) + ($u['cache_read']/1e6 * 0.10), 5);
+    $cost_today = round(deiDayCost(array_merge($u, (array)($usage[$today] ?? []))), 5);
     $month = computeMonthStats();
     $wo = waOutMonth();
     return [
@@ -663,10 +666,7 @@ function computeMonthStats() {
     foreach ($usage as $day => $d) {
         if (strpos($day, $monthKey) !== 0) continue;
         $chats += (int)($d['calls'] ?? 0);
-        $cost  += ($d['input']      / 1e6 * 1.00)
-                + ($d['output']     / 1e6 * 5.00)
-                + ($d['cache_write']/ 1e6 * 1.25)
-                + ($d['cache_read'] / 1e6 * 0.10);
+        $cost  += deiDayCost($d);   // v1.2.69
     }
     return ['chats_this_month' => $chats, 'cost_this_month_usd' => round($cost, 6)];
 }
@@ -811,6 +811,40 @@ function applyStatusSideEffects($newStatus, $settings) {
  * Schema: { "YYYY-MM-DD": { calls, input, output, cache_write, cache_read } }
  * Keeps last 90 days; trims older entries.
  */
+/* v1.2.69: biaya per panggilan AI.
+ * Sebelumnya semua dihitung dengan tarif Claude Haiku ($1/$5) apa pun modelnya,
+ * sehingga tenant OpenRouter/Gemini terlihat jauh lebih mahal dari aslinya.
+ * Urutan: biaya asli dari penyedia (OpenRouter usage.cost) -> tarif per model -> tarif Haiku. */
+function deiModelPrice($model) {
+    $m = strtolower((string)$model);
+    if (strpos($m, 'opus') !== false)   return [5.00, 25.00];
+    if (strpos($m, 'sonnet') !== false) return [3.00, 15.00];
+    if (strpos($m, 'haiku-3') !== false || strpos($m, '3-haiku') !== false) return [0.25, 1.25];
+    if (strpos($m, 'haiku') !== false)  return [1.00, 5.00];
+    if (strpos($m, 'gemini') !== false && strpos($m, 'flash') !== false) return [0.10, 0.40];
+    if (strpos($m, 'gpt-4o-mini') !== false) return [0.15, 0.60];
+    if (strpos($m, 'deepseek') !== false) return [0.30, 1.20];
+    if (strpos($m, 'qwen') !== false) return [0.20, 0.60];
+    return [1.00, 5.00];   // tidak dikenal: tarif Haiku (aman, cenderung lebih tinggi)
+}
+function deiUsageCost($usage) {
+    if (isset($usage['cost_usd']) && is_numeric($usage['cost_usd'])) return max(0.0, (float)$usage['cost_usd']);
+    list($pi, $po) = deiModelPrice($usage['model'] ?? '');
+    return ((int)($usage['input_tokens'] ?? 0)                / 1e6 * $pi)
+         + ((int)($usage['output_tokens'] ?? 0)               / 1e6 * $po)
+         + ((int)($usage['cache_creation_input_tokens'] ?? 0) / 1e6 * $pi * 1.25)
+         + ((int)($usage['cache_read_input_tokens'] ?? 0)     / 1e6 * $pi * 0.10);
+}
+// Estimasi lama (tarif Haiku) untuk hari yang tercatat sebelum v1.2.69.
+function deiLegacyDayCost($d) {
+    return ((int)($d['input'] ?? 0) / 1e6 * 1.00) + ((int)($d['output'] ?? 0) / 1e6 * 5.00)
+         + ((int)($d['cache_write'] ?? 0) / 1e6 * 1.25) + ((int)($d['cache_read'] ?? 0) / 1e6 * 0.10);
+}
+function deiDayCost($d) {
+    if (!is_array($d)) return 0.0;
+    return isset($d['cost']) ? (float)$d['cost'] : deiLegacyDayCost($d);
+}
+
 function recordUsage($usage) {
     if (!is_array($usage) || !$usage) return;
     $path = DATA_DIR . '/usage.json';
@@ -824,6 +858,14 @@ function recordUsage($usage) {
     $all[$day]['output']      += (int)($usage['output_tokens']               ?? 0);
     $all[$day]['cache_write'] += (int)($usage['cache_creation_input_tokens'] ?? 0);
     $all[$day]['cache_read']  += (int)($usage['cache_read_input_tokens']     ?? 0);
+    // v1.2.69: akumulasi biaya per hari (hari lama tanpa 'cost' diawali estimasi lama)
+    if (!isset($all[$day]['cost'])) {
+        $prev = $all[$day]; $prev['calls']--;
+        $prev['input'] -= (int)($usage['input_tokens'] ?? 0); $prev['output'] -= (int)($usage['output_tokens'] ?? 0);
+        $prev['cache_write'] -= (int)($usage['cache_creation_input_tokens'] ?? 0); $prev['cache_read'] -= (int)($usage['cache_read_input_tokens'] ?? 0);
+        $all[$day]['cost'] = deiLegacyDayCost($prev);
+    }
+    $all[$day]['cost'] = round((float)$all[$day]['cost'] + deiUsageCost($usage), 6);
 
     // Keep last 90 days
     if (count($all) > 95) {
@@ -861,6 +903,7 @@ function callOpenRouter($settings, $systemBlocks, $messages) {
         'model'      => $settings['api']['openrouter_model'] ?? 'google/gemini-2.0-flash-001',
         'max_tokens' => (int)($settings['api']['max_tokens'] ?? 400),
         'messages'   => $msgs,
+        'usage'      => ['include' => true],   // v1.2.69: OpenRouter mengembalikan usage.cost (USD) asli
     ];
     $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
     curl_setopt_array($ch, [
@@ -894,7 +937,11 @@ function callOpenRouter($settings, $systemBlocks, $messages) {
         'output_tokens'               => (int)($data['usage']['completion_tokens'] ?? 0),
         'cache_creation_input_tokens' => 0,
         'cache_read_input_tokens'     => 0,
+        'model'                       => (string)($payload['model'] ?? ''),
     ];
+    if (isset($data['usage']['cost']) && is_numeric($data['usage']['cost'])) {
+        $usage['cost_usd'] = (float)$data['usage']['cost'];   // v1.2.69: biaya asli dari OpenRouter
+    }
     return [true, trim($answer), $usage];
 }
 
@@ -952,6 +999,7 @@ function callClaude($settings, $systemBlocks, $messages) {
         'output_tokens'               => (int)($data['usage']['output_tokens']               ?? 0),
         'cache_creation_input_tokens' => (int)($data['usage']['cache_creation_input_tokens'] ?? 0),
         'cache_read_input_tokens'     => (int)($data['usage']['cache_read_input_tokens']     ?? 0),
+        'model'                       => (string)($payload['model'] ?? ''),   // v1.2.69: harga per model
     ];
     return [true, trim($answer), $usage];
 }
@@ -6253,7 +6301,7 @@ switch ($action) {
 
         // Month stats (same calc as in computeMonthStats but expose more fields)
         $monthKey = wibDate('Y-m');
-        $mIn = 0; $mOut = 0; $mCW = 0; $mCR = 0; $mCalls = 0;
+        $mIn = 0; $mOut = 0; $mCW = 0; $mCR = 0; $mCalls = 0; $mCost = 0.0;
         foreach ($usage as $day => $d) {
             if (strpos($day, $monthKey) !== 0) continue;
             $mCalls += (int)($d['calls'] ?? 0);
@@ -6261,8 +6309,9 @@ switch ($action) {
             $mOut   += (int)($d['output'] ?? 0);
             $mCW    += (int)($d['cache_write'] ?? 0);
             $mCR    += (int)($d['cache_read'] ?? 0);
+            $mCost  += deiDayCost($d);   // v1.2.69
         }
-        $costUsd = round(($mIn/1e6 * 1.0) + ($mOut/1e6 * 5.0) + ($mCW/1e6 * 1.25) + ($mCR/1e6 * 0.10), 5);
+        $costUsd = round($mCost, 5);
 
         jsonOut([
             'ok' => true,
