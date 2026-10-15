@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.74');
+define('DEI_VERSION', 'v1.2.75');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2291,6 +2291,34 @@ function waSendFonnte($wa, $to, $text) {
         return false;
     }
     return true;
+}
+
+// v1.2.75: koneksi perangkat Fonnte — panggil API perangkat (qr / device / disconnect / update-device).
+// Fonnte membalas HTTP 200 walau gagal; status ada di badan balasan.
+function fonnteApi($token, $path, $fields = []) {
+    $ch = curl_init('https://api.fonnte.com/' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER     => ['Authorization: ' . $token],
+        CURLOPT_POSTFIELDS     => http_build_query($fields),
+    ]);
+    $resp = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false || $code < 200 || $code >= 300) {
+        error_log('fonnteApi ' . $path . ' HTTP ' . $code . ' ' . $err);
+        return ['status' => false, 'reason' => 'Server Fonnte tidak dapat dihubungi (HTTP ' . $code . ').'];
+    }
+    $d = json_decode((string)$resp, true);
+    return is_array($d) ? $d : ['status' => false, 'reason' => 'Balasan Fonnte tidak dikenali.'];
+}
+function fonnteReason($d, $fallback) {
+    $r = trim((string)($d['reason'] ?? ($d['detail'] ?? '')));
+    return $r !== '' ? $r : $fallback;
 }
 
 function waSend($wa, $to, $text) {
@@ -8521,6 +8549,92 @@ JS;
             'self_only' => $onlyMe !== null,
             'team_only' => $spvScope !== null,   // v1.2.59
         ]);
+        break;
+    }
+
+    /* ---------- v1.2.75: koneksi perangkat Fonnte dari dashboard (scan QR) ---------- */
+    // Token Fonnte tetap di server & hanya diisi Super Admin. Admin klien cukup
+    // menekan Hubungkan lalu scan QR (atau kode tautan) dari HP-nya.
+    case 'fonnte_conn': {
+        $u  = requireAuth(['super_admin', 'admin']);
+        $in = bodyInput();
+        $op = (string)($in['op'] ?? 'status');
+        $s  = getSettings();
+        $wa = waConf($s);
+        if (($wa['provider'] ?? 'meta') !== 'fonnte') jsonOut(['ok' => false, 'error' => 'Penyedia WhatsApp bukan Fonnte.'], 400);
+        $tok = (string)($wa['fonnte_token'] ?? '');
+        if ($tok === '') jsonOut(['ok' => false, 'error' => 'Token Fonnte belum diisi Super Admin.'], 400);
+
+        if ($op === 'status') {
+            $d = fonnteApi($tok, 'device');
+            if (empty($d['status'])) jsonOut(['ok' => false, 'error' => fonnteReason($d, 'Gagal membaca status perangkat.')]);
+            $dev = preg_replace('/\D/', '', (string)($d['device'] ?? ''));
+            // Nomor perangkat dipakai menyaring webhook — isi otomatis kalau masih kosong.
+            if ($dev !== '' && trim((string)($wa['fonnte_device'] ?? '')) === '') {
+                $s2 = getSettings();
+                $s2['whatsapp_api']['fonnte_device'] = $dev;
+                writeJson(SETTINGS_FILE, $s2);
+            }
+            jsonOut([
+                'ok'        => true,
+                'connected' => (strtolower((string)($d['device_status'] ?? '')) === 'connect'),
+                'device'    => $dev,
+                'name'      => (string)($d['name'] ?? ''),
+                'package'   => (string)($d['package'] ?? ''),
+                'quota'     => $d['quota'] ?? null,
+                'expired'   => (string)($d['expired'] ?? ''),
+            ]);
+        }
+
+        if ($op === 'qr') {
+            $f = [];
+            if (($in['type'] ?? 'qr') === 'code') {
+                $num = preg_replace('/\D/', '', (string)($in['whatsapp'] ?? ''));
+                if (strpos($num, '0') === 0) $num = '62' . substr($num, 1);
+                if (strlen($num) < 9 || strlen($num) > 15) jsonOut(['ok' => false, 'error' => 'Nomor WhatsApp tidak valid.'], 400);
+                $f = ['type' => 'code', 'whatsapp' => $num];
+            }
+            $d = fonnteApi($tok, 'qr', $f);
+            if (!empty($d['status'])) {
+                $out = ['ok' => true, 'connected' => false];
+                $img = preg_replace('/[^A-Za-z0-9+\/=]/', '', (string)($d['url'] ?? ''));
+                if ($img !== '') $out['qr'] = 'data:image/png;base64,' . $img;
+                if (!empty($d['code'])) $out['code'] = (string)$d['code'];
+                jsonOut($out);
+            }
+            $r = fonnteReason($d, 'Gagal mengambil QR.');
+            if (stripos($r, 'already connect') !== false) jsonOut(['ok' => true, 'connected' => true]);
+            jsonOut(['ok' => false, 'error' => $r]);
+        }
+
+        if ($op === 'disconnect') {
+            $d = fonnteApi($tok, 'disconnect');
+            $r = fonnteReason($d, 'Gagal memutuskan.');
+            $ok = !empty($d['status']) || stripos($r, 'already disconnect') !== false;
+            if ($ok) { try { waAuditLog('fonnte_disconnect', $u['username'], '', []); } catch (\Throwable $e) {} }
+            jsonOut($ok ? ['ok' => true] : ['ok' => false, 'error' => $r]);
+        }
+
+        if ($op === 'webhook') {
+            if (($u['role'] ?? '') !== 'super_admin') jsonOut(['ok' => false, 'error' => 'Khusus Super Admin.'], 403);
+            $key = (string)($wa['fonnte_webhook_key'] ?? '');
+            if ($key === '') jsonOut(['ok' => false, 'error' => 'Kunci webhook belum ada — simpan pengaturan dengan penyedia Fonnte dulu.'], 400);
+            $base = deiSelfApiUrl();
+            if (strpos($base, 'https://') !== 0) jsonOut(['ok' => false, 'error' => 'Webhook butuh alamat https publik. Alamat saat ini: ' . $base], 400);
+            $p    = fonnteApi($tok, 'device');
+            $name = trim((string)($p['name'] ?? ''));
+            if (mb_strlen($name) < 2) $name = deiTenantName($s);
+            $hook = $base . '?action=wa_webhook_fonnte&key=' . rawurlencode($key);
+            $f = ['name' => mb_substr($name, 0, 30), 'webhook' => $hook];
+            $dev = preg_replace('/\D/', '', (string)($p['device'] ?? ''));
+            if ($dev !== '') $f['device'] = $dev;
+            $d = fonnteApi($tok, 'update-device', $f);
+            if (empty($d['status'])) jsonOut(['ok' => false, 'error' => fonnteReason($d, 'Gagal memasang webhook.')]);
+            try { waAuditLog('fonnte_webhook_set', $u['username'], '', []); } catch (\Throwable $e) {}
+            jsonOut(['ok' => true, 'webhook' => $base . '?action=wa_webhook_fonnte&key=••••']);
+        }
+
+        jsonOut(['ok' => false, 'error' => 'op tidak dikenal'], 400);
         break;
     }
 

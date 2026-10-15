@@ -1473,6 +1473,32 @@
           <div class="row"><label class="fl">Batas Simpan Log</label><input type="number" id="a_loglimit"></div>
         </div>
       </div>
+      <!-- v1.2.75: koneksi perangkat Fonnte (Admin & Super Admin) -->
+      <div class="card" data-role-card="super_admin,admin" id="fonConnCard" style="display:none"><h3>Koneksi WhatsApp</h3>
+        <div class="desc">Sambungkan nomor WhatsApp ke chatbot. Klik <b>Hubungkan</b>, lalu di HP buka WhatsApp › Perangkat Tertaut › Tautkan Perangkat dan scan QR yang muncul.</div>
+        <div class="row" style="flex-direction:row;gap:10px;align-items:center;flex-wrap:wrap">
+          <span class="pill off" id="fonc_pill">Memeriksa…</span>
+          <span class="help" id="fonc_info" style="margin:0"></span>
+        </div>
+        <div class="row" style="flex-direction:row;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="fonc_connect" type="button">Hubungkan (scan QR)</button>
+          <button class="btn ghost" id="fonc_code" type="button">Pakai kode tautan</button>
+          <button class="btn ghost" id="fonc_refresh" type="button">Cek status</button>
+          <button class="btn ghost" id="fonc_disconnect" type="button" style="display:none">Putuskan</button>
+          <button class="btn ghost" id="fonc_webhook" type="button" data-role-card="super_admin">Pasang webhook otomatis</button>
+        </div>
+        <div class="row hide" id="fonc_numrow" style="flex-direction:row;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="tel" id="fonc_num" class="mono" placeholder="Nomor WA, mis. 0812xxxxxxx" style="flex:1;min-width:180px">
+          <button class="btn" id="fonc_code_go" type="button">Minta kode</button>
+        </div>
+        <div id="fonc_box" class="hide" style="text-align:center;padding:14px;border:1px dashed var(--line,#d0d0d0);border-radius:8px;margin-top:8px">
+          <img id="fonc_qr" alt="QR WhatsApp" style="width:260px;max-width:100%;display:none;margin:0 auto">
+          <div id="fonc_codeval" class="mono" style="font-size:26px;letter-spacing:4px;font-weight:700;display:none"></div>
+          <div class="help" id="fonc_hint" style="margin-top:8px"></div>
+          <button class="btn ghost" id="fonc_cancel" type="button" style="margin-top:8px">Tutup</button>
+        </div>
+        <div class="help" style="margin-top:8px">Fonnte memakai jalur tidak resmi — hindari kirim pesan massal agar nomor tidak diblokir WhatsApp.</div>
+      </div>
       <div class="card" data-role-card="super_admin"><h3>WhatsApp Bot</h3>
         <div class="desc">Hubungkan chatbot AI ini ke WhatsApp. Pesan masuk akan dijawab otomatis dari Knowledge Base yang sama.</div>
         <div class="row"><label class="fl">Penyedia</label><select id="wa_provider">

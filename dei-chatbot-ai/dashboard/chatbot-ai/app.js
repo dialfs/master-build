@@ -1816,6 +1816,106 @@
     $$('.wa-fonnte-only').forEach(function (el) { el.style.display = meta ? 'none' : ''; });
   }
 
+  // v1.2.75: koneksi perangkat Fonnte dari dashboard — admin cukup scan QR.
+  var _fonc = { poll: null, qrT: null, stopT: null, mode: 'qr' };
+  function foncStop() {
+    clearInterval(_fonc.poll); clearInterval(_fonc.qrT); clearTimeout(_fonc.stopT);
+    _fonc.poll = _fonc.qrT = _fonc.stopT = null;
+    var b = $('#fonc_box'); if (b) b.classList.add('hide');
+  }
+  function foncSet(st) {
+    var p = $('#fonc_pill'), inf = $('#fonc_info');
+    if (!p) return;
+    if (st.error) { p.className = 'pill off'; p.textContent = 'Status tidak diketahui'; inf.textContent = st.error; return; }
+    p.className = 'pill ' + (st.connected ? 'on' : 'off');
+    p.textContent = st.connected ? 'Tersambung' : 'Belum tersambung';
+    var bits = [];
+    if (st.device) bits.push('Nomor ' + st.device);
+    if (st.package) bits.push('Paket ' + st.package);
+    if (st.quota !== null && st.quota !== undefined && st.quota !== '') bits.push('Kuota ' + st.quota);
+    if (st.expired) bits.push('Aktif s/d ' + st.expired);
+    inf.textContent = bits.join(' · ');
+    $('#fonc_connect').style.display = st.connected ? 'none' : '';
+    $('#fonc_code').style.display = st.connected ? 'none' : '';
+    $('#fonc_disconnect').style.display = st.connected ? '' : 'none';
+    if (st.connected) $('#fonc_numrow').classList.add('hide');
+  }
+  function foncStatus(silent) {
+    return api('fonnte_conn', { method: 'POST', body: { op: 'status' } }).then(function (r) {
+      if (!r.ok) { if (!silent) foncSet({ error: r.error || 'Gagal membaca status.' }); return null; }
+      var wasPolling = !!_fonc.poll;
+      foncSet(r);
+      if (r.connected && wasPolling) { foncStop(); toast('WhatsApp tersambung.'); }
+      return r;
+    }).catch(function () { if (!silent) foncSet({ error: 'Koneksi bermasalah.' }); });
+  }
+  function foncFetch(num) {
+    var body = { op: 'qr' };
+    if (_fonc.mode === 'code') { body.type = 'code'; body.whatsapp = num; }
+    return api('fonnte_conn', { method: 'POST', body: body }).then(function (r) {
+      if (!_fonc.poll) return;   // sudah ditutup
+      if (!r.ok) { foncStop(); toast(r.error || 'Gagal mengambil QR.', true); return; }
+      if (r.connected) { foncStop(); foncStatus(); return; }
+      var img = $('#fonc_qr'), cv = $('#fonc_codeval'), h = $('#fonc_hint');
+      if (r.qr) {
+        img.src = r.qr; img.style.display = 'block'; cv.style.display = 'none';
+        h.textContent = 'Di HP: WhatsApp › Perangkat Tertaut › Tautkan Perangkat, lalu scan. QR diperbarui otomatis.';
+      } else if (r.code) {
+        cv.textContent = r.code; cv.style.display = ''; img.style.display = 'none';
+        h.textContent = 'Di HP: WhatsApp › Perangkat Tertaut › Tautkan Perangkat › Tautkan dengan nomor telepon, lalu masukkan kode ini.';
+      } else {
+        h.textContent = 'Fonnte belum mengirim QR. Tunggu sebentar…';
+      }
+    }).catch(function () { $('#fonc_hint').textContent = 'Koneksi bermasalah, mencoba lagi…'; });
+  }
+  function foncStart(mode, num) {
+    foncStop();
+    _fonc.mode = mode;
+    $('#fonc_box').classList.remove('hide');
+    $('#fonc_qr').style.display = 'none'; $('#fonc_codeval').style.display = 'none';
+    $('#fonc_hint').textContent = mode === 'code' ? 'Meminta kode tautan…' : 'Mengambil QR…';
+    _fonc.poll = setInterval(function () { foncStatus(true); }, 4000);
+    if (mode === 'qr') _fonc.qrT = setInterval(function () { foncFetch(); }, 30000);   // QR WA cepat kedaluwarsa
+    _fonc.stopT = setTimeout(function () {
+      if (!_fonc.poll) return;
+      foncStop(); toast('Waktu habis. Klik Hubungkan lagi bila belum tersambung.', true);
+    }, 180000);
+    foncFetch(num);
+  }
+  function foncInit(wa) {
+    var card = $('#fonConnCard'); if (!card) return;
+    var on = (wa.provider === 'fonnte') && !!wa.fonnte_token_is_set;
+    card.style.display = on ? '' : 'none';
+    if (!on) { foncStop(); return; }
+    if (card.dataset.wired !== '1') {
+      card.dataset.wired = '1';
+      $('#fonc_connect').onclick = function () { $('#fonc_numrow').classList.add('hide'); foncStart('qr'); };
+      $('#fonc_code').onclick = function () { $('#fonc_numrow').classList.toggle('hide'); $('#fonc_num').focus(); };
+      $('#fonc_code_go').onclick = function () {
+        var n = $('#fonc_num').value.replace(/\D/g, '');
+        if (n.length < 9) { toast('Isi nomor WhatsApp yang akan ditautkan.', true); return; }
+        foncStart('code', n);
+      };
+      $('#fonc_refresh').onclick = function () { foncStatus(); };
+      $('#fonc_cancel').onclick = function () { foncStop(); };
+      $('#fonc_disconnect').onclick = function () {
+        if (!confirm('Putuskan WhatsApp dari chatbot? Bot berhenti membalas sampai disambungkan lagi.')) return;
+        api('fonnte_conn', { method: 'POST', body: { op: 'disconnect' } }).then(function (r) {
+          toast(r.ok ? 'WhatsApp diputuskan.' : (r.error || 'Gagal memutuskan.'), !r.ok);
+          foncStatus();
+        });
+      };
+      $('#fonc_webhook').onclick = function () {
+        var b = this; b.disabled = true;
+        api('fonnte_conn', { method: 'POST', body: { op: 'webhook' } }).then(function (r) {
+          b.disabled = false;
+          toast(r.ok ? 'Webhook Fonnte terpasang.' : (r.error || 'Gagal memasang webhook.'), !r.ok);
+        }).catch(function () { b.disabled = false; });
+      };
+    }
+    foncStatus();
+  }
+
   // v1.2.54: Embedded Signup coexistence (WA Business App + Cloud API di satu nomor)
   var _esCaptured = { phone_number_id: '', waba_id: '' };
   function esSessionInfoListener(event) {
@@ -1865,6 +1965,7 @@
     api('get_settings').then(function (res) {
       if (!res.ok) return;
       var s = res.settings, w = s.widget || {}, a = s.api || {};
+      foncInit(s.whatsapp_api || {});   // v1.2.75
       $('#w_chatbot').checked = w.chatbot_enabled !== false;
       $('#w_whatsapp').checked = w.whatsapp_enabled !== false;
       $('#w_wa_number').value = w.whatsapp_number || '';
