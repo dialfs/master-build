@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.76');
+define('DEI_VERSION', 'v1.2.77');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2394,7 +2394,22 @@ function wahaEnsureSession($wa) {
     if ($c < 200 || $c >= 300) return [false, wahaErr($c, $d)];
     $st = (string)($d['status'] ?? '');
     if ($st === 'STOPPED') { wahaApi($wa, 'POST', '/api/sessions/' . rawurlencode($n) . '/start'); $d['status'] = 'STARTING'; }
-    elseif ($st === 'FAILED') { wahaApi($wa, 'POST', '/api/sessions/' . rawurlencode($n) . '/restart'); $d['status'] = 'STARTING'; }
+    elseif ($st === 'FAILED') {
+        // v1.2.77: restart sekali. FAILED lagi dalam 2 menit = login tersimpan rusak/ditolak WhatsApp
+        // -> logout (hapus login) lalu start, supaya QR baru muncul (dulu restart tiap 3 dtk tanpa henti).
+        $f = DATA_DIR . '/waha-failed.json';
+        $last = (int)(readJson($f, [])[$n] ?? 0);
+        if ($last > 0 && time() - $last < 120) {
+            wahaApi($wa, 'POST', '/api/sessions/' . rawurlencode($n) . '/logout');
+            wahaApi($wa, 'POST', '/api/sessions/' . rawurlencode($n) . '/start');
+            writeJson($f, [$n => 0]);
+            error_log('waha: sesi ' . $n . ' gagal berulang -> logout + start (QR baru)');
+        } else {
+            wahaApi($wa, 'POST', '/api/sessions/' . rawurlencode($n) . '/restart');
+            writeJson($f, [$n => time()]);
+        }
+        $d['status'] = 'STARTING';
+    }
     return [true, $d];
 }
 function wahaJidNum($jid) {
@@ -2466,16 +2481,40 @@ function wahaMsgId($p) {
 }
 // Terjemahkan event WAHA (message / message.any) ke payload bentuk Meta.
 // null = abaikan (grup, status, chat ke diri sendiri, pantulan kiriman sendiri).
+// v1.2.77: kandidat JID chat lawan bicara, urut dari yang paling bisa dipercaya.
+function wahaChatCandidates($p, $fromMe) {
+    $d = is_array($p['_data'] ?? null) ? $p['_data'] : [];
+    $c = [
+        (string)($d['key']['remoteJid'] ?? ''),          // NOWEB
+        (string)($d['Info']['Chat'] ?? ''),              // GOWS
+        (string)($d['id']['remote'] ?? ''),              // WEBJS
+    ];
+    if ($fromMe) { $c[] = (string)($p['to'] ?? ''); $c[] = (string)($p['from'] ?? ''); }
+    else         { $c[] = (string)($p['from'] ?? ''); $c[] = (string)($p['to'] ?? ''); }
+    $out = [];
+    foreach ($c as $j) { $j = trim($j); if ($j !== '' && strpos($j, '@') !== false && !in_array($j, $out, true)) $out[] = $j; }
+    return $out;
+}
 function wahaToMetaPayload($wa, $evt) {
     $p = is_array($evt['payload'] ?? null) ? $evt['payload'] : [];
     $id = wahaMsgId($p);
     $fromMe = !empty($p['fromMe']);
-    $chat = (string)($fromMe ? ($p['to'] ?? '') : ($p['from'] ?? ''));
-    if ($chat === '' || preg_match('/@(g\.us|newsletter|broadcast)$/i', $chat)) return null;
-    $num = wahaResolveNum($wa, $chat, $p);
-    if ($num === '') { error_log('waha: lawan bicara tidak terbaca (' . $chat . ')'); return null; }
+    // v1.2.77: lawan bicara = chat-nya (remoteJid), bukan selalu `to` — NOWEB mengisi `from`
+    // dengan chat lawan bicara juga untuk pesan fromMe. Nomor sendiri dilewati.
     $me = wahaJidNum(preg_replace('/:\d+@/', '@', (string)($evt['me']['id'] ?? '')));
-    if ($me !== '' && $me === $num) return null;
+    $meLid = strtolower((string)($evt['me']['lid'] ?? ''));
+    $num = ''; $chat = '';
+    foreach (wahaChatCandidates($p, $fromMe) as $cj) {
+        if (preg_match('/@(g\.us|newsletter|broadcast)$/i', $cj)) return null;
+        if ($meLid !== '' && strtolower(preg_replace('/:\d+@/', '@', $cj)) === $meLid) continue;
+        $n = wahaResolveNum($wa, $cj, $p);
+        if ($n === '' || ($me !== '' && $n === $me)) { if ($chat === '') $chat = $cj; continue; }
+        $num = $n; $chat = $cj; break;
+    }
+    if ($num === '') {
+        if ($chat !== '') error_log('waha: lawan bicara tidak terbaca (' . $chat . ')');
+        return null;
+    }
 
     $body = trim((string)($p['body'] ?? ''));
     $type = 'text';
