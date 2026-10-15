@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.70');
+define('DEI_VERSION', 'v1.2.71');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -46,7 +46,9 @@ if (PHP_SAPI === 'cli' && $action === '' && !empty($argv[1])) {
     parse_str(implode('&', array_slice($argv, 1)), $deiCliArgs);
     $_GET = array_merge($_GET, $deiCliArgs);
     $action = (string)($_GET['action'] ?? '');
-    if (!in_array($action, ['cron_tick'], true)) { fwrite(STDERR, "CLI hanya untuk action=cron_tick\n"); exit(1); }
+    if (!in_array($action, ['cron_tick', 'wa_worker', 'wa_queue_status', 'db_init', 'db_import', 'update_cli'], true)) { fwrite(STDERR, "CLI: action=cron_tick|wa_worker|wa_queue_status|db_init|db_import|update_cli\n"); exit(1); }   // v1.2.71
+    // v1.2.71: update_cli = update_check lalu langsung update_apply (dipakai update-all.sh di server sendiri)
+    if ($action === 'update_cli') { $action = 'update_check'; $GLOBALS['dei_cli_chain'] = true; }
 }
 
 if (in_array($action, $PUBLIC_ACTIONS, true)) {
@@ -125,6 +127,7 @@ function writeJson($file, $data) {
  * log_limit dinaikkan (file lebih besar = waktu tulis lebih lama).
  * $fn menerima &$logs (terbaru-dulu); kembalikan false untuk batal menulis. */
 function logMutate($fn, $limit = null) {
+    if (deiStorageMysql()) return logDbMutate($fn);   // v1.2.71: tabel dei_log, riwayat tidak dipangkas
     $lock = @fopen(DATA_DIR . '/chatbot-log.lock', 'c');
     if ($lock) @flock($lock, LOCK_EX);
     try {
@@ -141,8 +144,441 @@ function logMutate($fn, $limit = null) {
     }
 }
 // Tambah satu entri di depan log (aman dari tulis bersamaan). Mengembalikan isi log terbaru.
+// v1.2.71: di mode mysql cukup INSERT; nilai kembali hanya [entri baru] -- jangan diandalkan.
 function logPrepend($entry, $limit) {
+    if (deiStorageMysql()) { logDbInsert($entry); return [$entry]; }
     return logMutate(function (&$logs) use ($entry) { array_unshift($logs, $entry); }, $limit);
+}
+
+/* ============================================================================
+ * v1.2.71: DRIVER PENYIMPANAN & ANTREAN (server self-hosted, mis. Halte Bus)
+ *
+ * Satu kode untuk dua mesin. Berkas OPSIONAL data/server.php (tidak pernah
+ * ikut paket update, karena data/ tidak disentuh updater) mengembalikan:
+ *
+ *   <?php return [
+ *     'storage' => 'mysql',            // 'file' (bawaan) | 'mysql'
+ *     'queue'   => 'redis',            // 'sync' (bawaan) | 'redis'
+ *     'db'      => ['host' => '127.0.0.1', 'port' => 3306, 'name' => 'sj_chat', 'user' => 'sj', 'pass' => '...'],
+ *     'redis'   => ['host' => '127.0.0.1', 'port' => 6379, 'db' => 0, 'prefix' => 'sj:'],
+ *   ];
+ *
+ * Tanpa berkas itu: 'file' + 'sync' = perilaku lama di shared hosting.
+ * ATURAN PENGEMBANGAN: data yang ditulis tiap pesan (log, sesi WA, kontak)
+ * HANYA lewat fungsi di blok ini — jangan readJson/writeJson berkasnya
+ * langsung. tools/cek-storage.sh menolak rilis yang melanggar.
+ * ========================================================================= */
+function deiServerConf() {
+    static $c = null;
+    if ($c === null) {
+        $c = [];
+        $f = DATA_DIR . '/server.php';
+        if (is_file($f)) { $r = include $f; if (is_array($r)) $c = $r; }
+        $c['storage'] = (($c['storage'] ?? 'file') === 'mysql') ? 'mysql' : 'file';
+        $c['queue']   = (($c['queue'] ?? 'sync') === 'redis') ? 'redis' : 'sync';
+    }
+    return $c;
+}
+function deiStorageMysql() { return deiServerConf()['storage'] === 'mysql'; }
+// Mode antrean hanya aktif kalau Redis benar-benar bisa dihubungi. Kalau Redis mati,
+// webhook jatuh ke pemrosesan langsung dan idempotensi/kunci memakai MySQL/berkas.
+function deiQueueRedis() {
+    static $ok = null;
+    if ($ok === null) {
+        $ok = false;
+        if (deiServerConf()['queue'] === 'redis' && class_exists('Redis')) {
+            try { $ok = (bool)deiRedis()->ping(); }
+            catch (\Throwable $e) { error_log('Redis tidak bisa dihubungi: ' . $e->getMessage()); }
+        }
+    }
+    return $ok;
+}
+
+function deiDb() {
+    static $pdo = null;
+    if ($pdo === null) {
+        $d = deiServerConf()['db'] ?? [];
+        $dsn = 'mysql:host=' . ($d['host'] ?? '127.0.0.1') . ';port=' . (int)($d['port'] ?? 3306)
+             . ';dbname=' . ($d['name'] ?? '') . ';charset=utf8mb4';
+        $pdo = new PDO($dsn, (string)($d['user'] ?? ''), (string)($d['pass'] ?? ''), [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES   => false,
+        ]);
+        $pdo->exec("SET time_zone = '+07:00'");
+    }
+    return $pdo;
+}
+function deiRedis() {
+    static $r = null;
+    if ($r === null) {
+        $c = deiServerConf()['redis'] ?? [];
+        $x = new Redis();
+        $x->connect((string)($c['host'] ?? '127.0.0.1'), (int)($c['port'] ?? 6379), 2.0);
+        if (!empty($c['pass'])) $x->auth((string)$c['pass']);
+        if (!empty($c['db'])) $x->select((int)$c['db']);
+        $x->setOption(Redis::OPT_PREFIX, (string)($c['prefix'] ?? 'dei:'));
+        $x->setOption(Redis::OPT_READ_TIMEOUT, -1);
+        $r = $x;
+    }
+    return $r;
+}
+
+// Skema MySQL — satu sumber; dijalankan lewat `php api/index.php action=db_init`.
+function deiDbSchema() {
+    return [
+        "CREATE TABLE IF NOT EXISTS dei_log (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            ts DATETIME NULL,
+            num VARCHAR(32) NOT NULL DEFAULT '',
+            channel VARCHAR(16) NOT NULL DEFAULT '',
+            body MEDIUMTEXT NOT NULL,
+            KEY num_id (num, id),
+            KEY ts (ts)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        "CREATE TABLE IF NOT EXISTS dei_wa_sessions (
+            num VARCHAR(32) NOT NULL PRIMARY KEY,
+            ts INT UNSIGNED NOT NULL,
+            turns MEDIUMTEXT NOT NULL,
+            KEY ts (ts)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        "CREATE TABLE IF NOT EXISTS dei_contacts (
+            num VARCHAR(32) NOT NULL PRIMARY KEY,
+            body TEXT NOT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        "CREATE TABLE IF NOT EXISTS dei_conv_state (
+            num VARCHAR(32) NOT NULL PRIMARY KEY,
+            last_at INT UNSIGNED NOT NULL DEFAULT 0,
+            body TEXT NOT NULL,
+            KEY last_at (last_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        "CREATE TABLE IF NOT EXISTS dei_wa_seen (
+            wamid VARCHAR(191) NOT NULL PRIMARY KEY,
+            ts INT UNSIGNED NOT NULL,
+            KEY ts (ts)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+    ];
+}
+
+/* ---------- Kunci lintas proses (dua mode) ----------
+ * flock di data/.locks/<nama>.lock. Reentrant per proses: fungsi yang sudah
+ * memegang kunci boleh memanggil fungsi lain yang meminta kunci yang sama. */
+function deiWithLock($name, $fn) {
+    static $held = [];
+    if (!empty($held[$name])) return $fn();
+    $dir = DATA_DIR . '/.locks';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $fp = @fopen($dir . '/' . preg_replace('/[^a-z0-9_-]/i', '_', $name) . '.lock', 'c');
+    if ($fp) @flock($fp, LOCK_EX);
+    $held[$name] = true;
+    try {
+        return $fn();
+    } finally {
+        unset($held[$name]);
+        if ($fp) { @flock($fp, LOCK_UN); @fclose($fp); }
+    }
+}
+
+/* ---------- Log percakapan ---------- */
+function logEncode($e) {
+    return json_encode($e, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+}
+function logRowNum($e) {
+    return (($e['channel'] ?? '') === 'whatsapp') ? substr(preg_replace('/\D/', '', (string)($e['ip'] ?? '')), 0, 32) : '';
+}
+// Jendela baca untuk dashboard/statistik: sama dengan log_limit di mode file.
+function logWindow() {
+    static $w = null;
+    if ($w === null) {
+        $s = readJson(SETTINGS_FILE, []);
+        $w = max(500, (int)($s['api']['log_limit'] ?? 500));
+    }
+    return $w;
+}
+function logDbInsert($e) {
+    $ts = (string)($e['ts'] ?? '');
+    $st = deiDb()->prepare('INSERT INTO dei_log (ts, num, channel, body) VALUES (?, ?, ?, ?)');
+    $st->execute([preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $ts) ? $ts : null,
+                  logRowNum($e), substr((string)($e['channel'] ?? ''), 0, 16), logEncode($e)]);
+}
+// Semua entri log terbaru-dulu (bentuk persis isi chatbot-log.json).
+function logReadAll() {
+    if (!deiStorageMysql()) {
+        $l = readJson(LOG_FILE, []);
+        return is_array($l) ? $l : [];
+    }
+    $out = [];
+    foreach (deiDb()->query('SELECT body FROM dei_log ORDER BY id DESC LIMIT ' . (int)logWindow(), PDO::FETCH_COLUMN, 0) as $b) {
+        $e = json_decode($b, true);
+        if (is_array($e)) $out[] = $e;
+    }
+    return $out;
+}
+// Entri WhatsApp satu nomor, terbaru-dulu.
+function logReadByNumber($num, $max = 200) {
+    $num = preg_replace('/\D/', '', (string)$num);
+    if ($num === '') return [];
+    if (!deiStorageMysql()) {
+        $out = [];
+        foreach (logReadAll() as $e) {
+            if (($e['channel'] ?? '') !== 'whatsapp') continue;
+            if (preg_replace('/\D/', '', (string)($e['ip'] ?? '')) !== $num) continue;
+            $out[] = $e;
+            if (count($out) >= $max) break;
+        }
+        return $out;
+    }
+    $st = deiDb()->prepare('SELECT body FROM dei_log WHERE num = ? ORDER BY id DESC LIMIT ' . (int)$max);
+    $st->execute([$num]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN, 0) as $b) { $e = json_decode($b, true); if (is_array($e)) $out[] = $e; }
+    return $out;
+}
+function logDbMutate($fn) {
+    $db = deiDb();
+    $db->query("SELECT GET_LOCK('dei_log_mutate', 30)");
+    try {
+        $logs = []; $orig = [];
+        foreach ($db->query('SELECT id, body FROM dei_log ORDER BY id DESC LIMIT ' . (int)logWindow())->fetchAll() as $r) {
+            $e = json_decode($r['body'], true);
+            if (!is_array($e)) $e = [];
+            $e['_dei_id'] = (int)$r['id'];
+            $orig[(int)$r['id']] = $r['body'];
+            $logs[] = $e;
+        }
+        $res = $fn($logs);
+        if (!is_array($logs)) $logs = [];
+        if ($res !== false) {
+            $keep = []; $new = [];
+            $upd = $db->prepare('UPDATE dei_log SET ts = ?, num = ?, channel = ?, body = ? WHERE id = ?');
+            foreach ($logs as $e) {
+                if (!is_array($e)) continue;
+                $id = (int)($e['_dei_id'] ?? 0);
+                unset($e['_dei_id']);
+                if ($id > 0 && isset($orig[$id]) && !isset($keep[$id])) {
+                    $keep[$id] = true;
+                    $b = logEncode($e);
+                    if ($b !== $orig[$id]) {
+                        $ts = (string)($e['ts'] ?? '');
+                        $upd->execute([preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $ts) ? $ts : null,
+                                       logRowNum($e), substr((string)($e['channel'] ?? ''), 0, 16), $b, $id]);
+                    }
+                } else {
+                    $new[] = $e;
+                }
+            }
+            // Elemen paling depan = paling baru -> disisipkan paling akhir (id terbesar).
+            foreach (array_reverse($new) as $e) logDbInsert($e);
+            $gone = array_diff_key($orig, $keep);
+            if ($gone) $db->exec('DELETE FROM dei_log WHERE id IN (' . implode(',', array_map('intval', array_keys($gone))) . ')');
+        }
+        foreach ($logs as &$e) { if (is_array($e)) unset($e['_dei_id']); }
+        unset($e);
+        return $logs;
+    } finally {
+        $db->query("SELECT RELEASE_LOCK('dei_log_mutate')");
+    }
+}
+
+/* ---------- Kontak WhatsApp ---------- */
+function waContactDefaults() {
+    $now = date('Y-m-d H:i:s');
+    return ['name_wa' => '', 'name_manual' => '', 'first_seen' => $now, 'last_seen' => $now];
+}
+// Satu kontak (null kalau belum ada).
+function waContactGet($number) {
+    $number = preg_replace('/\D/', '', (string)$number);
+    if ($number === '') return null;
+    if (!deiStorageMysql()) {
+        $all = waGetContacts();
+        return (isset($all[$number]) && is_array($all[$number])) ? $all[$number] : null;
+    }
+    $st = deiDb()->prepare('SELECT body FROM dei_contacts WHERE num = ?');
+    $st->execute([$number]);
+    $b = $st->fetchColumn();
+    $c = ($b === false) ? null : json_decode($b, true);
+    return is_array($c) ? $c : null;
+}
+// Peta [nomor => kontak] yang cukup untuk membaca satu nomor.
+function waContactsFor($number) {
+    if (!deiStorageMysql()) return waGetContacts();
+    $number = preg_replace('/\D/', '', (string)$number);
+    $c = waContactGet($number);
+    return $c === null ? [] : [$number => $c];
+}
+// Ubah satu kontak secara atomik. $fn(array &$row, bool $isNew); kembalikan false untuk batal.
+function waContactUpdate($number, $fn) {
+    $number = preg_replace('/\D/', '', (string)$number);
+    if ($number === '') return null;
+    if (!deiStorageMysql()) {
+        return deiWithLock('wa-contacts', function () use ($number, $fn) {
+            $all = waGetContacts();
+            $isNew = !isset($all[$number]) || !is_array($all[$number]);
+            $row = $isNew ? waContactDefaults() : $all[$number];
+            if ($fn($row, $isNew) === false) return $isNew ? null : $all[$number];
+            $all[$number] = $row;
+            writeJson(CONTACTS_FILE, $all);
+            return $row;
+        });
+    }
+    // Baris dibuat dulu (INSERT IGNORE, autocommit) supaya FOR UPDATE mengunci baris,
+    // bukan celah indeks — dua kontak baru bersamaan tidak saling deadlock.
+    $db = deiDb();
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            $ins = $db->prepare('INSERT IGNORE INTO dei_contacts (num, body) VALUES (?, ?)');
+            $ins->execute([$number, logEncode(waContactDefaults())]);
+            $isNew = ($ins->rowCount() === 1);
+            $db->beginTransaction();
+            $st = $db->prepare('SELECT body FROM dei_contacts WHERE num = ? FOR UPDATE');
+            $st->execute([$number]);
+            $row = json_decode((string)$st->fetchColumn(), true);
+            if (!is_array($row)) $row = waContactDefaults();
+            $before = $row;
+            if ($fn($row, $isNew) === false) {
+                if ($isNew) $db->prepare('DELETE FROM dei_contacts WHERE num = ?')->execute([$number]);
+                $db->commit();
+                return $isNew ? null : $before;
+            }
+            $db->prepare('UPDATE dei_contacts SET body = ? WHERE num = ?')->execute([logEncode($row), $number]);
+            $db->commit();
+            return $row;
+        } catch (\PDOException $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            if ((int)($e->errorInfo[1] ?? 0) === 1213 && $attempt < 4) { usleep(50000 * $attempt); continue; }
+            throw $e;
+        }
+    }
+}
+
+/* ---------- Pesan WA sudah diproses? (idempotensi wamid) ---------- */
+function waMsgSeen($wamid) {
+    $wamid = substr((string)$wamid, 0, 191);
+    if ($wamid === '') return false;
+    if (deiQueueRedis()) return (bool)deiRedis()->exists('seen:' . $wamid);
+    if (deiStorageMysql()) {
+        $st = deiDb()->prepare('SELECT 1 FROM dei_wa_seen WHERE wamid = ?');
+        $st->execute([$wamid]);
+        return (bool)$st->fetchColumn();
+    }
+    $all = readJson(DATA_DIR . '/wa-seen.json', []);
+    return is_array($all) && isset($all[$wamid]);
+}
+function waMsgMarkSeen($wamid) {
+    $wamid = substr((string)$wamid, 0, 191);
+    if ($wamid === '') return;
+    if (deiQueueRedis()) { deiRedis()->set('seen:' . $wamid, 1, ['ex' => 3 * 86400]); return; }
+    if (deiStorageMysql()) {
+        deiDb()->prepare('INSERT IGNORE INTO dei_wa_seen (wamid, ts) VALUES (?, ?)')->execute([$wamid, time()]);
+        return;
+    }
+    deiWithLock('wa-seen', function () use ($wamid) {
+        $f = DATA_DIR . '/wa-seen.json';
+        $all = readJson($f, []);
+        if (!is_array($all)) $all = [];
+        $all[$wamid] = time();
+        if (count($all) > 3000) { asort($all); $all = array_slice($all, -2000, null, true); }
+        writeJson($f, $all);
+    });
+}
+
+/* ---------- Kunci per nomor (hanya mode antrean) ----------
+ * Pesan dari satu nomor diproses berurutan; nomor berbeda tetap paralel. */
+function deiNumLock($num, $fn) {
+    if (!deiQueueRedis()) return $fn();
+    $r = deiRedis();
+    $key = 'lock:wa:' . preg_replace('/\D/', '', (string)$num);
+    // Nilai kunci = "<slot>:<token>" supaya slot yang hidup lagi bisa melepas kunci peninggalannya.
+    $tok = ($GLOBALS['dei_worker_slot'] ?? 'web') . ':' . bin2hex(random_bytes(8));
+    $deadline = microtime(true) + 130;
+    while (!$r->set($key, $tok, ['nx', 'ex' => 120])) {
+        if (microtime(true) > $deadline) break;   // jangan macet selamanya
+        usleep(200000);
+    }
+    try {
+        return $fn();
+    } finally {
+        if ($r->get($key) === $tok) $r->del($key);
+    }
+}
+
+/* ---------- Bersih-bersih berkala (cron_tick) ----------
+ * Sesi WA > 7 hari dihapus (bot sudah mengabaikannya setelah 6 jam) supaya
+ * jumlah berkas/baris tidak tumbuh tanpa batas. */
+function deiPurgeSessions() {
+    if (deiStorageMysql()) {
+        $db = deiDb();
+        $n  = $db->exec('DELETE FROM dei_wa_sessions WHERE ts < ' . (time() - 7 * 86400));
+        $db->exec('DELETE FROM dei_wa_seen WHERE ts < ' . (time() - 3 * 86400));
+        $db->exec('DELETE FROM dei_conv_state WHERE last_at < ' . (time() - 3 * 86400));
+        return (int)$n;
+    }
+    if (!is_dir(WA_SESSIONS_DIR)) return 0;
+    $n = 0; $cut = time() - 7 * 86400;
+    foreach ((array)glob(WA_SESSIONS_DIR . '/*.json') as $f) {
+        if (@filemtime($f) < $cut && @unlink($f)) $n++;
+        if ($n >= 500) break;   // sisanya di tick berikutnya
+    }
+    return $n;
+}
+
+/* ---------- Jejak percakapan (conv-state) untuk auto-closing & eskalasi ----------
+ * Mode file: conv-state.json (dipangkas 3 hari). Mode mysql: tabel dei_conv_state. */
+function convStateReadAll() {
+    if (!deiStorageMysql()) {
+        $f = CONV_STATE_FILE;   // lewat variabel: langkah 6c patch mengganti pola pembaca langsung
+        $a = readJson($f, []);
+        return is_array($a) ? $a : [];
+    }
+    $out = [];
+    $st = deiDb()->prepare('SELECT num, body FROM dei_conv_state WHERE last_at >= ?');
+    $st->execute([time() - 3 * 86400]);
+    foreach ($st->fetchAll() as $r) { $b = json_decode($r['body'], true); if (is_array($b)) $out[(string)$r['num']] = $b; }
+    return $out;
+}
+// Mode mysql: hanya baris $num yang dikunci & diberikan ke $fn sebagai [$num => state].
+function convStateDbMutateOne($fn, $num) {
+    $num = waNormNum($num);
+    $db = deiDb();
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            $ins = $db->prepare("INSERT IGNORE INTO dei_conv_state (num, last_at, body) VALUES (?, 0, '{}')");
+            $ins->execute([$num]);
+            $isNew = ($ins->rowCount() === 1);
+            $db->beginTransaction();
+            $st = $db->prepare('SELECT body FROM dei_conv_state WHERE num = ? FOR UPDATE');
+            $st->execute([$num]);
+            $row = json_decode((string)$st->fetchColumn(), true);
+            $all = (!$isNew && is_array($row) && $row) ? [$num => $row] : [];
+            $res = $fn($all);
+            if (isset($all[$num]) && is_array($all[$num])) {
+                $db->prepare('UPDATE dei_conv_state SET last_at = ?, body = ? WHERE num = ?')
+                   ->execute([(int)($all[$num]['last_at'] ?? 0), logEncode($all[$num]), $num]);
+            } else {
+                $db->prepare('DELETE FROM dei_conv_state WHERE num = ?')->execute([$num]);
+            }
+            $db->commit();
+            return $res;
+        } catch (\PDOException $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            if ((int)($e->errorInfo[1] ?? 0) === 1213 && $attempt < 4) { usleep(50000 * $attempt); continue; }
+            throw $e;
+        }
+    }
+}
+
+// Lepas kunci nomor milik slot worker yang mati (dipanggil saat slot itu start lagi).
+function deiNumLockRelease($job, $slot) {
+    $j = is_array($job) ? $job : json_decode((string)$job, true);
+    $p = json_decode((string)($j['raw'] ?? ''), true);
+    if (!is_array($p)) return;
+    $r = deiRedis();
+    foreach (($p['entry'] ?? []) as $en) foreach (($en['changes'] ?? []) as $ch) foreach (($ch['value']['messages'] ?? []) as $m) {
+        $key = 'lock:wa:' . preg_replace('/\D/', '', (string)($m['from'] ?? ''));
+        $v = (string)$r->get($key);
+        if ($v !== '' && strpos($v, $slot . ':') === 0) $r->del($key);
+    }
 }
 
 function deiCariRootPayload($tmpDir) {
@@ -465,7 +901,19 @@ function searchKB($query, $max) {
 /* ----------------------------------------------------------------------------
  *  Rate limiting — per IP per hour
  * ------------------------------------------------------------------------- */
+// v1.2.71: mode antrean memakai Redis (INCR per jam); mode file memakai kunci berkas.
 function checkRateLimit($ip, $limit) {
+    if (deiQueueRedis()) {
+        try {
+            $k = 'rl:' . $ip . ':' . intdiv(time(), 3600);
+            $n = deiRedis()->incr($k);
+            if ($n === 1) deiRedis()->expire($k, 3700);
+            return $n <= $limit;
+        } catch (\Throwable $e) { error_log('ratelimit redis: ' . $e->getMessage()); return true; }
+    }
+    return deiWithLock('ratelimit', function () use ($ip, $limit) { return checkRateLimit_nolock($ip, $limit); });
+}
+function checkRateLimit_nolock($ip, $limit) {
     $store = readJson(RATELIMIT_FILE, []);
     $now = time();
     // prune entries older than 1 hour
@@ -619,7 +1067,7 @@ function waOutMonth($monthKey = null) {
 /* v1.2.57: satu sumber statistik untuk report_back, check_update & cron_tick
  * (sebelumnya hanya tombol cek update manual yang mengirim, jadi angka di pusat basi). */
 function deiCollectStats() {
-    $logs = readJson(LOG_FILE, []);
+    $logs = logReadAll();
     if (!is_array($logs)) $logs = [];
     $kb = readJson(KB_FILE, []);
     $today = wibToday();
@@ -845,7 +1293,11 @@ function deiDayCost($d) {
     return isset($d['cost']) ? (float)$d['cost'] : deiLegacyDayCost($d);
 }
 
+// v1.2.71: dibungkus kunci 'usage' supaya worker paralel tidak saling menimpa.
 function recordUsage($usage) {
+    return deiWithLock('usage', function () use ($usage) { return recordUsage_nolock($usage); });
+}
+function recordUsage_nolock($usage) {
     if (!is_array($usage) || !$usage) return;
     $path = DATA_DIR . '/usage.json';
     $all  = readJson($path, []);
@@ -1327,7 +1779,7 @@ function leadExtract($settings, $transcript) {
 // Bangun transkrip percakapan satu nomor dari log (urut lama -> baru).
 function leadBuildTranscript($number, $logs = null, $max = 40) {
     $number = preg_replace('/\D/', '', (string)$number);
-    if ($logs === null) $logs = readJson(LOG_FILE, []);
+    if ($logs === null) $logs = logReadAll();
     $rows = [];
     foreach ($logs as $e) {
         if (($e['channel'] ?? '') !== 'whatsapp') continue;
@@ -1380,6 +1832,14 @@ function leadAnalyzeNumber($settings, $number, $logs = null, $force = false) {
  * v1.2.19: kontak WA — nama pengirim dari profil WhatsApp
  * ============================================================ */
 function waGetContacts() {
+    if (deiStorageMysql()) {   // v1.2.71
+        $out = [];
+        foreach (deiDb()->query('SELECT num, body FROM dei_contacts')->fetchAll() as $r) {
+            $c = json_decode($r['body'], true);
+            if (is_array($c)) $out[(string)$r['num']] = $c;
+        }
+        return $out;
+    }
     $c = readJson(CONTACTS_FILE, []);
     return is_array($c) ? $c : [];
 }
@@ -1388,19 +1848,15 @@ function waSaveContact($number, $nameWa) {
     $number = preg_replace('/\D/', '', (string)$number);
     if ($number === '') return;
     $nameWa = trim((string)$nameWa);
-    $all = waGetContacts();
-    $now = date('Y-m-d H:i:s');
-    if (!isset($all[$number]) || !is_array($all[$number])) {
-        $all[$number] = ['name_wa' => '', 'name_manual' => '', 'first_seen' => $now, 'last_seen' => $now];
-    }
-    if ($nameWa !== '') $all[$number]['name_wa'] = mb_substr($nameWa, 0, 100);
-    $all[$number]['last_seen'] = $now;
-    writeJson(CONTACTS_FILE, $all);
+    waContactUpdate($number, function (&$c) use ($nameWa) {   // v1.2.71: atomik, dua mode
+        if ($nameWa !== '') $c['name_wa'] = mb_substr($nameWa, 0, 100);
+        $c['last_seen'] = date('Y-m-d H:i:s');
+    });
 }
 // Nama tampil: koreksi manual menang atas nama profil WhatsApp.
 function waContactName($number, $contacts = null) {
     $number = preg_replace('/\D/', '', (string)$number);
-    $all = ($contacts === null) ? waGetContacts() : $contacts;
+    $all = ($contacts === null) ? waContactsFor($number) : $contacts;   // v1.2.71
     $c = $all[$number] ?? null;
     if (!is_array($c)) return '';
     $manual = trim((string)($c['name_manual'] ?? ''));
@@ -1414,7 +1870,7 @@ function contactStageValid($s) {
 }
 function waContactStage($number, $contacts = null) {
     $number = preg_replace('/\D/', '', (string)$number);
-    $all = ($contacts === null) ? waGetContacts() : $contacts;
+    $all = ($contacts === null) ? waContactsFor($number) : $contacts;   // v1.2.71
     $c = $all[$number] ?? null;
     if (!is_array($c)) return 'new';
     $st = (string)($c['stage'] ?? 'new');
@@ -1422,7 +1878,7 @@ function waContactStage($number, $contacts = null) {
 }
 function waContactVip($number, $contacts = null) {
     $number = preg_replace('/\D/', '', (string)$number);
-    $all = ($contacts === null) ? waGetContacts() : $contacts;
+    $all = ($contacts === null) ? waContactsFor($number) : $contacts;   // v1.2.71
     $c = $all[$number] ?? null;
     if (!is_array($c)) return false;
     // VIP hanya sah nempel di stage active_customer, walau data lama entah
@@ -1434,15 +1890,11 @@ function waContactVip($number, $contacts = null) {
 function waSetContactStage($number, $stage, $vip) {
     $number = preg_replace('/\D/', '', (string)$number);
     if ($number === '' || !contactStageValid($stage)) return false;
-    $all = waGetContacts();
-    $now = date('Y-m-d H:i:s');
-    if (!isset($all[$number]) || !is_array($all[$number])) {
-        $all[$number] = ['name_wa' => '', 'name_manual' => '', 'first_seen' => $now, 'last_seen' => $now];
-    }
-    $all[$number]['stage']            = $stage;
-    $all[$number]['vip']              = ($stage === 'active_customer') ? (bool)$vip : false;
-    $all[$number]['stage_updated_at'] = $now;
-    writeJson(CONTACTS_FILE, $all);
+    waContactUpdate($number, function (&$c) use ($stage, $vip) {   // v1.2.71
+        $c['stage']            = $stage;
+        $c['vip']              = ($stage === 'active_customer') ? (bool)$vip : false;
+        $c['stage_updated_at'] = date('Y-m-d H:i:s');
+    });
     return true;
 }
 // v1.2.39 fase4: data pelanggan (nama + tanggal lahir), diisi manual saat
@@ -1451,14 +1903,10 @@ function waSetContactStage($number, $stage, $vip) {
 function waSetContactInfo($number, $custName, $custDob) {
     $number = preg_replace('/\D/', '', (string)$number);
     if ($number === '') return false;
-    $all = waGetContacts();
-    $now = date('Y-m-d H:i:s');
-    if (!isset($all[$number]) || !is_array($all[$number])) {
-        $all[$number] = ['name_wa' => '', 'name_manual' => '', 'first_seen' => $now, 'last_seen' => $now];
-    }
-    if ($custName !== null) $all[$number]['cust_name'] = mb_substr(trim((string)$custName), 0, 100);
-    if ($custDob  !== null) $all[$number]['cust_dob']  = $custDob;
-    writeJson(CONTACTS_FILE, $all);
+    waContactUpdate($number, function (&$c) use ($custName, $custDob) {   // v1.2.71
+        if ($custName !== null) $c['cust_name'] = mb_substr(trim((string)$custName), 0, 100);
+        if ($custDob  !== null) $c['cust_dob']  = $custDob;
+    });
     return true;
 }
 
@@ -2034,6 +2482,7 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     }
 
     $logs = logPrepend(array_merge($logBase, ['a' => $answer], $deiAiError ? ['ai_error' => true] : []), $logLimit);  // v1.2.17 + v1.2.58 kunci
+    if (deiStorageMysql()) $logs = logReadByNumber($from, 400);   // v1.2.71
 
     // v1.2.20: kalau percakapan sudah mencapai ambang pesan dan belum
     // punya kartu lead, jalankan analisa SEKALI. Non-blocking —
@@ -2054,11 +2503,150 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     tgNotify($s, "\xF0\x9F\x93\xA9 [WhatsApp] " . $from . ":\n\"" . $text . "\"\n\xE2\x9C\x85 dijawab bot");
 }
 
+/* v1.2.71: isi kiriman webhook Meta — dipakai webhook (mode sync) dan worker (mode redis). */
+function waHandleMetaPayload($s, $wa, $payload) {
+    if (!is_array($payload)) return;
+    if (!($wa['enabled'] ?? false)) return;
+    if (($wa['provider'] ?? 'meta') !== 'meta') return;
+    $logLimit = (int)($s['api']['log_limit'] ?? 500);
+    $keepCtx  = ($wa['keep_context'] ?? true);
+
+    foreach (($payload['entry'] ?? []) as $entry) {
+        foreach (($entry['changes'] ?? []) as $change) {
+            $messages = $change['value']['messages'] ?? [];
+            // v1.2.19: nama profil WhatsApp ada di value.contacts (sejajar messages),
+            // bukan di dalam tiap pesan. Petakan wa_id -> nama dulu.
+            $waProfileNames = [];
+            foreach (($change['value']['contacts'] ?? []) as $wc) {
+                $wcId = preg_replace('/\D/', '', (string)($wc['wa_id'] ?? ''));
+                $wcNm = trim((string)($wc['profile']['name'] ?? ''));
+                if ($wcId !== '' && $wcNm !== '') $waProfileNames[$wcId] = $wcNm;
+            }
+            foreach ($messages as $msg) {
+                $from = $msg['from'] ?? '';
+                if ($from === '') continue;
+                // v1.2.71: satu nomor diproses berurutan (mode antrean); nomor lain paralel
+                $meta = $change['value']['metadata'] ?? [];
+                deiNumLock($from, function () use ($s, $wa, $msg, $waProfileNames, $meta) {
+                    waHandleMetaMessage($s, $wa, $msg, $waProfileNames, $meta);
+                });
+            }
+
+            /* v1.2.48: COEXISTENCE — pesan yang dikirim AGENT dari app HP (echo).
+             * Tujuan: tampil di thread dashboard + bot otomatis mundur. */
+            foreach (($change['value']['message_echoes'] ?? []) as $echo) {
+                $eto = waNormNum($echo['to'] ?? ($echo['recipient_id'] ?? ''));
+                if ($eto === '') continue;
+                $etext = (($echo['type'] ?? '') === 'text') ? trim($echo['text']['body'] ?? '') : '';
+                if ($etext === '') continue;
+                try {
+                    $eid = (string)($echo['id'] ?? '');
+                    $dup = false;
+                    // v1.2.58: cek duplikat + tulis di bawah satu kunci
+                    logMutate(function (&$elogs) use ($eid, $etext, $eto, &$dup) {
+                        if ($eid !== '') { foreach ($elogs as $el) { if (($el['echo_id'] ?? '') === $eid) { $dup = true; return false; } } }
+                        array_unshift($elogs, [
+                            'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $etext, 'ip' => $eto,
+                            'channel' => 'whatsapp', 'dir' => 'manual', 'src' => 'hp', 'echo_id' => $eid,
+                            'utm_source' => 'whatsapp', 'utm_medium' => 'hp', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
+                        ]);
+                    }, $logLimit);
+                    if (!$dup) {
+                        waSetMode($eto, 'human'); // agent balas dari HP = ambil alih -> bot mundur
+                        $ecl = waClaimGet($eto);   // v1.2.58: atribusikan ke pemegang claim bila ada
+                        deiRecordAgentReply($eto, $ecl ? ($ecl['agent_username'] ?? '(HP)') : '(HP)', 'hp');
+                        convReply($eto, 'agent');   // v1.2.56
+                        if ($keepCtx) { $eh = waLoadHistory($eto); $eh[] = ['role' => 'assistant', 'content' => $etext]; waSaveHistory($eto, $eh); }
+                    }
+                } catch (\Throwable $e) { error_log('wa echo: ' . $e->getMessage()); }
+            }
+
+            /* v1.2.48: COEXISTENCE — sinkronisasi kontak dari app HP. */
+            $syncList = array_merge(
+                (array)($change['value']['smb_app_state_sync'] ?? []),
+                (array)($change['value']['state_sync'] ?? [])
+            );
+            foreach ($syncList as $sync) {
+                $cn  = waNormNum($sync['contact']['phone_number'] ?? ($sync['wa_id'] ?? ($sync['phone_number'] ?? '')));
+                $cnm = trim((string)($sync['contact']['full_name'] ?? ($sync['full_name'] ?? ($sync['name'] ?? ''))));
+                if ($cn !== '') { try { waSaveContact($cn, $cnm); } catch (\Throwable $e) {} }
+            }
+
+            /* v1.2.48: COEXISTENCE — riwayat chat lama (best-effort, sekali saat onboarding).
+             * Skema history bisa bervariasi; tulis apa yang bisa dibaca tanpa mengasumsikan terlalu dalam. */
+            foreach (($change['value']['history'] ?? []) as $hist) {
+                foreach (($hist['threads'] ?? []) as $thread) {
+                    $hnum = waNormNum($thread['id'] ?? ($thread['contact_id'] ?? ''));
+                    if ($hnum === '') continue;
+                    $hrows = [];   // v1.2.58: dikumpulkan dulu, ditulis sekali di bawah kunci
+                    foreach (($thread['messages'] ?? []) as $hm) {
+                        if (($hm['type'] ?? '') !== 'text') continue;
+                        $htext = trim($hm['text']['body'] ?? '');
+                        if ($htext === '') continue;
+                        $hfrom = waNormNum($hm['from'] ?? '');
+                        $hts   = !empty($hm['timestamp']) ? date('Y-m-d H:i:s', (int)$hm['timestamp']) : date('Y-m-d H:i:s');
+                        $outbound = ($hfrom !== '' && $hfrom !== $hnum); // dari nomor bisnis -> balasan
+                        array_unshift($hrows, [
+                            'ts' => $hts,
+                            'q' => $outbound ? '' : $htext,
+                            'a' => $outbound ? $htext : '',
+                            'ip' => $hnum, 'channel' => 'whatsapp',
+                            'dir' => $outbound ? 'manual' : 'in', 'src' => 'history',
+                            'utm_source' => 'whatsapp', 'utm_medium' => 'history', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
+                        ]);
+                    }
+                    if ($hrows) logMutate(function (&$hlogs) use ($hrows) { $hlogs = array_merge($hrows, $hlogs); }, max($logLimit, 2000));
+                }
+            }
+        }
+    }
+}
+
+/* v1.2.71: satu pesan masuk dari Meta. Kiriman ulang Meta (wamid sama) diabaikan. */
+function waHandleMetaMessage($s, $wa, $msg, $waProfileNames, $metadata) {
+    $from = $msg['from'] ?? '';
+    if ($from === '') return;
+    $wamid = (string)($msg['id'] ?? '');
+    if ($wamid !== '' && waMsgSeen($wamid)) return;
+    try {
+        // v1.2.19: simpan nama kontak (tidak menimpa koreksi manual)
+        $deiFromKey = preg_replace('/\D/', '', (string)$from);
+        $deiWaName  = $waProfileNames[$deiFromKey] ?? '';
+        try { waSaveContact($from, $deiWaName); }
+        catch (\Throwable $e) { error_log('waSaveContact: ' . $e->getMessage()); }
+
+        if (($msg['type'] ?? '') !== 'text') {
+            // v1.2.58: mode Manual tidak membalas otomatis; tandai saja supaya agent tahu
+            if (deiIsManual($s)) {
+                waProcessIncoming($s, $wa, $from, deiNonTextLabel($msg['type'] ?? ''), $deiWaName, $metadata);
+                return;
+            }
+            waSend($wa, $from, 'Maaf, untuk saat ini saya hanya bisa membalas pesan teks.');
+            return;
+        }
+        $text = trim($msg['text']['body'] ?? '');
+        if ($text === '') return;
+        // v1.2.36: alur pemrosesan dipindah ke fungsi bersama
+        waProcessIncoming($s, $wa, $from, $text, $deiWaName, $metadata);
+    } finally {
+        // Ditandai juga saat gagal di tengah jalan: lebih baik tidak dibalas ganda.
+        if ($wamid !== '') waMsgMarkSeen($wamid);
+    }
+}
+
 // Per-number short conversation memory (flat-file, expires after 6h idle).
 function waSessionFile($from) {
     return WA_SESSIONS_DIR . '/' . preg_replace('/[^0-9]/', '', (string)$from) . '.json';
 }
 function waLoadHistory($from) {
+    if (deiStorageMysql()) {   // v1.2.71
+        $st = deiDb()->prepare('SELECT ts, turns FROM dei_wa_sessions WHERE num = ?');
+        $st->execute([preg_replace('/[^0-9]/', '', (string)$from)]);
+        $r = $st->fetch();
+        if (!$r || (int)$r['ts'] < time() - 6 * 3600) return [];
+        $t = json_decode($r['turns'], true);
+        return is_array($t) ? $t : [];
+    }
     $f = waSessionFile($from);
     if (!is_file($f)) return [];
     $d = json_decode(@file_get_contents($f), true);
@@ -2067,6 +2655,11 @@ function waLoadHistory($from) {
     return $d['turns'];
 }
 function waSaveHistory($from, $turns) {
+    if (deiStorageMysql()) {   // v1.2.71
+        deiDb()->prepare('INSERT INTO dei_wa_sessions (num, ts, turns) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE ts = VALUES(ts), turns = VALUES(turns)')
+            ->execute([preg_replace('/[^0-9]/', '', (string)$from), time(), logEncode(array_values(array_slice($turns, -16)))]);
+        return;
+    }
     if (!is_dir(WA_SESSIONS_DIR)) @mkdir(WA_SESSIONS_DIR, 0755, true);
     @file_put_contents(waSessionFile($from), json_encode(['ts' => time(), 'turns' => array_slice($turns, -16)], JSON_UNESCAPED_UNICODE), LOCK_EX);
 }
@@ -2081,7 +2674,8 @@ function respondAndContinue($body = 'EVENT_RECEIVED') {
     header('Content-Length: ' . strlen($body));
     header('Connection: close');
     echo $body;
-    fastcgi_finish_request();
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+    elseif (function_exists('litespeed_finish_request')) litespeed_finish_request();   // v1.2.71: LiteSpeed (Niagahoster)
 }
 
 /* ----------------------------------------------------------------------------
@@ -2095,7 +2689,11 @@ function waGetMode($from) {
     $k = waNormNum($from);
     return (isset($modes[$k]['mode']) && $modes[$k]['mode'] === 'human') ? 'human' : 'bot';
 }
+// v1.2.71: dibungkus kunci 'wa-modes' supaya worker paralel tidak saling menimpa.
 function waSetMode($from, $mode) {
+    return deiWithLock('wa-modes', function () use ($from, $mode) { return waSetMode_nolock($from, $mode); });
+}
+function waSetMode_nolock($from, $mode) {
     $modes = readJson(WA_MODES_FILE, []);
     $k = waNormNum($from);
     if ($mode === 'human') {
@@ -2117,7 +2715,11 @@ define('WA_MODE_IDLE_SEC', 3600);   // 1 jam
 // Nomor yang masih dipegang agent (ada claim) DILEWATI — percakapan itu punya
 // aturannya sendiri lewat waClaimAutoProcess (lepas otomatis 30 menit), dan bot
 // tidak boleh menyela pekerjaan yang sedang berjalan.
+// v1.2.71: dibungkus kunci 'wa-modes' supaya worker paralel tidak saling menimpa.
 function waModeSweepIdle() {
+    return deiWithLock('wa-modes', function () { return waModeSweepIdle_nolock(); });
+}
+function waModeSweepIdle_nolock() {
     if (deiIsManual()) return 0;          // v1.2.58: tidak ada bot untuk dikembalikan
     $modes = readJson(WA_MODES_FILE, []);
     if (empty($modes) || !is_array($modes)) return 0;
@@ -2394,7 +2996,7 @@ function deiLogMatch($e, $f, $skip = '') {
 }
 // Nama kontak WA (manual > profil WA) ditempel sebagai _name supaya bisa dicari & ditampilkan
 function deiLogWithNames($logs) {
-    $c = readJson(DATA_DIR . '/wa-contacts.json', []);
+    $c = waGetContacts();   // v1.2.71
     if (!is_array($c) || !$c) return $logs;
     foreach ($logs as &$e) {
         if (($e['channel'] ?? 'web') !== 'whatsapp') continue;
@@ -2425,7 +3027,7 @@ function deiTopicPeriods() { return [7, 14, 30, 60, 90, 180, 365]; }
 function deiTopicUnits($days, $channel) {
     $from = wibDate('Y-m-d', time() - ($days - 1) * 86400);
     $to   = wibDate('Y-m-d');
-    $logs = readJson(LOG_FILE, []);
+    $logs = logReadAll();
     $oldest = '';
     $units = [];
     foreach ($logs as $e) {
@@ -2659,7 +3261,7 @@ function waAgentRepliedTouch($num) {
 // Satu pintu untuk semua balasan agent (dashboard / HP): jejak + event laporan.
 function deiRecordAgentReply($num, $agent, $src = 'dashboard') {
     try {
-        $cs = readJson(CONV_STATE_FILE, []);
+        $cs = convStateReadAll();
         $since = (int)($cs[waNormNum($num)]['guest_waiting_since'] ?? 0);   // dibaca SEBELUM convReply mengosongkannya
         $prev = waAgentRepliedTouch($num);
         $first = ($prev === 0 || (time() - $prev) > 86400);                  // balasan pertama sesi (jeda > 24 jam)
@@ -2739,7 +3341,11 @@ function waClaimGetAll() {
 }
 
 /** Set claim state untuk 1 nomor. Pass null untuk release (hapus entry). */
+// v1.2.71: dibungkus kunci 'wa-claims' supaya worker paralel tidak saling menimpa.
 function waClaimSet($number, $claim) {
+    return deiWithLock('wa-claims', function () use ($number, $claim) { return waClaimSet_nolock($number, $claim); });
+}
+function waClaimSet_nolock($number, $claim) {
     $number = waNormNum($number);
     if ($number === '') return false;
     $claims = readJson(waClaimFile(), []);
@@ -2757,7 +3363,11 @@ function waClaimSet($number, $claim) {
 }
 
 /** Update last_agent_activity untuk 1 nomor (dipanggil saat agent kirim manual reply). */
+// v1.2.71: dibungkus kunci 'wa-claims' supaya worker paralel tidak saling menimpa.
 function waClaimTouchActivity($number, $agent) {
+    return deiWithLock('wa-claims', function () use ($number, $agent) { return waClaimTouchActivity_nolock($number, $agent); });
+}
+function waClaimTouchActivity_nolock($number, $agent) {
     $number = waNormNum($number);
     if ($number === '') return;
     $claims = readJson(waClaimFile(), []);
@@ -2768,7 +3378,11 @@ function waClaimTouchActivity($number, $agent) {
 }
 
 /** Write audit log entry. Keep last 500 entries. */
+// v1.2.71: dibungkus kunci 'wa-audit' supaya worker paralel tidak saling menimpa.
 function waAuditLog($action, $agent, $number, $extra = []) {
+    return deiWithLock('wa-audit', function () use ($action, $agent, $number, $extra) { return waAuditLog_nolock($action, $agent, $number, $extra); });
+}
+function waAuditLog_nolock($action, $agent, $number, $extra = []) {
     $entries = readJson(waAuditLogFile(), []);
     $entry = [
         'ts' => date('Y-m-d H:i:s'),
@@ -2788,7 +3402,11 @@ function waAuditLog($action, $agent, $number, $extra = []) {
  * - takeover_request pending > 5 menit → auto approve
  * Return: [released_count, approved_count]
  */
+// v1.2.71: dibungkus kunci 'wa-claims' supaya worker paralel tidak saling menimpa.
 function waClaimAutoProcess() {
+    return deiWithLock('wa-claims', function () { return waClaimAutoProcess_nolock(); });
+}
+function waClaimAutoProcess_nolock() {
     $claims = readJson(waClaimFile(), []);
     if (empty($claims)) return [0, 0];
 
@@ -2977,7 +3595,12 @@ function deiIsClosingPhrase($t) {
 }
 
 /* ---------- conv-state: baca-ubah-tulis di bawah satu kunci ---------- */
-function convStateMutate($fn) {
+function convStateMutate($fn, $num = null) {
+    // v1.2.71: mode mysql mengunci satu baris; $num wajib (semua pemanggil mengubah satu nomor)
+    if (deiStorageMysql()) {
+        if ($num === null || waNormNum($num) === '') throw new \RuntimeException('convStateMutate: $num wajib di mode mysql');
+        return convStateDbMutateOne($fn, $num);
+    }
     $lock = @fopen(DATA_DIR . '/conv-state.lock', 'c');
     if ($lock) @flock($lock, LOCK_EX);
     $res = null;
@@ -3018,7 +3641,7 @@ function convGuestMsg($num, $text) {
             $st['closing_sent_at'] = 0;
             $st['last_guest_text'] = mb_substr((string)$text, 0, 160);
             $all[$num] = $st;
-        });
+        }, $num);
     } catch (\Throwable $e) { error_log('convGuestMsg: ' . $e->getMessage()); }
 }
 
@@ -3037,7 +3660,7 @@ function convReply($num, $who) {
             $st['closing_sent_at'] = 0;
             $all[$num] = $st;
             return $inc;
-        });
+        }, $num);
         if ($inc !== '' && $inc !== null) escResolve($inc, $who);
     } catch (\Throwable $e) { error_log('convReply: ' . $e->getMessage()); }
 }
@@ -3192,7 +3815,7 @@ function autoClosingSweep($s) {
     if (!$ac['enabled'] || !deiInHours($ac['hours'])) return [];
     $wa = waConf($s);
     if (!($wa['enabled'] ?? false)) return [];
-    $all = readJson(CONV_STATE_FILE, []);
+    $all = convStateReadAll();
     if (!is_array($all) || empty($all)) return [];
     $now = time();
     $batas = $ac['minutes'] * 60;
@@ -3212,7 +3835,7 @@ function autoClosingSweep($s) {
             if (($a[$num]['last_from'] ?? '') !== 'bot' || (int)($a[$num]['last_at'] ?? 0) !== $lastAt || !empty($a[$num]['closing_sent_at'])) return false;
             $a[$num]['closing_sent_at'] = time();
             return true;
-        });
+        }, $num);
         if (!$klaim) continue;
 
         $text = deiAcText($ac, (string)($st['lang'] ?? 'id'));
@@ -3251,7 +3874,7 @@ function escBuildText($tenant, $menit, $kontak, $pesan, $reason, $L) {
 function escalationSweep($s) {
     $ec = deiEscConf($s);
     if (!$ec['enabled'] || !deiInHours($ec['hours'])) return [];
-    $all = readJson(CONV_STATE_FILE, []);
+    $all = convStateReadAll();
     if (!is_array($all) || empty($all)) return [];
     $now = time();
     $out = [];
@@ -3277,7 +3900,7 @@ function escalationSweep($s) {
             $a[$num]['esc_level'] = $target;
             $a[$num]['esc_inc'] = $incId;
             return true;
-        });
+        }, $num);
         if (!$ok) continue;
 
         $menit = (int)floor($wait / 60);
@@ -3745,24 +4368,14 @@ switch ($action) {
         // Masuk ke daftar Kontak supaya bisa di-follow up / blast WhatsApp.
         if ($lf['save_contact']) {
             try {
-                $allC = waGetContacts();
-                if (!isset($allC[$phone]) || !is_array($allC[$phone])) {
-                    $allC[$phone] = [
-                        'name_wa'    => '',
-                        'name_manual'=> '',
-                        'first_seen' => $now,
-                        'last_seen'  => $now,
-                        'stage'      => 'new',
-                    ];
-                }
-                // Koreksi manual agent tidak ditimpa.
-                if (trim((string)($allC[$phone]['name_manual'] ?? '')) === '') {
-                    $allC[$phone]['name_manual'] = $name;
-                }
-                $allC[$phone]['last_seen']   = $now;
-                $allC[$phone]['web_consent'] = $consent;
-                if (empty($allC[$phone]['source'])) $allC[$phone]['source'] = 'web_widget';
-                writeJson(CONTACTS_FILE, $allC);
+                waContactUpdate($phone, function (&$c, $isNew) use ($name, $consent, $now) {   // v1.2.71
+                    if ($isNew) $c['stage'] = 'new';
+                    // Koreksi manual agent tidak ditimpa.
+                    if (trim((string)($c['name_manual'] ?? '')) === '') $c['name_manual'] = $name;
+                    $c['last_seen']   = $now;
+                    $c['web_consent'] = $consent;
+                    if (empty($c['source'])) $c['source'] = 'web_widget';
+                });
             } catch (\Throwable $e) { error_log('web_lead_save contact: ' . $e->getMessage()); }
         }
 
@@ -3895,7 +4508,7 @@ switch ($action) {
             jsonOut(['ok' => false, 'error' => 'Migrasi sudah pernah dijalankan. Tambahkan &force=1 untuk mengulang.'], 409);
         }
 
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         // Kelompokkan entri channel 'web' per IP per hari
         $groups = [];
         foreach ($logs as $e) {
@@ -4134,10 +4747,21 @@ switch ($action) {
             exit;
         }
 
+        // v1.2.71: mode antrean — simpan & antre, Meta langsung dapat 200; worker yang memproses.
+        // Kalau Redis bermasalah, jatuh ke pemrosesan langsung (perilaku lama).
+        if (deiQueueRedis()) {
+            try {
+                deiRedis()->lPush('q:wa', json_encode(['raw' => $raw, 'at' => time(), 'try' => 0]));
+                http_response_code(200);
+                echo 'EVENT_RECEIVED';
+                exit;
+            } catch (\Throwable $e) { error_log('antrean WA gagal, proses langsung: ' . $e->getMessage()); }
+        }
+
         // Acknowledge Meta right away on PHP-FPM, then keep working in the
         // background. On other SAPIs, process synchronously and reply at the end
         // (fast enough for Meta's window since Haiku replies in a few seconds).
-        $earlyAck = function_exists('fastcgi_finish_request');
+        $earlyAck = function_exists('fastcgi_finish_request') || function_exists('litespeed_finish_request');   // v1.2.71
         if ($earlyAck) respondAndContinue('EVENT_RECEIVED');
         @set_time_limit(60);
 
@@ -4146,113 +4770,7 @@ switch ($action) {
         // supaya pesan tidak masuk lewat satu nomor lalu dibalas dari nomor lain.
         if (($wa['provider'] ?? 'meta') !== 'meta') { if (!$earlyAck) { echo 'EVENT_RECEIVED'; } exit; }
 
-        $payload  = json_decode($raw, true);
-        $logLimit = (int)($s['api']['log_limit'] ?? 500);
-        $keepCtx  = ($wa['keep_context'] ?? true);
-
-        foreach (($payload['entry'] ?? []) as $entry) {
-            foreach (($entry['changes'] ?? []) as $change) {
-                $messages = $change['value']['messages'] ?? [];
-                // v1.2.19: nama profil WhatsApp ada di value.contacts (sejajar messages),
-                // bukan di dalam tiap pesan. Petakan wa_id -> nama dulu.
-                $waProfileNames = [];
-                foreach (($change['value']['contacts'] ?? []) as $wc) {
-                    $wcId = preg_replace('/\D/', '', (string)($wc['wa_id'] ?? ''));
-                    $wcNm = trim((string)($wc['profile']['name'] ?? ''));
-                    if ($wcId !== '' && $wcNm !== '') $waProfileNames[$wcId] = $wcNm;
-                }
-                foreach ($messages as $msg) {
-                    $from = $msg['from'] ?? '';
-                    if ($from === '') continue;
-                    // v1.2.19: simpan nama kontak (tidak menimpa koreksi manual)
-                    $deiFromKey = preg_replace('/\D/', '', (string)$from);
-                    $deiWaName  = $waProfileNames[$deiFromKey] ?? '';
-                    try { waSaveContact($from, $deiWaName); }
-                    catch (\Throwable $e) { error_log('waSaveContact: ' . $e->getMessage()); }
-
-                    if (($msg['type'] ?? '') !== 'text') {
-                        // v1.2.58: mode Manual tidak membalas otomatis; tandai saja supaya agent tahu
-                        if (deiIsManual($s)) {
-                            waProcessIncoming($s, $wa, $from, deiNonTextLabel($msg['type'] ?? ''), $deiWaName, $change['value']['metadata'] ?? []);
-                            continue;
-                        }
-                        waSend($wa, $from, 'Maaf, untuk saat ini saya hanya bisa membalas pesan teks.');
-                        continue;
-                    }
-                    $text = trim($msg['text']['body'] ?? '');
-                    if ($text === '') continue;
-                    // v1.2.36: alur pemrosesan dipindah ke fungsi bersama
-                    waProcessIncoming($s, $wa, $from, $text, $deiWaName, $change['value']['metadata'] ?? []);
-                }
-
-                /* v1.2.48: COEXISTENCE — pesan yang dikirim AGENT dari app HP (echo).
-                 * Tujuan: tampil di thread dashboard + bot otomatis mundur. */
-                foreach (($change['value']['message_echoes'] ?? []) as $echo) {
-                    $eto = waNormNum($echo['to'] ?? ($echo['recipient_id'] ?? ''));
-                    if ($eto === '') continue;
-                    $etext = (($echo['type'] ?? '') === 'text') ? trim($echo['text']['body'] ?? '') : '';
-                    if ($etext === '') continue;
-                    try {
-                        $eid = (string)($echo['id'] ?? '');
-                        $dup = false;
-                        // v1.2.58: cek duplikat + tulis di bawah satu kunci
-                        logMutate(function (&$elogs) use ($eid, $etext, $eto, &$dup) {
-                            if ($eid !== '') { foreach ($elogs as $el) { if (($el['echo_id'] ?? '') === $eid) { $dup = true; return false; } } }
-                            array_unshift($elogs, [
-                                'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $etext, 'ip' => $eto,
-                                'channel' => 'whatsapp', 'dir' => 'manual', 'src' => 'hp', 'echo_id' => $eid,
-                                'utm_source' => 'whatsapp', 'utm_medium' => 'hp', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
-                            ]);
-                        }, $logLimit);
-                        if (!$dup) {
-                            waSetMode($eto, 'human'); // agent balas dari HP = ambil alih -> bot mundur
-                            $ecl = waClaimGet($eto);   // v1.2.58: atribusikan ke pemegang claim bila ada
-                            deiRecordAgentReply($eto, $ecl ? ($ecl['agent_username'] ?? '(HP)') : '(HP)', 'hp');
-                            convReply($eto, 'agent');   // v1.2.56
-                            if ($keepCtx) { $eh = waLoadHistory($eto); $eh[] = ['role' => 'assistant', 'content' => $etext]; waSaveHistory($eto, $eh); }
-                        }
-                    } catch (\Throwable $e) { error_log('wa echo: ' . $e->getMessage()); }
-                }
-
-                /* v1.2.48: COEXISTENCE — sinkronisasi kontak dari app HP. */
-                $syncList = array_merge(
-                    (array)($change['value']['smb_app_state_sync'] ?? []),
-                    (array)($change['value']['state_sync'] ?? [])
-                );
-                foreach ($syncList as $sync) {
-                    $cn  = waNormNum($sync['contact']['phone_number'] ?? ($sync['wa_id'] ?? ($sync['phone_number'] ?? '')));
-                    $cnm = trim((string)($sync['contact']['full_name'] ?? ($sync['full_name'] ?? ($sync['name'] ?? ''))));
-                    if ($cn !== '') { try { waSaveContact($cn, $cnm); } catch (\Throwable $e) {} }
-                }
-
-                /* v1.2.48: COEXISTENCE — riwayat chat lama (best-effort, sekali saat onboarding).
-                 * Skema history bisa bervariasi; tulis apa yang bisa dibaca tanpa mengasumsikan terlalu dalam. */
-                foreach (($change['value']['history'] ?? []) as $hist) {
-                    foreach (($hist['threads'] ?? []) as $thread) {
-                        $hnum = waNormNum($thread['id'] ?? ($thread['contact_id'] ?? ''));
-                        if ($hnum === '') continue;
-                        $hrows = [];   // v1.2.58: dikumpulkan dulu, ditulis sekali di bawah kunci
-                        foreach (($thread['messages'] ?? []) as $hm) {
-                            if (($hm['type'] ?? '') !== 'text') continue;
-                            $htext = trim($hm['text']['body'] ?? '');
-                            if ($htext === '') continue;
-                            $hfrom = waNormNum($hm['from'] ?? '');
-                            $hts   = !empty($hm['timestamp']) ? date('Y-m-d H:i:s', (int)$hm['timestamp']) : date('Y-m-d H:i:s');
-                            $outbound = ($hfrom !== '' && $hfrom !== $hnum); // dari nomor bisnis -> balasan
-                            array_unshift($hrows, [
-                                'ts' => $hts,
-                                'q' => $outbound ? '' : $htext,
-                                'a' => $outbound ? $htext : '',
-                                'ip' => $hnum, 'channel' => 'whatsapp',
-                                'dir' => $outbound ? 'manual' : 'in', 'src' => 'history',
-                                'utm_source' => 'whatsapp', 'utm_medium' => 'history', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
-                            ]);
-                        }
-                        if ($hrows) logMutate(function (&$hlogs) use ($hrows) { $hlogs = array_merge($hrows, $hlogs); }, max($logLimit, 2000));
-                    }
-                }
-            }
-        }
+        waHandleMetaPayload($s, $wa, json_decode($raw, true));   // v1.2.71: isi loop pindah ke fungsi bersama
         if (!$earlyAck) { echo 'EVENT_RECEIVED'; }
         exit;
     }
@@ -4278,7 +4796,7 @@ switch ($action) {
 
         $raw = file_get_contents('php://input');
 
-        $earlyAck = function_exists('fastcgi_finish_request');
+        $earlyAck = function_exists('fastcgi_finish_request') || function_exists('litespeed_finish_request');   // v1.2.71
         if ($earlyAck) respondAndContinue('OK');
         @set_time_limit(60);
 
@@ -4363,7 +4881,7 @@ switch ($action) {
     /* ---------- ADMIN: WhatsApp conversations (handoff inbox) ---------- */
     case 'wa_conversations': {
         requireAuth(['super_admin','admin','wa_agent']);
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         $byNum = [];
         foreach ($logs as $e) {                       // logs are newest-first
             if (($e['channel'] ?? '') !== 'whatsapp') continue;
@@ -4546,7 +5064,7 @@ switch ($action) {
         // Kumpulkan SEMUA nomor WA yang pernah muncul di log (bukan hanya yang
         // sudah punya nama), lalu gabungkan dengan nama dari wa-contacts.json.
         $seen = [];
-        foreach (readJson(LOG_FILE, []) as $e) {
+        foreach (logReadAll() as $e) {
             if (($e['channel'] ?? '') !== 'whatsapp') continue;
             $n = preg_replace('/\D/', '', (string)($e['ip'] ?? ''));
             if ($n !== '' && !isset($seen[$n])) $seen[$n] = ($e['ts'] ?? '');
@@ -4595,14 +5113,8 @@ switch ($action) {
         if ($num === '') jsonOut(['ok' => false, 'error' => 'Nomor tidak valid.'], 400);
         $nm  = trim((string)($in['name'] ?? ''));
         if (mb_strlen($nm) > 100) $nm = mb_substr($nm, 0, 100);
-        $all = waGetContacts();
-        $now = date('Y-m-d H:i:s');
-        if (!isset($all[$num]) || !is_array($all[$num])) {
-            $all[$num] = ['name_wa' => '', 'name_manual' => '', 'first_seen' => $now, 'last_seen' => $now];
-        }
-        $all[$num]['name_manual'] = $nm;   // kosong = kembali pakai nama profil WA
-        writeJson(CONTACTS_FILE, $all);
-        jsonOut(['ok' => true, 'number' => $num, 'name' => waContactName($num, $all)]);
+        waContactUpdate($num, function (&$c) use ($nm) { $c['name_manual'] = $nm; });   // v1.2.71; kosong = kembali pakai nama profil WA
+        jsonOut(['ok' => true, 'number' => $num, 'name' => waContactName($num)]);
         break;
     }
 
@@ -4676,7 +5188,7 @@ switch ($action) {
         $num = waNormNum($_GET['number'] ?? '');
         if ($num === '') jsonOut(['ok' => false, 'error' => 'number wajib'], 400);
         deiGuardAgentPrivate($u, $num);   // v1.2.58
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         $msgs = [];
         $lastInbound = 0;
         foreach ($logs as $e) {
@@ -4728,7 +5240,7 @@ switch ($action) {
             }
         }
 
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         $lastInbound = 0;
         foreach ($logs as $e) {
             if (($e['channel'] ?? '') === 'whatsapp' && waNormNum($e['ip'] ?? '') === $num && ($e['q'] ?? '') !== '') {
@@ -5178,7 +5690,7 @@ switch ($action) {
 
         $grup = [];
         $dipindai = 0;
-        foreach (readJson(LOG_FILE, []) as $e) {
+        foreach (logReadAll() as $e) {
             // kegagalan SISTEM bukan lubang pengetahuan — jangan ikut dihitung
             if (!empty($e['cap_reached']) || !empty($e['suspended']) || !empty($e['ai_error'])) continue;
             if (in_array(($e['dir'] ?? ''), ['manual', 'closing'], true)) continue;   // balasan agent, bukan bot
@@ -5528,7 +6040,7 @@ switch ($action) {
     /* ---------- logs (admin only) ---------- */
     case 'get_logs': {
         requireAuth(['super_admin', 'admin', 'supervisor']);
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         $limit = (int)($_GET['limit'] ?? 200);
         if ($limit > 0) $logs = array_slice($logs, 0, $limit);
         jsonOut(['ok' => true, 'logs' => $logs]);
@@ -5538,7 +6050,7 @@ switch ($action) {
     /* ---------- report / stats with UTM aggregation (admin only) ---------- */
     case 'report': {
         requireAuth(['super_admin', 'admin', 'supervisor']);
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         $kb = readJson(KB_FILE, []);
         $today = date('Y-m-d');
 
@@ -5759,7 +6271,7 @@ switch ($action) {
         $per  = (int)($_GET['per'] ?? 25);
         if (!in_array($per, [25, 50, 100], true)) $per = 25;
         $page = max(1, (int)($_GET['page'] ?? 1));
-        $logs = deiLogWithNames(readJson(LOG_FILE, []));
+        $logs = deiLogWithNames(logReadAll());
         usort($logs, function ($a, $b) { return strcmp((string)($b['ts'] ?? ''), (string)($a['ts'] ?? '')); });
 
         $rows = [];
@@ -5809,7 +6321,7 @@ switch ($action) {
         // v1.2.66: filter sama dengan logs_query (channel/source/medium/campaign/status/cari)
         $f = deiLogParams($_GET);
         $from = $f['from']; $to = $f['to'];
-        $logs = deiLogWithNames(readJson(LOG_FILE, []));
+        $logs = deiLogWithNames(logReadAll());
 
         $rows = [];
         foreach ($logs as $l) {
@@ -6429,7 +6941,7 @@ switch ($action) {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = wibDate('Y-m-d', time() - 89 * 86400);
         if ($from > $to) { $swapD = $from; $from = $to; $to = $swapD; }
 
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         if (!is_array($logs)) $logs = [];
 
         $daily = [];   // tanggal => pencacah
@@ -6560,7 +7072,7 @@ switch ($action) {
     }
 
     case 'update_check': {
-        requireAuth(['super_admin']);
+        if (PHP_SAPI !== 'cli') requireAuth(['super_admin']);   // v1.2.71: CLI = admin server
         $s = getSettings();
         $cs = $s['central_server'] ?? [];
         if (empty($cs['url']) || empty($cs['tenant_id']) || empty($cs['license_key'])) {
@@ -6666,6 +7178,12 @@ switch ($action) {
             writeJson(CAP_CACHE_FILE, $capCache);
         }
 
+        // v1.2.71: `php api/index.php action=update_cli` -> langsung pasang, tanpa dashboard
+        if (!empty($GLOBALS['dei_cli_chain'])) {
+            if (empty($data['update_available'])) { echo "update_cli: sudah versi terbaru ($current)\n"; exit(0); }
+            $GLOBALS['dei_cli_update'] = ['zip_url' => $data['zip_url'] ?? '', 'manifest_url' => $data['manifest_url'] ?? '', 'target' => $data['latest'] ?? ''];
+            goto dei_cli_update_apply;
+        }
         jsonOut([
             'ok'               => true,
             'current'          => $current,
@@ -6683,8 +7201,9 @@ switch ($action) {
     }
 
     case 'update_apply': {
-        requireAuth(['super_admin']);
-        $in = bodyInput();
+        dei_cli_update_apply:   // v1.2.71: tujuan lompatan update_cli
+        if (PHP_SAPI === 'cli' && !empty($GLOBALS['dei_cli_update'])) { $in = $GLOBALS['dei_cli_update']; }
+        else { requireAuth(['super_admin']); $in = bodyInput(); }
         $zipUrl      = (string)($in['zip_url']      ?? '');
         $manifestUrl = (string)($in['manifest_url'] ?? '');
         $target      = (string)($in['target']       ?? '');     // expected version, mis. "v1.1.1"
@@ -6927,6 +7446,124 @@ switch ($action) {
         break;
     }
 
+    /* ---------- CLI (v1.2.71): worker antrean WA — mode queue=redis ----------
+     * Dijalankan supervisord: php api/index.php action=wa_worker slot=<n>
+     * Berhenti sendiri setelah max_jobs / max_sec supaya memori selalu segar. */
+    case 'wa_worker': {
+        if (PHP_SAPI !== 'cli') jsonOut(['ok' => false, 'error' => 'Hanya lewat CLI.'], 403);
+        if (!deiQueueRedis()) { fwrite(STDERR, "wa_worker: queue bukan redis (lihat data/server.php)\n"); exit(1); }
+        @set_time_limit(0);
+        $slot    = preg_replace('/[^0-9a-z_-]/i', '', (string)($_GET['slot'] ?? '0'));
+        if ($slot === '') $slot = '0';
+        $maxJobs = max(1, (int)($_GET['max_jobs'] ?? 500));
+        $maxSec  = max(5, (int)($_GET['max_sec'] ?? 3600));
+        $rq   = deiRedis();
+        $proc = 'q:wa:proc:' . $slot;
+        $GLOBALS['dei_worker_slot'] = 'w' . $slot;
+        // Job yang tertinggal dari proses slot ini sebelumnya (mati di tengah jalan) -> antre ulang di depan.
+        while (($left = $rq->rPop($proc)) !== false && $left !== null) {
+            $lj = json_decode($left, true);
+            deiNumLockRelease($lj, 'w' . $slot);   // kunci nomor yang ditinggal proses mati
+            $lj['try'] = (int)($lj['try'] ?? 0) + 1;
+            if ($lj['try'] >= 3) { $rq->lPush('q:wa:dead', $left); $rq->lTrim('q:wa:dead', 0, 999); continue; }
+            $rq->rPush('q:wa', json_encode($lj));
+            error_log("wa_worker[$slot]: job tertinggal diantre ulang (percobaan {$lj['try']})");
+        }
+        $t0 = time(); $done = 0;
+        while ($done < $maxJobs && (time() - $t0) < $maxSec) {
+            $rq->set('w:hb:' . $slot, time(), ['ex' => 30]);
+            $job = $rq->brPopLPush('q:wa', $proc, 5);
+            if ($job === false || $job === null || $job === '') continue;
+            $done++;
+            $j = json_decode($job, true);
+            unset($GLOBALS['dei_reply_mode_cache'], $GLOBALS['dei_features_cache']);   // settings bisa berubah antar job
+            try {
+                $s  = getSettings();
+                $wa = waConf($s);
+                waHandleMetaPayload($s, $wa, json_decode((string)($j['raw'] ?? ''), true));
+            } catch (\Throwable $e) {
+                error_log("wa_worker[$slot]: " . $e->getMessage());
+                $try = (int)($j['try'] ?? 0) + 1;
+                if ($try < 3) { $j['try'] = $try; $rq->lPush('q:wa', json_encode($j)); }
+                else { $rq->lPush('q:wa:dead', $job); $rq->lTrim('q:wa:dead', 0, 999); }
+            }
+            $rq->lRem($proc, $job, 1);
+        }
+        exit(0);
+    }
+
+    /* ---------- CLI (v1.2.71): status antrean untuk pemantauan ---------- */
+    case 'wa_queue_status': {
+        if (PHP_SAPI !== 'cli') jsonOut(['ok' => false, 'error' => 'Hanya lewat CLI.'], 403);
+        $out = ['ok' => true, 'version' => DEI_VERSION, 'storage' => deiServerConf()['storage'], 'queue' => deiServerConf()['queue']];
+        if (deiQueueRedis()) {
+            $rq = deiRedis();
+            $out['pending'] = (int)$rq->lLen('q:wa');
+            $out['dead']    = (int)$rq->lLen('q:wa:dead');
+            $alive = 0;
+            for ($i = 0; $i < 64; $i++) { if ($rq->exists('w:hb:' . $i)) $alive++; }
+            $out['workers_alive'] = $alive;
+        }
+        echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        exit(0);
+    }
+
+    /* ---------- CLI (v1.2.71): buat tabel MySQL ---------- */
+    case 'db_init': {
+        if (PHP_SAPI !== 'cli') jsonOut(['ok' => false, 'error' => 'Hanya lewat CLI.'], 403);
+        if (!deiStorageMysql()) { fwrite(STDERR, "db_init: storage bukan mysql (lihat data/server.php)\n"); exit(1); }
+        foreach (deiDbSchema() as $sql) deiDb()->exec($sql);
+        echo "db_init: OK (" . count(deiDbSchema()) . " tabel)\n";
+        exit(0);
+    }
+
+    /* ---------- CLI (v1.2.71): pindahkan data JSON lama ke MySQL ----------
+     * Sekali saat tenant pindah ke server sendiri. Tabel harus kosong kecuali force=1. */
+    case 'db_import': {
+        if (PHP_SAPI !== 'cli') jsonOut(['ok' => false, 'error' => 'Hanya lewat CLI.'], 403);
+        if (!deiStorageMysql()) { fwrite(STDERR, "db_import: storage bukan mysql\n"); exit(1); }
+        $db = deiDb();
+        foreach (deiDbSchema() as $sql) $db->exec($sql);
+        $force = !empty($_GET['force']);
+        $res = [];
+        if ($force || !(int)$db->query('SELECT COUNT(*) FROM dei_log')->fetchColumn()) {
+            $old = readJson(LOG_FILE, []);   // cek-storage: boleh (impor sekali)
+            $db->beginTransaction();
+            foreach (array_reverse(is_array($old) ? $old : []) as $e) { if (is_array($e)) logDbInsert($e); }
+            $db->commit();
+            $res['log'] = is_array($old) ? count($old) : 0;
+        } else $res['log'] = 'dilewati (tabel tidak kosong)';
+        if ($force || !(int)$db->query('SELECT COUNT(*) FROM dei_contacts')->fetchColumn()) {
+            $old = readJson(CONTACTS_FILE, []);   // cek-storage: boleh (impor sekali)
+            $up = $db->prepare('INSERT INTO dei_contacts (num, body) VALUES (?, ?) ON DUPLICATE KEY UPDATE body = VALUES(body)');
+            $n = 0;
+            foreach ((is_array($old) ? $old : []) as $num => $c) {
+                $num = preg_replace('/\D/', '', (string)$num);
+                if ($num === '' || !is_array($c)) continue;
+                $up->execute([$num, logEncode($c)]); $n++;
+            }
+            $res['contacts'] = $n;
+        } else $res['contacts'] = 'dilewati (tabel tidak kosong)';
+        $n = 0;
+        $up = $db->prepare('INSERT INTO dei_wa_sessions (num, ts, turns) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE ts = VALUES(ts), turns = VALUES(turns)');
+        foreach ((array)glob(WA_SESSIONS_DIR . '/*.json') as $f) {   // cek-storage: boleh (impor sekali)
+            $d = json_decode((string)@file_get_contents($f), true);
+            if (!is_array($d) || empty($d['turns'])) continue;
+            $up->execute([basename($f, '.json'), (int)($d['ts'] ?? 0), logEncode($d['turns'])]); $n++;
+        }
+        $res['sessions'] = $n;
+        $n = 0;
+        $up = $db->prepare('INSERT INTO dei_conv_state (num, last_at, body) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE last_at = VALUES(last_at), body = VALUES(body)');
+        foreach ((array)readJson(CONV_STATE_FILE, []) as $num => $st) {   // cek-storage: boleh (impor sekali)
+            $num = waNormNum($num);
+            if ($num === '' || !is_array($st)) continue;
+            $up->execute([$num, (int)($st['last_at'] ?? 0), logEncode($st)]); $n++;
+        }
+        $res['conv_state'] = $n;
+        echo 'db_import: ' . json_encode($res) . "\n";
+        exit(0);
+    }
+
     case 'cron_tick': {
         $s = getSettings();
         if (PHP_SAPI !== 'cli') {
@@ -6965,6 +7602,9 @@ switch ($action) {
         } catch (\Throwable $e) { $r['err_sweep'] = $e->getMessage(); }
         try { $r['closed'] = autoClosingSweep($s); }   catch (\Throwable $e) { $r['closed'] = []; $r['err_closing'] = $e->getMessage(); }
         try { $r['escalated'] = escalationSweep($s); } catch (\Throwable $e) { $r['escalated'] = []; $r['err_escalation'] = $e->getMessage(); }
+        try { $r['sessions_purged'] = deiPurgeSessions(); } catch (\Throwable $e) { $r['err_purge'] = $e->getMessage(); }   // v1.2.71
+        // v1.2.71: di server sendiri cron (CLI) yang menyegarkan cache pusat, bukan pesan masuk
+        if (PHP_SAPI === 'cli') { try { getLicenseStatus($s); getCapStatus($s); } catch (\Throwable $e) {} }
         if ($GLOBALS['dei_dry']) $r['dry_log'] = $GLOBALS['esc_dry_log'];
         try { $r['stats'] = deiCollectStats(); } catch (\Throwable $e) {}   // v1.2.57: pusat menyimpan sbg statistik terbaru
         $r['ms'] = (int)round((microtime(true) - $t0) * 1000);
@@ -6995,7 +7635,7 @@ switch ($action) {
         if ($ok && !empty($res['incId'])) {
             $num = (string)$res['inc']['contact'];
             // hentikan eskalasi; bot mundur supaya tidak menyela orang yang menangani
-            convStateMutate(function (&$a) use ($num) { if (isset($a[$num])) $a[$num]['esc_acked'] = 1; });
+            convStateMutate(function (&$a) use ($num) { if (isset($a[$num])) $a[$num]['esc_acked'] = 1; }, $num);
             try { waSetMode($num, 'human'); } catch (\Throwable $e) {}
             try { waAuditLog('escalation_ack', $res['name'], $num, ['incident' => $res['incId']]); } catch (\Throwable $e) {}
         }
@@ -7184,7 +7824,7 @@ switch ($action) {
         $filter = $_GET['filter'] ?? 'all';  // all|mine|unclaimed|others|takeover_requests
 
         // Read chat log untuk dapatkan list nomor + last message
-        $logs = readJson(LOG_FILE, []);
+        $logs = logReadAll();
         $numbers = [];  // num => {last_ts, last_q, last_a, count, awaiting}
         foreach ($logs as $e) {
             if (($e['channel'] ?? '') !== 'whatsapp') continue;
@@ -7213,7 +7853,7 @@ switch ($action) {
         $isManual = deiIsManual($s58);
         $agentPrivate = deiTeamConf($s58)['agent_private'] && $u['role'] === 'wa_agent';
         $spvScope = deiSpvScope($u);   // v1.2.59: supervisor hanya lihat chat timnya
-        $convState = readJson(CONV_STATE_FILE, []);
+        $convState = convStateReadAll();
         if (!is_array($convState)) $convState = [];
         $agentReplied = waAgentRepliedAll();
         $nowTs = time();
@@ -7645,7 +8285,7 @@ switch ($action) {
         }
         // Snapshot saat ini: chat yang dipegang & belum dibalas per agent
         $claims = waClaimGetAll();
-        $cs = readJson(CONV_STATE_FILE, []);
+        $cs = convStateReadAll();
         $unrepliedTotal = 0; $unrepliedUnassigned = 0;
         foreach ((array)$cs as $num => $st) {
             if (!is_array($st) || ($st['last_from'] ?? '') !== 'guest' || !empty($st['guest_bye'])) continue;

@@ -1,0 +1,2 @@
+# DEI Chatbot — cron klien __SLUG__: auto-closing, eskalasi, sapu claim/mode, bersih sesi, segarkan cache pusat
+* * * * * dei-__SLUG__ /usr/bin/php /var/www/__SLUG__/api/index.php action=cron_tick >/dev/null 2>&1

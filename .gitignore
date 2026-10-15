@@ -7,3 +7,10 @@ Thumbs.db
 
 # Log runtime, jangan ikut terdistribusi ke klien
 error_log
+
+# Uji dua mode (dibuat ulang tiap jalan)
+tools/uji-dua-mode/app*/
+tools/uji-dua-mode/eq*/
+tools/uji-dua-mode/pusat/
+tools/uji-dua-mode/sends.log
+__pycache__/
