@@ -11,6 +11,19 @@ set -euo pipefail
 . /etc/os-release
 [ "${ID}" = "ubuntu" ] || echo "PERINGATAN: diuji di Ubuntu 24.04, OS ini ${PRETTY_NAME}."
 HERE="$(cd "$(dirname "$0")" && pwd)"
+RAM_MB=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
+# Ukuran ikut RAM VPS (KVM 1 = 4 GB, KVM 2 = 8 GB, ...)
+if   [ "$RAM_MB" -lt 3000 ]; then INNODB=256M; REDIS_MAX=256mb
+elif [ "$RAM_MB" -lt 7000 ]; then INNODB=512M; REDIS_MAX=384mb
+else INNODB=1G; REDIS_MAX=512mb; fi
+echo "==> RAM ${RAM_MB} MB -> innodb ${INNODB}, redis ${REDIS_MAX}"
+
+if [ "$(swapon --noheadings | wc -l)" -eq 0 ] && [ ! -f /swapfile ]; then
+  echo "==> Swap 2 GB (cadangan saat memori penuh)"
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  sysctl -q vm.swappiness=10; echo 'vm.swappiness=10' > /etc/sysctl.d/99-dei.conf
+fi
 
 echo "==> Paket"
 export DEBIAN_FRONTEND=noninteractive
@@ -29,7 +42,7 @@ echo "==> Redis: hanya localhost, antrean tahan restart (AOF)"
 RC=/etc/redis/redis.conf
 sed -i 's/^bind .*/bind 127.0.0.1 -::1/' "$RC"
 grep -q '^appendonly yes' "$RC" || sed -i 's/^appendonly no/appendonly yes/' "$RC"
-grep -q '^maxmemory ' "$RC" || echo 'maxmemory 512mb' >> "$RC"
+sed -i '/^maxmemory /d' "$RC"; echo "maxmemory $REDIS_MAX" >> "$RC"
 grep -q '^maxmemory-policy ' "$RC" || echo 'maxmemory-policy noeviction' >> "$RC"   # antrean tidak boleh dibuang diam-diam
 systemctl restart redis-server
 
@@ -37,12 +50,13 @@ echo "==> MySQL: hanya localhost"
 grep -q '^bind-address' /etc/mysql/mysql.conf.d/mysqld.cnf || echo 'bind-address = 127.0.0.1' >> /etc/mysql/mysql.conf.d/mysqld.cnf
 cat > /etc/mysql/mysql.conf.d/dei.cnf <<'CNF'
 [mysqld]
-innodb_buffer_pool_size = 1G
+innodb_buffer_pool_size = __INNODB__
 max_connections = 300
 default_time_zone = '+07:00'
 character-set-server = utf8mb4
 collation-server = utf8mb4_unicode_ci
 CNF
+sed -i "s/__INNODB__/$INNODB/" /etc/mysql/mysql.conf.d/dei.cnf
 systemctl restart mysql
 
 echo "==> PHP: opcache + zona waktu"
@@ -94,4 +108,4 @@ echo
 echo "SELESAI. Langkah berikutnya:"
 echo "  1. (disarankan) matikan login SSH pakai password setelah kunci SSH terpasang."
 echo "  2. Isi /etc/dei/alert.conf (Telegram) dan /etc/dei/backup.conf (off-site)."
-echo "  3. Tambah klien: sudo /opt/dei/server/add-client.sh sinarjaya chat.sinarjaya.haltebus.com 16"
+echo "  3. Tambah klien: sudo /opt/dei/server/add-client.sh sinarjaya haltebus.chat/sinarjaya 8"

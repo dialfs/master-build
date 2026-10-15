@@ -51,22 +51,37 @@ Pengaturan tambahan per klien di `data/server.php` (v1.2.72, dipasang otomatis o
 Hasil uji beban (AI tiruan 1,5 dtk/pesan): 16 worker = ±10 pesan/detik, 1.200 pesan dari
 400 nomor tanpa balasan ganda dan tanpa riwayat hilang. Target 10.000 pesan/hari ≈ puncak 5/detik.
 
-## Pasang VPS baru (Ubuntu 24.04 LTS)
+## Pasang VPS baru (Ubuntu 24.04 LTS) — dari Mac, satu perintah
 
 ```bash
-# sebagai root, sekali saja (repo privat: pakai deploy key read-only atau token GitHub)
-git clone git@github.com:dialfs/master-build.git /opt/dei-src
-bash /opt/dei-src/server/install-server.sh
+cd ~/Herd/master-build && git pull
+./server/deploy-vps.sh root@212.85.25.180 sinarjaya haltebus.chat/sinarjaya 8
 ```
+
+`deploy-vps.sh` (password root diminta sekali): cek DNS & OS → kirim `server/` + `~/Herd/dei-pusat/master/dei-master.zip`
+→ `install-server.sh` (aman diulang; ukuran MySQL/Redis ikut RAM, swap 2 GB kalau belum ada)
+→ `add-client.sh` (dilewati kalau klien sudah ada) → cek antrean & HTTPS.
+Password admin awal dicetak sekali dan disalin ke `~/hb-deploy-<slug>.txt` — catat, lalu hapus berkas itu.
 
 Lalu isi `/etc/dei/alert.conf` (Telegram) dan `/etc/dei/backup.conf` (rclone off-site — wajib untuk produksi).
 
 ## Tambah klien
 
+Dua bentuk alamat:
+
+| Bentuk | Contoh | Catatan |
+| --- | --- | --- |
+| **Path** (bawaan Halte Bus) | `haltebus.chat/sinarjaya` | Satu domain + satu sertifikat untuk semua klien. Path wajib = slug. Vhost `dei-host-haltebus.chat`, tiap klien satu berkas `/etc/nginx/dei-paths/haltebus.chat/<slug>.conf`. |
+| Domain sendiri | `chat.sinarjaya.com` | Vhost sendiri + sertifikat sendiri; DNS domain itu diarahkan ke VPS. |
+
 ```bash
-# DNS domain sudah diarahkan ke IP VPS
-sudo /opt/dei/server/add-client.sh sinarjaya chat.sinarjaya.haltebus.com 16
+# di VPS (atau ulangi deploy-vps.sh dengan slug lain dari Mac)
+sudo /opt/dei/server/add-client.sh sinarjaya haltebus.chat/sinarjaya 8
 ```
+
+Alamat klien mode path: dashboard `https://haltebus.chat/<slug>/` (→ login), `…/<slug>/login`,
+webhook Meta `https://haltebus.chat/<slug>/api/index.php?action=wa_webhook`.
+Dashboard & API menghitung base path sendiri dari URL, jadi kode tidak berubah.
 
 Yang dibuat per klien:
 

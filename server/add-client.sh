@@ -4,7 +4,9 @@
 #   sudo /opt/dei/server/add-client.sh <slug> <domain> [jumlah_worker=16] [dei-master.zip|URL]
 #   Brand tampilan: BRAND=haltebus (bawaan). BRAND=none = tampilan DEI.
 # Contoh:
-#   sudo /opt/dei/server/add-client.sh sinarjaya chat.sinarjaya.haltebus.com 16
+#   sudo /opt/dei/server/add-client.sh sinarjaya haltebus.chat/sinarjaya 8   (path: satu domain, banyak klien)
+#   sudo /opt/dei/server/add-client.sh sinarjaya chat.sinarjaya.com 8        (domain/subdomain sendiri)
+# Mode path: bagian path WAJIB sama dengan slug.
 # Hasil: user Linux sendiri, folder /var/www/<slug>, database MySQL sendiri,
 # prefix Redis sendiri, pool PHP-FPM, vhost Nginx, worker supervisord, cron.
 # Kode tetap SATU: dei-master.zip yang sama dengan tenant DEI.
@@ -20,6 +22,14 @@ BRAND="${BRAND:-haltebus}"
 if [ "$BRAND" != "none" ] && [ ! -d "$HERE/brand/$BRAND" ]; then echo "brand '$BRAND' tidak ada di $HERE/brand/"; exit 1; fi
 DIR="/var/www/$SLUG"; USR="dei-$SLUG"; DB="$(echo "${SLUG}_chat" | tr '-' '_')"; CONF="/etc/dei/clients/$SLUG.conf"
 [ -e "$DIR" ] && { echo "$DIR sudah ada — klien ini sudah terpasang?"; exit 1; }
+DOMAIN="${DOMAIN#https://}"; DOMAIN="${DOMAIN#http://}"; DOMAIN="${DOMAIN%/}"
+HOST="${DOMAIN%%/*}"; PATHPART=""
+if [ "$HOST" != "$DOMAIN" ]; then
+  PATHPART="${DOMAIN#*/}"
+  [ "$PATHPART" = "$SLUG" ] || { echo "mode path: alamat harus $HOST/$SLUG (path = slug)"; exit 1; }
+  [[ "$SLUG" =~ ^(_host|html|data|api|dashboard)$ ]] && { echo "slug '$SLUG' dipakai sistem"; exit 1; }
+fi
+[[ "$HOST" =~ ^[a-z0-9.-]+$ ]] || { echo "domain tidak valid: $HOST"; exit 1; }
 
 echo "==> User Linux $USR"
 id "$USR" >/dev/null 2>&1 || useradd --system --home-dir "$DIR" --no-create-home --shell /usr/sbin/nologin "$USR"
@@ -79,8 +89,22 @@ sudo -u "$USR" php "$DIR/api/index.php" action=db_init
 
 echo "==> PHP-FPM, Nginx, worker, cron"
 sed "s/__SLUG__/$SLUG/g" "$T/php-fpm-pool.conf" > "/etc/php/8.3/fpm/pool.d/dei-$SLUG.conf"
-sed "s/__SLUG__/$SLUG/g; s/__DOMAIN__/$DOMAIN/g" "$T/nginx-site.conf" > "/etc/nginx/sites-available/dei-$SLUG"
-ln -sf "/etc/nginx/sites-available/dei-$SLUG" "/etc/nginx/sites-enabled/dei-$SLUG"
+NEW_HOST=0
+if [ -n "$PATHPART" ]; then
+  # Satu vhost per domain bersama; tiap klien = satu potongan location /<slug>/
+  mkdir -p "/etc/nginx/dei-paths/$HOST" "/var/www/_host/$HOST"
+  if [ ! -f "/etc/nginx/sites-available/dei-host-$HOST" ]; then
+    sed "s/__HOST__/$HOST/g" "$T/nginx-host.conf" > "/etc/nginx/sites-available/dei-host-$HOST"
+    ln -sf "/etc/nginx/sites-available/dei-host-$HOST" "/etc/nginx/sites-enabled/dei-host-$HOST"
+    NEW_HOST=1
+  fi
+  [ -f "/var/www/_host/$HOST/index.html" ] || printf '<!doctype html><meta charset="utf-8"><title>%s</title><p style="font-family:sans-serif;margin:3em">%s</p>\n' "$HOST" "$HOST" > "/var/www/_host/$HOST/index.html"
+  sed "s/__SLUG__/$SLUG/g; s/__HOST__/$HOST/g" "$T/nginx-path.conf" > "/etc/nginx/dei-paths/$HOST/$SLUG.conf"
+  rm -f /etc/nginx/sites-enabled/default
+else
+  sed "s/__SLUG__/$SLUG/g; s/__DOMAIN__/$DOMAIN/g" "$T/nginx-site.conf" > "/etc/nginx/sites-available/dei-$SLUG"
+  ln -sf "/etc/nginx/sites-available/dei-$SLUG" "/etc/nginx/sites-enabled/dei-$SLUG"
+fi
 sed "s/__SLUG__/$SLUG/g; s/__WORKERS__/$WORKERS/g" "$T/supervisor-workers.conf" > "/etc/supervisor/conf.d/dei-$SLUG.conf"
 sed "s/__SLUG__/$SLUG/g" "$T/cron-client" > "/etc/cron.d/dei-$SLUG"
 touch "/var/log/dei/$SLUG-php.log" "/var/log/dei/$SLUG-worker.log"; chown "$USR" /var/log/dei/"$SLUG"-*.log
@@ -91,17 +115,21 @@ supervisorctl reread >/dev/null && supervisorctl update >/dev/null
 cat > "$CONF" <<C
 SLUG=$SLUG
 DOMAIN=$DOMAIN
+HOST=$HOST
+URL=https://$DOMAIN
 WORKERS=$WORKERS
 DB=$DB
 BRAND=$BRAND
 CREATED=$(date '+%Y-%m-%d')
 C
 
-echo "==> HTTPS (butuh DNS $DOMAIN sudah mengarah ke VPS ini)"
-if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
+echo "==> HTTPS (butuh DNS $HOST sudah mengarah ke VPS ini)"
+if [ -n "$PATHPART" ] && [ "$NEW_HOST" = 0 ] && [ -d "/etc/letsencrypt/live/$HOST" ]; then
+  echo "    Sertifikat $HOST sudah ada — klien baru ikut memakainya."
+elif certbot --nginx -d "$HOST" --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
   echo "    HTTPS aktif."
 else
-  echo "    Certbot gagal (DNS belum siap?). Ulangi nanti: sudo certbot --nginx -d $DOMAIN --redirect"
+  echo "    Certbot gagal (DNS belum siap?). Ulangi nanti: sudo certbot --nginx -d $HOST --redirect"
 fi
 
 echo
