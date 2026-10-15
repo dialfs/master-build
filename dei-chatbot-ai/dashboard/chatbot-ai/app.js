@@ -85,6 +85,12 @@
   // Expose for inline replacement of static markup
   window._ico = ico;
 
+  /* v1.2.73: brand per instalasi (window.DEI_BRAND dari action=brand_js; null = DEI) */
+  var BRAND = window.DEI_BRAND || null;
+  var BRAND_VENDOR = BRAND ? BRAND.vendor : 'DEI';
+  var BRAND_C1 = (BRAND && BRAND.c1) || '#140383';
+  var BRAND_C2 = (BRAND && BRAND.c2) || '#a855f7';
+
   /* ---- base + api ------------------------------------------------------ */
   var path = window.location.pathname;
   var idx = path.indexOf('/dashboard/chatbot-ai');
@@ -263,7 +269,7 @@
   }
 
   /* ---- inline SVG charts (no external libs) ---------------------------- */
-  var PIE_COLORS = ['#140383', '#4338ca', '#6366f1', '#8b5cf6', '#a855f7', '#c084fc', '#e879f9', '#94a3b8'];
+  var PIE_COLORS = (BRAND && BRAND.palette && BRAND.palette.length) ? BRAND.palette : ['#140383', '#4338ca', '#6366f1', '#8b5cf6', '#a855f7', '#c084fc', '#e879f9', '#94a3b8'];
 
   function svgPie(arr) {
     var data = arr.slice(0, 7);
@@ -320,10 +326,10 @@
     arr.forEach(function (d, i) {
       if (i % every === 0 || i === n - 1) labels += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="8.5" fill="var(--muted)">' + d.date.slice(5) + '</text>';
     });
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:540px">' + grid + poly('count', '#140383') + poly('users', '#a855f7') + labels + '</svg>' +
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:540px">' + grid + poly('count', BRAND_C1) + poly('users', BRAND_C2) + labels + '</svg>' +
       '<div style="display:flex;gap:16px;font-size:12px;margin-top:6px">' +
-      '<span style="display:flex;align-items:center;gap:5px"><span style="width:14px;height:3px;background:#140383;display:inline-block"></span>Percakapan</span>' +
-      '<span style="display:flex;align-items:center;gap:5px"><span style="width:14px;height:3px;background:#a855f7;display:inline-block"></span>Pengunjung unik</span></div>';
+      '<span style="display:flex;align-items:center;gap:5px"><span style="width:14px;height:3px;background:' + BRAND_C1 + ';display:inline-block"></span>Percakapan</span>' +
+      '<span style="display:flex;align-items:center;gap:5px"><span style="width:14px;height:3px;background:' + BRAND_C2 + ';display:inline-block"></span>Pengunjung unik</span></div>';
   }
   function statCard(v, l) { return '<div class="stat"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
   function emptyRow(cols) { return '<tr><td colspan="' + cols + '" style="color:var(--muted);text-align:center;padding:24px">Belum ada data.</td></tr>'; }
@@ -350,7 +356,7 @@
   /* ====================================================================== *
    *  LOG PERCAKAPAN (v1.2.66) — filter + facet + paginasi + detail
    * ====================================================================== */
-  var LG_ST = { ai: ['Dijawab AI', '#140383'], awaiting: ['Menunggu balasan', '#d97706'], manual: ['Balasan agent', '#16a34a'], closing: ['Closing otomatis', '#94a3b8'], error: ['Gagal / error', '#dc2626'] };
+  var LG_ST = { ai: ['Dijawab AI', BRAND_C1], awaiting: ['Menunggu balasan', '#d97706'], manual: ['Balasan agent', '#16a34a'], closing: ['Closing otomatis', '#94a3b8'], error: ['Gagal / error', '#dc2626'] };
   var LG_CH = { web: 'Web', whatsapp: 'WhatsApp' };
   var lg = { page: 1, per: 25, status: '', preset: '30', rows: [], wired: false, t: null, seq: 0 };
   try { var _lp = +localStorage.getItem('dei_lg_per'); if ([25, 50, 100].indexOf(_lp) !== -1) lg.per = _lp; } catch (e) {}
@@ -510,7 +516,7 @@
    * ====================================================================== */
   var TP_PER = [[7, '7 hari'], [14, '14 hari'], [30, '30 hari'], [60, '60 hari'], [90, '90 hari'], [180, '6 bulan'], [365, '1 tahun']];
   var TP_SENT = { positif: 'Positif', netral: 'Netral', negatif: 'Negatif' };
-  var TP_COL = ['#140383', '#3b2fb8', '#5b4fe0', '#7c6ff0', '#8b5cf6', '#a855f7', '#c084fc', '#6366f1', '#4338ca', '#818cf8'];
+  var TP_COL = (BRAND && BRAND.palette && BRAND.palette.length) ? BRAND.palette : ['#140383', '#3b2fb8', '#5b4fe0', '#7c6ff0', '#8b5cf6', '#a855f7', '#c084fc', '#6366f1', '#4338ca', '#818cf8'];
   var tp = { days: 30, scans: {}, loaded: false, busy: false, logLimit: 500, quota: null };
   try { var _td = +localStorage.getItem('dei_tp_days'); if (TP_PER.some(function (p) { return p[0] === _td; })) tp.days = _td; } catch (e) {}
   function tpKey() { return tp.days + '|' + ($('#tpChannel').value || 'all'); }
@@ -548,7 +554,7 @@
     if (!r) {
       $('#tpNote').innerHTML = '';
       $('#tpResult').innerHTML = '<div class="tp-empty">' + ico('sparkles', 28) + '<b>Belum ada hasil scan untuk ' + esc(lbl) + '</b>' +
-        '<span>' + (tpQuotaOut() ? 'Kuota scan topik bulan ini sudah habis (' + tp.quota.used + '/' + tp.quota.limit + '). Kuota direset ' + esc(tpDate(tp.quota.reset)) + '. Hubungi DEI untuk menambah kuota.' : canRun ? 'Tekan <b>Scan topik</b>. AI akan membaca percakapan pelanggan di periode ini dan mengelompokkannya menjadi topik (sekitar 15–60 detik, memakai kuota AI).' : 'Minta Admin menjalankan scan topik.') + '</span></div>';
+        '<span>' + (tpQuotaOut() ? 'Kuota scan topik bulan ini sudah habis (' + tp.quota.used + '/' + tp.quota.limit + '). Kuota direset ' + esc(tpDate(tp.quota.reset)) + '. Hubungi ' + BRAND_VENDOR + ' untuk menambah kuota.' : canRun ? 'Tekan <b>Scan topik</b>. AI akan membaca percakapan pelanggan di periode ini dan mengelompokkannya menjadi topik (sekitar 15–60 detik, memakai kuota AI).' : 'Minta Admin menjalankan scan topik.') + '</span></div>';
       return;
     }
     var note = [];
@@ -2151,8 +2157,8 @@
     var lbl = role === 'wa_agent' ? 'WA Agent' : 'Supervisor';
     return ico('ban', 14) + ' <b>Kursi ' + lbl + ' penuh (' + used + '/' + max + ').</b> ' +
       (user.role === 'super_admin'
-        ? 'Hapus akun ' + lbl + ' yang tidak dipakai, atau minta DEI menambah kursi paket.'
-        : 'Hapus akun ' + lbl + ' yang tidak dipakai, atau minta Super Admin/DEI menambah kursi paket.') +
+        ? 'Hapus akun ' + lbl + ' yang tidak dipakai, atau minta ' + BRAND_VENDOR + ' menambah kursi paket.'
+        : 'Hapus akun ' + lbl + ' yang tidak dipakai, atau minta Super Admin/' + BRAND_VENDOR + ' menambah kursi paket.') +
       (se.source === 'pusat' ? '' : ' <a href="#" class="seat-sync">Sinkron ulang dari pusat</a>');
   }
   function updateSeatWarn() {
@@ -3503,7 +3509,7 @@
       var on = r.features && r.features.white_label;
       $('#wl_status').innerHTML = on
         ? '<span style="color:#065f46">' + ico('check-circle-2', 13) + ' Paket ini mendukung white-label — pengaturan di bawah aktif di widget.</span>'
-        : '<span style="color:#92400e">' + ico('triangle-alert', 13) + ' White-label belum aktif untuk paket ini. Pengaturan tersimpan, tetapi widget tetap tampil bawaan sampai diaktifkan oleh DEI.</span>';
+        : '<span style="color:#92400e">' + ico('triangle-alert', 13) + ' White-label belum aktif untuk paket ini. Pengaturan tersimpan, tetapi widget tetap tampil bawaan sampai diaktifkan oleh ' + BRAND_VENDOR + '.</span>';
     });
   }
 

@@ -12,7 +12,7 @@ set -uo pipefail
 ONLY="${1:-}"; FAIL=0
 for C in /etc/dei/clients/*.conf; do
   [ -e "$C" ] || { echo "Belum ada klien."; exit 0; }
-  SLUG=""; . "$C"
+  SLUG=""; BRAND=""; . "$C"
   [ -n "$ONLY" ] && [ "$ONLY" != "$SLUG" ] && continue
   DIR="/var/www/$SLUG"; USR="dei-$SLUG"
   BEFORE="$(grep -o "define('DEI_VERSION', '[^']*')" "$DIR/api/index.php" | cut -d"'" -f4)"
@@ -20,6 +20,10 @@ for C in /etc/dei/clients/*.conf; do
   AFTER="$(grep -o "define('DEI_VERSION', '[^']*')" "$DIR/api/index.php" | cut -d"'" -f4)"
   if [ $RC -ne 0 ] || echo "$OUT" | grep -q '"ok":false'; then
     echo "[$SLUG] GAGAL ($BEFORE): $OUT"; FAIL=1; continue
+  fi
+  # v1.2.73: pastikan ikon/logo brand tetap terpasang (idempoten)
+  if [ -n "${BRAND:-}" ] && [ "${BRAND}" != "none" ] && [ -d "/opt/dei/server/brand/$BRAND" ]; then
+    install -o "$USR" -g "$USR" -m 640 /opt/dei/server/brand/"$BRAND"/{favicon.ico,favicon-32.png,apple-touch-icon.png,icon-192.png,icon-512.png,logo-256.png,manifest.json} "$DIR/dashboard/chatbot-ai/"
   fi
   if [ "$BEFORE" != "$AFTER" ]; then
     sudo -u "$USR" php "$DIR/api/index.php" action=db_init >/dev/null   # tabel baru (kalau ada) dibuat

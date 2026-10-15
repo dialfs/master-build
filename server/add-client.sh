@@ -2,6 +2,7 @@
 # =============================================================================
 # DEI Chatbot — tambah satu klien di VPS ini.
 #   sudo /opt/dei/server/add-client.sh <slug> <domain> [jumlah_worker=16] [dei-master.zip|URL]
+#   Brand tampilan: BRAND=haltebus (bawaan). BRAND=none = tampilan DEI.
 # Contoh:
 #   sudo /opt/dei/server/add-client.sh sinarjaya chat.sinarjaya.haltebus.com 16
 # Hasil: user Linux sendiri, folder /var/www/<slug>, database MySQL sendiri,
@@ -15,6 +16,8 @@ SLUG="${1:-}"; DOMAIN="${2:-}"; WORKERS="${3:-16}"; SRC="${4:-https://chat.deint
 [ -n "$DOMAIN" ] || { echo "domain wajib"; exit 1; }
 [[ "$WORKERS" =~ ^[0-9]+$ ]] && [ "$WORKERS" -ge 1 ] && [ "$WORKERS" -le 64 ] || { echo "worker 1-64"; exit 1; }
 HERE="$(cd "$(dirname "$0")" && pwd)"; T="$HERE/templates"
+BRAND="${BRAND:-haltebus}"
+if [ "$BRAND" != "none" ] && [ ! -d "$HERE/brand/$BRAND" ]; then echo "brand '$BRAND' tidak ada di $HERE/brand/"; exit 1; fi
 DIR="/var/www/$SLUG"; USR="dei-$SLUG"; DB="$(echo "${SLUG}_chat" | tr '-' '_')"; CONF="/etc/dei/clients/$SLUG.conf"
 [ -e "$DIR" ] && { echo "$DIR sudah ada — klien ini sudah terpasang?"; exit 1; }
 
@@ -52,8 +55,13 @@ return [
     // v1.2.72: kalau semua AI gagal -> nomor dialihkan ke agent + notifikasi Telegram
     'ai_fail_handoff' => true,
     'ai_fail_text'    => 'Terima kasih, pesan Anda sudah kami terima. Tim kami akan segera membalas.',
+$( [ "$BRAND" != "none" ] && echo "    // v1.2.73: tampilan dashboard (nama & warna); ikon/logo disalin dari server/brand/$BRAND
+    'brand'           => '$BRAND'," )
 ];
 PHP
+if [ "$BRAND" != "none" ]; then   # v1.2.73: ikon, logo & manifest (tidak pernah ditimpa updater)
+  cp "$HERE/brand/$BRAND"/{favicon.ico,favicon-32.png,apple-touch-icon.png,icon-192.png,icon-512.png,logo-256.png,manifest.json} "$DIR/dashboard/chatbot-ai/"
+fi
 chown -R "$USR:$USR" "$DIR"
 find "$DIR" -type d -exec chmod 750 {} +; find "$DIR" -type f -exec chmod 640 {} +
 chmod 600 "$DIR/data/server.php"
@@ -85,6 +93,7 @@ SLUG=$SLUG
 DOMAIN=$DOMAIN
 WORKERS=$WORKERS
 DB=$DB
+BRAND=$BRAND
 CREATED=$(date '+%Y-%m-%d')
 C
 

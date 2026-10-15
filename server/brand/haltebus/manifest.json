@@ -1,0 +1,16 @@
+{
+  "name": "Haltebus Chatbot Dashboard",
+  "short_name": "Haltebus",
+  "description": "Dashboard admin Haltebus Chatbot - kelola chatbot & percakapan WhatsApp",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#B32B26",
+  "theme_color": "#B32B26",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

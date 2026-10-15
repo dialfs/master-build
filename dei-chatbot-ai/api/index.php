@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.72');
+define('DEI_VERSION', 'v1.2.73');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -193,6 +193,47 @@ function deiQueueRedis() {
     }
     return $ok;
 }
+
+/* v1.2.73: BRAND per instalasi (server sendiri). data/server.php:
+ *   'brand' => 'haltebus'                       // preset
+ *   'brand' => ['preset' => 'haltebus', 'vendor' => '...']   // timpa sebagian
+ * Tanpa kunci itu = tampilan DEI apa adanya. Ikon, logo & manifest.json ditimpa per
+ * instalasi oleh add-client.sh (berkas itu tidak pernah diganti updater); warna & nama
+ * diterapkan saat halaman dimuat lewat action=brand_js. */
+function deiBrandPresets() {
+    return [
+        'haltebus' => [
+            'key' => 'haltebus', 'vendor' => 'Haltebus', 'product' => 'Haltebus Chatbot',
+            'theme' => '#B32B26',
+            'css' => [
+                '--brand' => '#B32B26', '--brand-2' => '#E0533F', '--brand-soft' => '#FCEBE8',
+                '--brand-line' => '#F1C3BB', '--brand-tint' => '#FDF4F2', '--brand-tint-2' => '#FDEEEA',
+                '--brand-mid' => '#C83A30', '--brand-hero' => '#F08A2A',
+                '--brand-rgb' => '179,43,38', '--brand-2-rgb' => '224,83,63', '--brand-hero-rgb' => '240,138,42',
+            ],
+            'c1' => '#B32B26', 'c2' => '#F08A2A',
+            'palette' => ['#B32B26', '#E0533F', '#F08A2A', '#D9A066', '#8C1D22', '#F4B183', '#C9584C', '#94a3b8'],
+        ],
+    ];
+}
+function deiBrand() {
+    static $b = false;
+    if ($b === false) {
+        $b = null;
+        $c = deiServerConf()['brand'] ?? null;
+        $p = deiBrandPresets();
+        if (is_string($c) && isset($p[$c])) $b = $p[$c];
+        elseif (is_array($c)) {
+            $base = $p[(string)($c['preset'] ?? '')] ?? [];
+            unset($c['preset']);
+            $b = array_replace_recursive($base, $c);
+            if (empty($b['vendor']) || empty($b['product'])) $b = null;
+        }
+    }
+    return $b;
+}
+function deiBrandVendor()  { $b = deiBrand(); return $b ? (string)$b['vendor'] : 'DEI'; }
+function deiBrandProduct() { $b = deiBrand(); return $b ? (string)$b['product'] : 'DEI Chatbot'; }
 
 function deiDb() {
     static $pdo = null;
@@ -1365,7 +1406,7 @@ function callOpenRouter($settings, $systemBlocks, $messages) {
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $key,
-            'X-Title: DEI Chatbot',
+            'X-Title: ' . deiBrandProduct(),   // v1.2.73
         ],
         CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
     ]);
@@ -3025,7 +3066,7 @@ function deiReleaseNotify($latest) {
         $un = (string)($u['username'] ?? '');
         if ($un !== '' && in_array(($u['role'] ?? ''), ['super_admin', 'admin'], true) && in_array($un, $subs, true)) $targets[] = $un;
     }
-    if ($targets) sendPushToUsers($targets, 'Pembaruan baru: ' . $latest, $title !== '' ? $title : 'Lihat apa yang baru di DEI Chatbot.', deiDashboardUrl() . '#pembaruan', 'dei-release');
+    if ($targets) sendPushToUsers($targets, 'Pembaruan baru: ' . $latest, $title !== '' ? $title : 'Lihat apa yang baru di ' . deiBrandProduct() . '.', deiDashboardUrl() . '#pembaruan', 'dei-release');
     writeJson(RELNOTIFY_FILE, ['last_notified' => $latest, 'at_wib' => wibDate('Y-m-d H:i:s'), 'pushed' => count($targets)]);
     return ['notified' => $latest, 'pushed' => count($targets)];
 }
@@ -3202,7 +3243,7 @@ function deiApplyPushedFeatures($raw) {
 function deiSeatMsg($role, $f) {
     $max = ($role === 'wa_agent') ? (int)$f['max_agents'] : (int)$f['max_supervisors'];
     $lbl = ($role === 'wa_agent') ? 'agent' : 'supervisor';
-    return 'Batas paket: maksimal ' . $max . ' ' . $lbl . '. Hubungi DEI untuk menambah kursi.';
+    return 'Batas paket: maksimal ' . $max . ' ' . $lbl . '. Hubungi ' . deiBrandVendor() . ' untuk menambah kursi.';
 }
 
 // Agent (mode privat) tidak boleh membuka chat yang dipegang agent lain.
@@ -3848,7 +3889,7 @@ function deiRememberedApiUrl() {
 function deiTenantName($s) {
     $n = trim((string)($s['bot']['persona_company'] ?? ''));
     if ($n === '') $n = trim((string)($s['central_server']['tenant_id'] ?? ''));
-    return $n !== '' ? $n : 'DEI Chatbot';
+    return $n !== '' ? $n : deiBrandProduct();   // v1.2.73
 }
 
 // Kirim ke semua kontak satu level, dengan rate limit per kontak
@@ -6256,7 +6297,7 @@ switch ($action) {
         // v1.2.68: cek kuota sebelum memanggil AI
         $q = deiTopicQuota();
         if ($q['limit'] > 0 && $q['used'] >= $q['limit']) {
-            jsonOut(['ok' => false, 'quota' => $q, 'error' => 'Kuota scan topik bulan ini sudah habis (' . $q['used'] . '/' . $q['limit'] . '). Kuota direset ' . $q['reset'] . '. Hubungi DEI untuk menambah kuota.'], 429);
+            jsonOut(['ok' => false, 'quota' => $q, 'error' => 'Kuota scan topik bulan ini sudah habis (' . $q['used'] . '/' . $q['limit'] . '). Kuota direset ' . $q['reset'] . '. Hubungi ' . deiBrandVendor() . ' untuk menambah kuota.'], 429);
         }
         $sample = deiTopicSample($units, TOPIC_SAMPLE_MAX);
         $list = '';
@@ -7653,6 +7694,39 @@ switch ($action) {
         $res['conv_state'] = $n;
         echo 'db_import: ' . json_encode($res) . "\n";
         exit(0);
+    }
+
+    /* ---------- PUBLIC (v1.2.73): brand per instalasi untuk dashboard ----------
+     * Dimuat sinkron di <head> index.html/login.html. Tanpa brand: hanya `window.DEI_BRAND=null`. */
+    case 'brand_js': {
+        header('Content-Type: application/javascript; charset=utf-8');
+        header('Cache-Control: no-cache');
+        $b = deiBrand();
+        if (!$b) { echo "window.DEI_BRAND=null;\n"; exit; }
+        $css = ':root{';
+        foreach ((array)($b['css'] ?? []) as $k => $v) {
+            if (preg_match('/^--[a-z0-9-]+$/', (string)$k) && preg_match('/^[#0-9a-zA-Z,. ()%-]+$/', (string)$v)) $css .= $k . ':' . $v . ';';
+        }
+        $css .= '}';
+        $pub = ['key' => $b['key'] ?? '', 'vendor' => $b['vendor'], 'product' => $b['product'], 'theme' => $b['theme'] ?? '',
+                'c1' => $b['c1'] ?? '', 'c2' => $b['c2'] ?? '', 'palette' => array_values((array)($b['palette'] ?? []))];
+        $J = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG;
+        echo 'window.DEI_BRAND=' . json_encode($pub, $J) . ";\n";
+        echo 'document.write(' . json_encode('<style id="dei-brand-css">' . $css . '</style>', $J) . ");\n";
+        echo <<<'JS'
+(function (B) {
+  function swap(t) { return String(t).replace(/DEI Chatbot/g, B.product).replace(/\bDEI\b/g, B.vendor); }
+  document.title = swap(document.title);
+  function apply() {
+    document.title = swap(document.title);
+    var m = document.querySelector('meta[name="theme-color"]'); if (m && B.theme) m.setAttribute('content', B.theme);
+    var el = document.querySelectorAll('[data-brand-text]'); for (var i = 0; i < el.length; i++) el[i].innerHTML = swap(el[i].innerHTML);
+    var im = document.querySelectorAll('img[alt="DEI"]'); for (var j = 0; j < im.length; j++) im[j].alt = B.vendor;
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply); else apply();
+})(window.DEI_BRAND);
+JS;
+        exit;
     }
 
     case 'cron_tick': {

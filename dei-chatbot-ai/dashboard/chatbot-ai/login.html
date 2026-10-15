@@ -11,13 +11,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{--brand:#140383;--brand-2:#3b2fb8;--ink:#15152b;--muted:#6b6b82;--line:#e6e6ef;--bg:#f4f5fb}
+  :root{--brand:#140383;--brand-2:#3b2fb8;--brand-rgb:20,3,131;--brand-2-rgb:59,47,184;--ink:#15152b;--muted:#6b6b82;--line:#e6e6ef;--bg:#f4f5fb}
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Inter',system-ui,sans-serif;background:
-        radial-gradient(900px 500px at 90% -10%,rgba(59,47,184,.18),transparent),
-        radial-gradient(700px 400px at -10% 110%,rgba(20,3,131,.16),transparent),
+        radial-gradient(900px 500px at 90% -10%,rgba(var(--brand-2-rgb),.18),transparent),
+        radial-gradient(700px 400px at -10% 110%,rgba(var(--brand-rgb),.16),transparent),
         var(--bg);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:var(--ink)}
-  .card{background:#fff;width:100%;max-width:400px;border-radius:18px;padding:38px 34px;box-shadow:0 24px 60px rgba(20,3,131,.14);border:1px solid var(--line)}
+  .card{background:#fff;width:100%;max-width:400px;border-radius:18px;padding:38px 34px;box-shadow:0 24px 60px rgba(var(--brand-rgb),.14);border:1px solid var(--line)}
   .logo{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand-2));display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:18px}
   h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
   .sub{color:var(--muted);font-size:13.5px;margin:6px 0 26px}
@@ -31,12 +31,13 @@
   .err{background:#fdecec;color:#c0392b;font-size:13px;padding:10px 12px;border-radius:8px;margin-bottom:16px;display:none}
   .hint{margin-top:18px;text-align:center;font-size:12px;color:var(--muted)}
 </style>
+<script>/* v1.2.73: brand per instalasi (DEI: kosong) */(function(){var p=location.pathname,i=p.indexOf('/dashboard/chatbot-ai'),b=i>=0?p.slice(0,i):p.replace(/\/[^\/]*$/,'');document.write('<script src="'+b+'/api/index.php?action=brand_js"><\/script>');})();</script>
 </head>
 <body>
   <form class="card" id="form">
     <div id="loginHead" style="display:flex;align-items:center;gap:13px;margin-bottom:8px">
       <div class="logo" style="margin-bottom:0;flex-shrink:0"><img id="loginLogoImg" src="./logo-256.png" alt="DEI" style="width:100%;height:100%;border-radius:14px;display:block"></div>
-      <h1 style="margin:0;font-size:19px;line-height:1.25">DEI Chatbot Dashboard</h1>
+      <h1 data-brand-text style="margin:0;font-size:19px;line-height:1.25">DEI Chatbot Dashboard</h1>
     </div>
     <div id="loginTenant" style="color:var(--ink);font-size:16px;font-weight:600;margin:0 0 22px;min-height:22px"></div>
     <p class="sub">Masuk untuk mengelola asisten AI Anda.</p>

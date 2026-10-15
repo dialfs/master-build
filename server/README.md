@@ -44,6 +44,8 @@ Pengaturan tambahan per klien di `data/server.php` (v1.2.72, dipasang otomatis o
 | `ai_fallback` => ['provider' => 'openrouter', 'model' => 'anthropic/claude-haiku-4.5'] | Kalau AI utama gagal, dicoba sekali dengan model cadangan. |
 | `ai_fail_handoff` => true, `ai_fail_text` | Kalau semua AI gagal: pelanggan dapat `ai_fail_text`, nomor dialihkan ke agent (mode manusia), notifikasi Telegram. |
 
+| `brand` => 'haltebus' (v1.2.73) | Dashboard tampil sebagai **Haltebus Chatbot**: warna merah Haltebus, nama "DEI" diganti "Haltebus". Ikon/logo/manifest disalin dari `server/brand/haltebus/` oleh `add-client.sh` (pakai `BRAND=none` untuk tampilan DEI). |
+
 `wa_queue_status` menampilkan `queue_active`; `false` berarti Redis tidak terjangkau (health.sh mengirim peringatan).
 
 Hasil uji beban (AI tiruan 1,5 dtk/pesan): 16 worker = ±10 pesan/detik, 1.200 pesan dari

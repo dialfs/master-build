@@ -18,6 +18,9 @@
 <style>
   :root{
     --brand:#140383;--brand-2:#3b2fb8;--brand-soft:#eceaf9;
+    /* v1.2.73: warna yang dulu ditulis langsung — nilai sama, bisa ditimpa brand per instalasi */
+    --brand-line:#cbc6f3;--brand-tint:#f6f5fd;--brand-tint-2:#f1effd;--brand-mid:#2a1fa8;--brand-hero:#5b4fe0;
+    --brand-rgb:20,3,131;--brand-2-rgb:59,47,184;--brand-hero-rgb:91,79,224;
     --ink:#15152b;--muted:#6b6b82;--line:#e6e6ef;--bg:#f4f5fb;
     --ok:#1f9d55;--ok-bg:#e6f6ec;--warn:#c0392b;--warn-bg:#fdecec;
     --radius:12px;
@@ -165,11 +168,11 @@
       width:44px;height:44px;border-radius:12px;
       background:var(--brand);color:#fff;border:none;
       font-size:22px;line-height:1;
-      box-shadow:0 4px 12px rgba(20,3,131,.28);
+      box-shadow:0 4px 12px rgba(var(--brand-rgb),.28);
       cursor:pointer;
       transition:transform .15s ease, box-shadow .15s ease;
     }
-    .menu-btn:active{transform:scale(.92);box-shadow:0 2px 6px rgba(20,3,131,.2)}
+    .menu-btn:active{transform:scale(.92);box-shadow:0 2px 6px rgba(var(--brand-rgb),.2)}
     .menu-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
 
     /* ===== Sidebar slide-in + backdrop ===== */
@@ -487,7 +490,7 @@
   }
   /* v1.2.65: halaman Pembaruan (catatan rilis) */
   .rel-hero{position:relative;overflow:hidden;border-radius:16px;padding:30px 30px 26px;margin-bottom:20px;color:#fff;
-    background:radial-gradient(120% 140% at 100% 0%,#5b4fe0 0%,rgba(91,79,224,0) 55%),linear-gradient(135deg,#140383 0%,#2a1fa8 60%,#3b2fb8 100%)}
+    background:radial-gradient(120% 140% at 100% 0%,var(--brand-hero) 0%,rgba(var(--brand-hero-rgb),0) 55%),linear-gradient(135deg,var(--brand) 0%,var(--brand-mid) 60%,var(--brand-2) 100%)}
   .rel-hero::after{content:"";position:absolute;right:-60px;bottom:-80px;width:260px;height:260px;border-radius:50%;border:38px solid rgba(255,255,255,.06)}
   .rel-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:rgba(255,255,255,.14);padding:5px 11px;border-radius:20px}
   .rel-hero h2{font-size:27px;font-weight:700;letter-spacing:-.02em;margin:14px 0 6px;line-height:1.2}
@@ -513,7 +516,7 @@
   .rel-dot{position:absolute;left:2px;top:20px;width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #c7c3ee}
   .rel-item.new .rel-dot{border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-soft)}
   .rel-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-  .rel-item.new .rel-card{border-color:#cbc6f3;box-shadow:0 4px 18px -10px rgba(20,3,131,.35)}
+  .rel-item.new .rel-card{border-color:var(--brand-line);box-shadow:0 4px 18px -10px rgba(var(--brand-rgb),.35)}
   .rel-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:12px;color:var(--muted)}
   .rel-ver{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;color:var(--brand);background:var(--brand-soft);padding:2px 8px;border-radius:6px;font-size:12px}
   .rel-type{font-weight:600;padding:2px 8px;border-radius:6px;font-size:11.5px}
@@ -527,7 +530,7 @@
   .rel-card ul{margin:8px 0 0 18px;color:#45455c;line-height:1.6;font-size:13.5px}
   .rel-empty{background:#fff;border:1px dashed var(--line);border-radius:12px;padding:34px;text-align:center;color:var(--muted)}
   .rel-note{font-size:12px;color:var(--muted);margin:-8px 0 16px}
-  #releaseBanner{display:none;margin:0 0 14px;padding:12px 14px 12px 16px;border-radius:10px;font-size:14px;border:1px solid #cbc6f3;background:linear-gradient(90deg,#f1effd,#fff);color:var(--ink)}
+  #releaseBanner{display:none;margin:0 0 14px;padding:12px 14px 12px 16px;border-radius:10px;font-size:14px;border:1px solid var(--brand-line);background:linear-gradient(90deg,var(--brand-tint-2),#fff);color:var(--ink)}
   #releaseBanner .rb{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   #releaseBanner .rb-ic{color:var(--brand);display:inline-flex;flex-shrink:0}
   #releaseBanner .rb-tx{flex:1;min-width:200px}
@@ -551,7 +554,7 @@
   .lg-filters{padding:16px 18px}
   .lg-presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
   .lg-presets button{border:1px solid var(--line);background:#fff;color:var(--muted);padding:6px 12px;border-radius:20px;font:inherit;font-size:12.5px;font-weight:500;cursor:pointer}
-  .lg-presets button.on{background:var(--brand-soft);border-color:#cbc6f3;color:var(--brand);font-weight:600}
+  .lg-presets button.on{background:var(--brand-soft);border-color:var(--brand-line);color:var(--brand);font-weight:600}
   .lg-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
   .lg-f label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
   .lg-f input,.lg-f select{padding:8px 10px;font-size:13px}
@@ -573,7 +576,7 @@
   .lg-tbl th{padding:9px 12px;background:#fafbfd}
   .lg-tbl td{padding:9px 12px;vertical-align:middle}
   .lg-tbl tbody tr{cursor:pointer}
-  .lg-tbl tbody tr:hover td{background:#f6f5fd}
+  .lg-tbl tbody tr:hover td{background:var(--brand-tint)}
   .lg-clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lg-ts b{display:block;font-weight:600;font-size:12.5px}
   .lg-ts span{font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',ui-monospace,monospace}
@@ -587,7 +590,7 @@
   .lg-src{font-size:12px}
   .lg-src small{display:block;color:var(--muted);font-size:11px}
   .lg-st{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:6px;white-space:nowrap}
-  .lg-st.ai{background:#eceaf9;color:var(--brand)}
+  .lg-st.ai{background:var(--brand-soft);color:var(--brand)}
   .lg-st.awaiting{background:#fef3c7;color:#854d0e}
   .lg-st.manual{background:#e7f8ee;color:#137a3d}
   .lg-st.closing{background:#f0f0f4;color:var(--muted)}
@@ -608,7 +611,7 @@
   .lg-bub{border-radius:12px;padding:11px 13px;margin-bottom:10px;white-space:pre-wrap;word-break:break-word;line-height:1.55;font-size:13.5px}
   .lg-bub small{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;opacity:.7}
   .lg-bub.q{background:#f4f5fb}
-  .lg-bub.a{background:#eceaf9}
+  .lg-bub.a{background:var(--brand-soft)}
   .lg-meta{display:grid;grid-template-columns:120px 1fr;gap:7px 12px;font-size:13px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
   .lg-meta dt{color:var(--muted)}
   .lg-meta dd{margin:0;word-break:break-all}
@@ -625,7 +628,7 @@
     .lg-tbl,.lg-tbl tbody,.lg-tbl tr,.lg-tbl td{display:block;width:100%}
     .lg-tbl tr{padding:11px 14px;border-bottom:1px solid var(--line)}
     .lg-tbl tbody tr:hover td{background:none}
-    .lg-tbl tbody tr:active{background:#f6f5fd}
+    .lg-tbl tbody tr:active{background:var(--brand-tint)}
     .lg-tbl td{padding:0;border:none}
     .lg-tbl td.c-ts{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
     .lg-tbl td.c-ts .lg-ts b,.lg-tbl td.c-ts .lg-ts span{display:inline;margin-right:6px}
@@ -655,7 +658,7 @@
   .tp-stats small{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   .tp-stats b{font-size:14.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
   .tp-stats em{font-style:normal;font-size:11px;font-weight:600;color:var(--muted)}
-  .tp-insight{display:flex;gap:10px;background:linear-gradient(90deg,#f1effd,#fff);border:1px solid #cbc6f3;border-radius:12px;padding:13px 15px;margin-bottom:14px;color:var(--brand)}
+  .tp-insight{display:flex;gap:10px;background:linear-gradient(90deg,var(--brand-tint-2),#fff);border:1px solid var(--brand-line);border-radius:12px;padding:13px 15px;margin-bottom:14px;color:var(--brand)}
   .tp-insight p{color:var(--ink);line-height:1.6;font-size:13.5px}
   .tp-list{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
   .tp-item+.tp-item{border-top:1px solid var(--line)}
@@ -681,7 +684,7 @@
   .tp-split{font-size:12px;color:var(--muted);margin:6px 0}
   .tp-split span{opacity:.8}
   .tp-ex small{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px}
-  .tp-ex blockquote{margin:0 0 6px;padding:7px 11px;border-left:3px solid #cbc6f3;background:#fafbfd;border-radius:0 8px 8px 0}
+  .tp-ex blockquote{margin:0 0 6px;padding:7px 11px;border-left:3px solid var(--brand-line);background:#fafbfd;border-radius:0 8px 8px 0}
   .tp-ex cite{display:block;font-style:normal;font-size:11px;color:var(--muted);margin-top:2px}
   .tp-empty{background:#fff;border:1px dashed var(--line);border-radius:12px;padding:36px 20px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:8px}
   .tp-empty b{color:var(--ink)}
@@ -698,6 +701,7 @@
     .tp-det{padding:0 12px 12px 12px}
   }
 </style>
+<script>/* v1.2.73: brand per instalasi (DEI: kosong) */(function(){var p=location.pathname,i=p.indexOf('/dashboard/chatbot-ai'),b=i>=0?p.slice(0,i):p.replace(/\/[^\/]*$/,'');document.write('<script src="'+b+'/api/index.php?action=brand_js"><\/script>');})();</script>
 </head>
 <body>
 <button class="menu-btn" id="menuBtn"><span data-ico="menu" data-ico-size="20"></span></button>
@@ -705,7 +709,7 @@
   <aside class="side" id="side">
     <div class="brand">
       <div class="mark"><img src="./logo-256.png" alt="DEI" style="width:100%;height:100%;border-radius:10px;display:block"></div>
-      <div><b>DEI Chatbot</b><small>Admin Dashboard</small></div>
+      <div data-brand-text><b>DEI Chatbot</b><small>Admin Dashboard</small></div>
     </div>
     <nav id="nav">
       <button data-tab="reports"  data-role="super_admin,admin,supervisor" data-icon="bar-chart-3"><span class="ic"></span> Laporan &amp; Log</button>
@@ -1627,7 +1631,7 @@
           <li>Klik <strong>Tags → New → Tag Configuration → Custom HTML</strong>.</li>
           <li>Tempel kode di bawah ini ke kotak HTML.</li>
           <li>Triggering → pilih <strong>All Pages</strong>.</li>
-          <li>Beri nama (mis. "DEI Chatbot") → <strong>Save</strong> → <strong>Submit / Publish</strong>.</li>
+          <li data-brand-text>Beri nama (mis. "DEI Chatbot") → <strong>Save</strong> → <strong>Submit / Publish</strong>.</li>
         </ol>
       </div>
       <div class="card">
@@ -1668,7 +1672,7 @@
     <section class="panel" id="panel-pembaruan">
       <div class="rel-hero">
         <span class="rel-eyebrow"><span data-ico="sparkles" data-ico-size="13"></span> Catatan Rilis</span>
-        <h2>Apa yang baru di DEI Chatbot</h2>
+        <h2 data-brand-text>Apa yang baru di DEI Chatbot</h2>
         <p>Semua fitur baru, peningkatan, dan perbaikan yang kami rilis. Anda akan mendapat notifikasi setiap kali ada versi baru.</p>
         <div class="rel-hero-row">
           <div class="rel-stat"><small>Versi Anda</small><b id="relInstalled">–</b></div>
