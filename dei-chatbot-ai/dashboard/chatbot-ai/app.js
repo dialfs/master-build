@@ -53,6 +53,7 @@
     'circle-help':   '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
     'file-text':     '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
     'upload':        '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+    'user-plus':     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
     'download':      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
     'copy':          '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     'clipboard-list':'<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
@@ -4189,6 +4190,12 @@
     });
     fetchContacts();
     $('#btnReloadKontak').onclick = fetchContacts;
+    // v1.2.70: ekspor CSV -- data pribadi keluar sistem, WA Agent tidak boleh
+    var _bCsv = $('#btnExportKontakCsv');
+    if (_bCsv) {
+      if (user && user.role === 'wa_agent') _bCsv.style.display = 'none';
+      _bCsv.onclick = exportContactsCsv;
+    }
     $$('.contact-filter').forEach(function (b) {
       b.onclick = function () {
         contactFilter = b.dataset.contactStage;
@@ -4203,8 +4210,8 @@
       if (res && res.ok) { contactData = res.contacts || []; renderContacts(); }
     });
   }
-  function renderContacts() {
-    var list = contactData.filter(function (c) {
+  function contactFilteredList() {
+    return contactData.filter(function (c) {
       // v1.2.39 fase5: filter khusus -- VIP yang tanggal lahirnya (bulan+hari)
       // sama dengan hari ini (tanggal perangkat yang membuka dashboard).
       if (contactFilter === 'vip_birthday_today') {
@@ -4215,6 +4222,67 @@
       }
       return contactFilter === 'all' || (c.stage || 'new') === contactFilter;
     });
+  }
+  /* ---- v1.2.70: ekspor CSV & simpan satu kontak ke HP (.vcf) ---------- */
+  function _contactDl(content, filename, mime) {
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+  function _contactDisplayName(c) {
+    return (c.stage === 'active_customer' && c.cust_name) ? c.cust_name : (c.name || c.cust_name || '');
+  }
+  function exportContactsCsv() {
+    var list = contactFilteredList();
+    if (!list.length) { toast('Tidak ada kontak untuk diekspor.', true); return; }
+    function cell(v) {
+      v = String(v == null ? '' : v);
+      if (/^[=\-@]/.test(v)) v = "'" + v;            // cegah formula injection di Excel
+      return '"' + v.replace(/"/g, '""') + '"';
+    }
+    var head = ['Nama', 'Nomor WhatsApp', 'Nama Profil WA', 'Nama Koreksi', 'Lead Rating', 'VIP', 'Nama Pelanggan', 'Tanggal Lahir', 'Pertama Dilihat', 'Terakhir Aktif'];
+    var rows = list.map(function (c) {
+      var st = CONTACT_STAGE[c.stage || 'new'] || CONTACT_STAGE.new;
+      return [
+        _contactDisplayName(c), '+' + c.number, c.name_wa || '', c.name_manual || '',
+        st.label, c.vip ? 'Ya' : '', c.cust_name || '', c.cust_dob || '',
+        (c.first_seen || '').slice(0, 16), (c.last_seen || '').slice(0, 16)
+      ].map(cell).join(',');
+    });
+    var d = new Date();
+    var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    var suffix = contactFilter === 'all' ? '' : '-' + contactFilter;
+    try {
+      // BOM supaya Excel membaca UTF-8 (nama dengan emoji/aksen) dengan benar
+      _contactDl('\uFEFF' + [head.map(cell).join(',')].concat(rows).join('\r\n'), 'kontak' + suffix + '-' + stamp + '.csv', 'text/csv;charset=utf-8');
+      toast(list.length + ' kontak diekspor ke CSV.');
+    } catch (e) { toast('Gagal membuat file CSV.', true); }
+  }
+  // Satu kontak -> file .vcf. Di HP, membuka file ini langsung menawarkan
+  // "Tambah ke Kontak" (Android: app Kontak, iPhone: kartu kontak Safari).
+  function saveContactToPhone(c) {
+    var nama = _contactDisplayName(c) || ('+' + c.number);
+    function v(str) {
+      return String(str).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/[\r\n]+/g, ' ');
+    }
+    var vcf = 'BEGIN:VCARD\r\nVERSION:3.0\r\n' +
+      'FN:' + v(nama) + '\r\n' +
+      'N:' + v(nama) + ';;;;\r\n' +
+      'TEL;TYPE=CELL:+' + c.number + '\r\n' +
+      (c.cust_dob ? 'BDAY:' + c.cust_dob + '\r\n' : '') +
+      'NOTE:' + v('Kontak WhatsApp chatbot - ' + ((CONTACT_STAGE[c.stage || 'new'] || CONTACT_STAGE.new).label)) + '\r\n' +
+      'END:VCARD\r\n';
+    var fname = (nama.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || c.number) + '.vcf';
+    try {
+      _contactDl(vcf, fname, 'text/vcard;charset=utf-8');
+      toast('Kontak ' + nama + ' diunduh. Buka file .vcf di HP untuk menyimpan.');
+    } catch (e) { toast('Gagal membuat file kontak.', true); }
+  }
+  function renderContacts() {
+    var list = contactFilteredList();
     if (!list.length) {
       $('#contactList').innerHTML = '<div class="card" style="text-align:center;color:var(--muted)">' +
         (contactData.length ? 'Tidak ada kontak pada filter ini.' : 'Belum ada kontak.') +
@@ -4236,7 +4304,10 @@
               '<div style="color:var(--muted);font-size:12px">Terakhir aktif ' + esc((c.last_seen || '').slice(0, 16)) + '</div>' +
             '</div>' +
           '</div>' +
-          contactStageBadgeHtml(c.stage, c.vip, '') +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            contactStageBadgeHtml(c.stage, c.vip, '') +
+            '<button type="button" class="btn ghost sm contact-save-phone" title="Simpan nomor ini ke kontak HP (.vcf)" style="display:inline-flex;align-items:center;gap:4px">' + ico('user-plus', 14) + ' Simpan ke HP</button>' +
+          '</div>' +
         '</div>' +
         '<div class="contact-body" style="margin-top:12px;' + (terbuka ? '' : 'display:none') + '">' +
         '<div class="row" style="margin-top:8px"><label class="fl">Lead Rating</label>' +
@@ -4319,6 +4390,14 @@
         custDobInput.onclick = function (ev) { ev.stopPropagation(); };
         custDobInput.onchange = function (e) {
           saveContactInfo(num, { cust_dob: e.target.value });
+        };
+      }
+      var btnSave = card.querySelector('.contact-save-phone');
+      if (btnSave) {
+        btnSave.onclick = function (ev) {
+          ev.stopPropagation();
+          var cd = contactData.filter(function (x) { return x.number === num; })[0];
+          if (cd) saveContactToPhone(cd);
         };
       }
       var btnOpen = card.querySelector('.contact-open-thread');
