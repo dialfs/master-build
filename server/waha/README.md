@@ -3,6 +3,14 @@
 Dipakai tenant DEI Chatbot (hosting biasa/versi JSON maupun server sendiri) dengan penyedia **WAHA**.
 Satu VPS bisa melayani banyak tenant: satu **sesi** = satu nomor WA, nama sesi unik per tenant. Sejak WAHA 2026.6.1 semua fitur eks-Plus (termasuk sesi tanpa batas) ada di image gratis `devlikeapro/waha` — pakai versi >= 2026.6.1.
 
+## 0. Satu VPS dengan chatbot (Halte Bus) — paling sederhana
+WAHA cukup di localhost, tanpa domain/HTTPS sendiri:
+```bash
+ssh root@212.85.25.180 'bash -s' < ~/Herd/master-build/server/waha/install-waha.sh
+```
+Lalu di dashboard tenant: URL Server WAHA `http://127.0.0.1:3000`, API Key dari output skrip, Nama Sesi = slug (mis. `sinarjaya`).
+Langkah 1–2 di bawah hanya untuk WAHA yang dipakai tenant di server lain (mis. cPanel).
+
 ## 1. Pasang
 ```bash
 apt install -y docker.io docker-compose-v2 nginx certbot python3-certbot-nginx
