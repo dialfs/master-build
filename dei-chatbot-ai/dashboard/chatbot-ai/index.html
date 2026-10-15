@@ -1497,13 +1497,14 @@
           <div class="help" id="fonc_hint" style="margin-top:8px"></div>
           <button class="btn ghost" id="fonc_cancel" type="button" style="margin-top:8px">Tutup</button>
         </div>
-        <div class="help" style="margin-top:8px">Fonnte memakai jalur tidak resmi — hindari kirim pesan massal agar nomor tidak diblokir WhatsApp.</div>
+        <div class="help" style="margin-top:8px">Jalur tidak resmi (WhatsApp Web) — hindari kirim pesan massal agar nomor tidak diblokir WhatsApp.</div>
       </div>
       <div class="card" data-role-card="super_admin"><h3>WhatsApp Bot</h3>
         <div class="desc">Hubungkan chatbot AI ini ke WhatsApp. Pesan masuk akan dijawab otomatis dari Knowledge Base yang sama.</div>
         <div class="row"><label class="fl">Penyedia</label><select id="wa_provider">
           <option value="meta">Meta Cloud API — resmi, nomor khusus (tidak bisa dipakai di HP)</option>
           <option value="fonnte">Fonnte — memakai nomor yang sudah ada, tidak resmi</option>
+          <option value="waha">WAHA — gateway sendiri di VPS, balasan dari HP ikut tercatat, tidak resmi</option><!-- v1.2.76: WAHA -->
         </select><div class="help">Fonnte memakai jalur tidak resmi: nomor tetap bisa dipakai di HP, tetapi berisiko diblokir WhatsApp. Cocok untuk uji coba atau klien yang belum siap mengganti nomor.</div></div>
         <div class="toggle-row"><div><div class="tt">Aktifkan Bot WhatsApp</div><div class="td">Balas otomatis pesan WhatsApp yang masuk.</div></div>
           <label class="switch"><input type="checkbox" id="wa_enabled"><span class="sl"></span></label></div>
@@ -1536,6 +1537,17 @@
             <button class="btn ghost" id="btnCopyFonWebhook" type="button">Salin</button>
           </div>
           <div class="help">Tempel di panel Fonnte › Device › Webhook. Alamat ini memuat kunci rahasia — jangan dibagikan.</div></div>
+        <div class="row wa-waha-only"><label class="fl">URL Server WAHA</label><input type="text" id="waha_url" class="mono" placeholder="https://wa.domain-anda.com"><div class="help">Alamat gateway WAHA (Docker) di VPS, tanpa garis miring di akhir.</div></div>
+        <div class="grid2">
+          <div class="row wa-waha-only"><label class="fl">API Key WAHA</label><input type="text" id="waha_key" class="mono" placeholder="nilai WAHA_API_KEY"><div class="help">Nilai <code>WAHA_API_KEY</code> di server WAHA. Kosongkan untuk tidak mengubah.</div></div>
+          <div class="row wa-waha-only"><label class="fl">Nama Sesi</label><input type="text" id="waha_session" class="mono" placeholder="default"><div class="help">Satu sesi = satu nomor. Pakai nama unik per tenant (mis. <code>sinarjaya</code>) bila satu server WAHA melayani banyak nomor — gratis sejak WAHA 2026.6.1.</div></div>
+        </div>
+        <div class="row wa-waha-only"><label class="fl">Webhook URL (WAHA)</label>
+          <div class="row" style="flex-direction:row;gap:8px;align-items:center">
+            <input type="text" id="waha_webhook_url" class="mono" readonly style="flex:1">
+            <button class="btn ghost" id="btnCopyWahaWebhook" type="button">Salin</button>
+          </div>
+          <div class="help">Dipasang otomatis saat sesi dibuat atau lewat <b>Pasang webhook otomatis</b> di kartu Koneksi WhatsApp (event <code>message.any</code> + <code>session.status</code>, HMAC SHA-512). Balasan yang diketik dari HP ikut tercatat dan bot mundur di chat itu.</div></div>
         <div class="toggle-row"><div><div class="tt">Ingat Konteks Percakapan</div><div class="td">Simpan beberapa pesan terakhir per nomor (kedaluwarsa 6 jam).</div></div>
           <label class="switch"><input type="checkbox" id="wa_ctx"><span class="sl"></span></label></div>
         <div class="row wa-meta-only"><label class="fl">Callback URL (Webhook)</label>

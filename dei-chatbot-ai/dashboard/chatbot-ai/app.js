@@ -1509,7 +1509,7 @@
     // Bot aktif (provider apa pun -- Meta atau Fonnte).
     // v1.2.39 fase8b: hanya Fonnte -- Meta menolak teks bebas di luar
     // jendela 24 jam, jadi ucapan ulang tahun tidak bisa diandalkan.
-    var _waOnBd = !!(s.whatsapp_api && s.whatsapp_api.enabled && s.whatsapp_api.provider === 'fonnte');
+    var _waOnBd = !!(s.whatsapp_api && s.whatsapp_api.enabled && (s.whatsapp_api.provider === 'fonnte' || s.whatsapp_api.provider === 'waha'));   // v1.2.76
     if ($('#row_birthday_greeting'))  $('#row_birthday_greeting').style.display  = _waOnBd ? '' : 'none';
     if ($('#hint_birthday_greeting')) $('#hint_birthday_greeting').style.display = _waOnBd ? '' : 'none';
     $('#c_prompt').value = b.system_prompt || '';
@@ -1811,15 +1811,17 @@
   // v1.2.36: tampilkan hanya kolom milik penyedia terpilih, supaya tidak ada
   // yang bingung mengisi kolom yang tidak terpakai.
   function waTampilkanBlokPenyedia(prov) {
-    var meta = (prov !== 'fonnte');
+    // v1.2.76: WAHA — tiga penyedia
+    var meta = (prov !== 'fonnte' && prov !== 'waha');
     $$('.wa-meta-only').forEach(function (el)   { el.style.display = meta ? '' : 'none'; });
-    $$('.wa-fonnte-only').forEach(function (el) { el.style.display = meta ? 'none' : ''; });
+    $$('.wa-fonnte-only').forEach(function (el) { el.style.display = prov === 'fonnte' ? '' : 'none'; });
+    $$('.wa-waha-only').forEach(function (el)   { el.style.display = prov === 'waha' ? '' : 'none'; });
   }
 
   // v1.2.75: koneksi perangkat Fonnte dari dashboard — admin cukup scan QR.
-  var _fonc = { poll: null, qrT: null, stopT: null, mode: 'qr' };
+  var _fonc = { poll: null, qrT: null, stopT: null, waitT: null, mode: 'qr', action: 'fonnte_conn' };
   function foncStop() {
-    clearInterval(_fonc.poll); clearInterval(_fonc.qrT); clearTimeout(_fonc.stopT);
+    clearInterval(_fonc.poll); clearInterval(_fonc.qrT); clearTimeout(_fonc.stopT); clearTimeout(_fonc.waitT);
     _fonc.poll = _fonc.qrT = _fonc.stopT = null;
     var b = $('#fonc_box'); if (b) b.classList.add('hide');
   }
@@ -1834,6 +1836,9 @@
     if (st.package) bits.push('Paket ' + st.package);
     if (st.quota !== null && st.quota !== undefined && st.quota !== '') bits.push('Kuota ' + st.quota);
     if (st.expired) bits.push('Aktif s/d ' + st.expired);
+    if (st.name) bits.push(st.name);
+    if (st.session) bits.push('Sesi ' + st.session);
+    if (!st.connected && st.status) bits.push('Status ' + st.status);
     inf.textContent = bits.join(' · ');
     $('#fonc_connect').style.display = st.connected ? 'none' : '';
     $('#fonc_code').style.display = st.connected ? 'none' : '';
@@ -1841,7 +1846,7 @@
     if (st.connected) $('#fonc_numrow').classList.add('hide');
   }
   function foncStatus(silent) {
-    return api('fonnte_conn', { method: 'POST', body: { op: 'status' } }).then(function (r) {
+    return api(_fonc.action, { method: 'POST', body: { op: 'status' } }).then(function (r) {
       if (!r.ok) { if (!silent) foncSet({ error: r.error || 'Gagal membaca status.' }); return null; }
       var wasPolling = !!_fonc.poll;
       foncSet(r);
@@ -1852,7 +1857,7 @@
   function foncFetch(num) {
     var body = { op: 'qr' };
     if (_fonc.mode === 'code') { body.type = 'code'; body.whatsapp = num; }
-    return api('fonnte_conn', { method: 'POST', body: body }).then(function (r) {
+    return api(_fonc.action, { method: 'POST', body: body }).then(function (r) {
       if (!_fonc.poll) return;   // sudah ditutup
       if (!r.ok) { foncStop(); toast(r.error || 'Gagal mengambil QR.', true); return; }
       if (r.connected) { foncStop(); foncStatus(); return; }
@@ -1864,7 +1869,10 @@
         cv.textContent = r.code; cv.style.display = ''; img.style.display = 'none';
         h.textContent = 'Di HP: WhatsApp › Perangkat Tertaut › Tautkan Perangkat › Tautkan dengan nomor telepon, lalu masukkan kode ini.';
       } else {
-        h.textContent = 'Fonnte belum mengirim QR. Tunggu sebentar…';
+        // v1.2.76: sesi masih disiapkan (WAHA: STARTING) — coba lagi sebentar lagi
+        h.textContent = 'Menyiapkan sesi WhatsApp' + (r.status ? ' (' + r.status + ')' : '') + '… tunggu sebentar.';
+        clearTimeout(_fonc.waitT);
+        _fonc.waitT = setTimeout(function () { if (_fonc.poll) foncFetch(num); }, 3000);
       }
     }).catch(function () { $('#fonc_hint').textContent = 'Koneksi bermasalah, mencoba lagi…'; });
   }
@@ -1884,7 +1892,9 @@
   }
   function foncInit(wa) {
     var card = $('#fonConnCard'); if (!card) return;
-    var on = (wa.provider === 'fonnte') && !!wa.fonnte_token_is_set;
+    _fonc.action = (wa.provider === 'waha') ? 'waha_conn' : 'fonnte_conn';   // v1.2.76: WAHA
+    var on = ((wa.provider === 'fonnte') && !!wa.fonnte_token_is_set)
+          || ((wa.provider === 'waha') && !!wa.waha_url && !!wa.waha_api_key_is_set);
     card.style.display = on ? '' : 'none';
     if (!on) { foncStop(); return; }
     if (card.dataset.wired !== '1') {
@@ -1900,16 +1910,16 @@
       $('#fonc_cancel').onclick = function () { foncStop(); };
       $('#fonc_disconnect').onclick = function () {
         if (!confirm('Putuskan WhatsApp dari chatbot? Bot berhenti membalas sampai disambungkan lagi.')) return;
-        api('fonnte_conn', { method: 'POST', body: { op: 'disconnect' } }).then(function (r) {
+        api(_fonc.action, { method: 'POST', body: { op: 'disconnect' } }).then(function (r) {
           toast(r.ok ? 'WhatsApp diputuskan.' : (r.error || 'Gagal memutuskan.'), !r.ok);
           foncStatus();
         });
       };
       $('#fonc_webhook').onclick = function () {
         var b = this; b.disabled = true;
-        api('fonnte_conn', { method: 'POST', body: { op: 'webhook' } }).then(function (r) {
+        api(_fonc.action, { method: 'POST', body: { op: 'webhook' } }).then(function (r) {
           b.disabled = false;
-          toast(r.ok ? 'Webhook Fonnte terpasang.' : (r.error || 'Gagal memasang webhook.'), !r.ok);
+          toast(r.ok ? 'Webhook terpasang.' : (r.error || 'Gagal memasang webhook.'), !r.ok);
         }).catch(function () { b.disabled = false; });
       };
     }
@@ -2018,6 +2028,15 @@
       $('#fon_token').placeholder = wa.fonnte_token_is_set
         ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'token dari panel Fonnte';
       $('#fon_device').value = wa.fonnte_device || '';
+      // v1.2.76: WAHA
+      $('#waha_url').value = wa.waha_url || '';
+      $('#waha_session').value = wa.waha_session || '';
+      $('#waha_key').value = wa.waha_api_key || '';   // disamarkan server
+      $('#waha_key').placeholder = wa.waha_api_key_is_set ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'nilai WAHA_API_KEY';
+      $('#waha_webhook_url').value = (wa.waha_webhook_key && wa.waha_webhook_key.indexOf('•') === -1)
+        ? (API + '?action=wa_webhook_waha&key=' + encodeURIComponent(wa.waha_webhook_key))
+        : '(kunci dibuat otomatis setelah disimpan dengan penyedia WAHA)';
+      $('#btnCopyWahaWebhook').onclick = function () { var f = $('#waha_webhook_url'); f.select(); copyText(f.value, 'Webhook WAHA disalin.'); };
       $('#fon_webhook_url').value = wa.fonnte_webhook_key
         ? (API + '?action=wa_webhook_fonnte&key=' + encodeURIComponent(wa.fonnte_webhook_key))
         : '(kunci dibuat otomatis setelah disimpan dengan penyedia Fonnte)';
@@ -2115,6 +2134,9 @@
       rate_limit_per_number: +$('#wa_rate').value || 20,
       provider: $('#wa_provider').value,                                          // v1.2.36
       fonnte_device: $('#fon_device').value.trim(),
+      waha_url: $('#waha_url').value.trim(),                                         // v1.2.76
+      waha_session: $('#waha_session').value.trim(),
+      waha_api_key: ($('#waha_key').value.indexOf('•') !== -1) ? '' : $('#waha_key').value.trim(),
       es_app_id: ($('#es_app_id') ? $('#es_app_id').value.trim() : ''),
       es_config_id: ($('#es_config_id') ? $('#es_config_id').value.trim() : ''),
       es_graph_version: 'v21.0',
@@ -3642,7 +3664,7 @@
     var msg = '';
     if (sel === 'manual') {
       msg = ico('triangle-alert', 13) + ' Mode Manual: pesan WhatsApp tidak dibalas otomatis (termasuk auto-closing). Pastikan agent memantau dashboard — aktifkan Eskalasi di menu Respon &amp; Eskalasi agar SPV diberi tahu bila chat terlalu lama tidak dibalas.';
-      if (r.wa_provider === 'fonnte') msg += '<br>' + ico('triangle-alert', 13) + ' Fonnte: jalur tidak resmi — ada risiko nomor diblokir WhatsApp.';
+      if (r.wa_provider === 'fonnte' || r.wa_provider === 'waha') msg += '<br>' + ico('triangle-alert', 13) + ' ' + (r.wa_provider === 'waha' ? 'WAHA' : 'Fonnte') + ': jalur tidak resmi — ada risiko nomor diblokir WhatsApp.';
       if (r.wa_enabled === false) msg += '<br>' + ico('octagon-alert', 13) + ' "Aktifkan Bot WhatsApp" di menu Widget &amp; API masih mati — pesan masuk tidak akan tercatat.';
     }
     el.innerHTML = msg;
@@ -3959,7 +3981,7 @@
       // v1.2.57: pesan WA keluar (Cloud API Meta) vs 1.000 service message gratis
       var wo = res.wa_out || null, waBox = document.getElementById('ucWaBox');
       if (waBox) {
-        if (wo && wo.enabled && wo.provider !== 'fonnte') {
+        if (wo && wo.enabled && (wo.provider || 'meta') === 'meta') {   // v1.2.76: hanya Meta
           var q = wo.free_quota || 1000, sv = wo.service || 0, tp = wo.template || 0;
           var paid = Math.max(0, sv - q);
           var wPct = Math.round(sv / q * 100);
@@ -4288,7 +4310,7 @@
     // fitur ulang tahun bergantung pada ini.
     api('get_birthday_config').then(function (r) {
       if (r && r.ok) {
-        contactWaConfig.wa_enabled = !!r.wa_enabled && r.provider === 'fonnte';   // v1.2.39 fase8b
+        contactWaConfig.wa_enabled = !!r.wa_enabled && (r.provider === 'fonnte' || r.provider === 'waha');   // v1.2.39 fase8b, v1.2.76
         contactWaConfig.birthday_greeting = r.birthday_greeting || '';
       }
       var fb = document.querySelector('.contact-filter[data-contact-stage="vip_birthday_today"]');

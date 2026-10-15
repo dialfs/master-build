@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.75');
+define('DEI_VERSION', 'v1.2.76');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2321,9 +2321,212 @@ function fonnteReason($d, $fallback) {
     return $r !== '' ? $r : $fallback;
 }
 
+/* ============================================================
+ * v1.2.76: WAHA — gateway WhatsApp Web sendiri (Docker di VPS)
+ * ============================================================
+ * Berbeda dengan Fonnte, WAHA meneruskan pesan yang diketik dari HP
+ * (event message.any, fromMe=true) sehingga balasan CS dari HP ikut
+ * tercatat di dashboard dan bot otomatis mundur — sama seperti echo
+ * Coexistence Meta. Kiriman WAHA diterjemahkan ke bentuk payload Meta
+ * supaya seluruh alur yang sudah teruji (antrean, debounce, anti-dobel,
+ * mode manusia) dipakai ulang tanpa disalin. */
+function wahaSession($wa) {
+    $n = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($wa['waha_session'] ?? ''));
+    return $n !== '' ? $n : 'default';
+}
+function wahaApi($wa, $method, $path, $body = null) {
+    $base = rtrim(trim((string)($wa['waha_url'] ?? '')), '/');
+    if ($base === '') return [0, ['message' => 'URL WAHA belum diisi.']];
+    $ch = curl_init($base . $path);
+    $hdr = ['Accept: application/json', 'X-Api-Key: ' . (string)($wa['waha_api_key'] ?? '')];
+    $opt = [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_CUSTOMREQUEST => $method];
+    if ($body !== null) {
+        $hdr[] = 'Content-Type: application/json';
+        $opt[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    $opt[CURLOPT_HTTPHEADER] = $hdr;
+    curl_setopt_array($ch, $opt);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) return [0, ['message' => 'Server WAHA tidak dapat dihubungi: ' . $err]];
+    $d = json_decode((string)$resp, true);
+    return [$code, is_array($d) ? $d : ['message' => mb_substr(trim((string)$resp), 0, 200)]];
+}
+function wahaErr($code, $d, $fallback = 'Permintaan ke WAHA gagal.') {
+    $m = '';
+    if (is_array($d)) {
+        $m = $d['message'] ?? ($d['error'] ?? '');
+        if (is_array($m)) $m = implode('; ', array_map(function ($x) { return is_scalar($x) ? (string)$x : json_encode($x); }, $m));
+    }
+    $m = trim((string)$m);
+    if ($code === 401) $m = 'API Key WAHA ditolak (401).';
+    return $m !== '' ? $m : ($fallback . ($code ? ' (HTTP ' . $code . ')' : ''));
+}
+function wahaWebhookUrl($wa) {
+    $base = deiSelfApiUrl();
+    if ($base === '') $base = deiRememberedApiUrl();
+    return $base . '?action=wa_webhook_waha&key=' . rawurlencode((string)($wa['waha_webhook_key'] ?? ''));
+}
+function wahaSessionConfig($wa) {
+    return [
+        'webhooks' => [[
+            'url'     => wahaWebhookUrl($wa),
+            'events'  => ['message.any', 'session.status'],
+            'hmac'    => ['key' => (string)($wa['waha_webhook_key'] ?? '')],
+            'retries' => ['policy' => 'exponential', 'delaySeconds' => 2, 'attempts' => 5],
+        ]],
+        // NOWEB butuh store aktif supaya pemetaan @lid -> nomor tersedia.
+        'noweb' => ['store' => ['enabled' => true, 'fullSync' => false]],
+    ];
+}
+// Pastikan sesi ada & berjalan. Hasil: [ok, data sesi | pesan error].
+function wahaEnsureSession($wa) {
+    $n = wahaSession($wa);
+    list($c, $d) = wahaApi($wa, 'GET', '/api/sessions/' . rawurlencode($n));
+    if ($c === 404) {
+        list($c, $d) = wahaApi($wa, 'POST', '/api/sessions', ['name' => $n, 'start' => true, 'config' => wahaSessionConfig($wa)]);
+        if ($c < 200 || $c >= 300) return [false, wahaErr($c, $d, 'Gagal membuat sesi WAHA.')];
+        if (empty($d['status'])) $d['status'] = 'STARTING';
+        return [true, $d];
+    }
+    if ($c < 200 || $c >= 300) return [false, wahaErr($c, $d)];
+    $st = (string)($d['status'] ?? '');
+    if ($st === 'STOPPED') { wahaApi($wa, 'POST', '/api/sessions/' . rawurlencode($n) . '/start'); $d['status'] = 'STARTING'; }
+    elseif ($st === 'FAILED') { wahaApi($wa, 'POST', '/api/sessions/' . rawurlencode($n) . '/restart'); $d['status'] = 'STARTING'; }
+    return [true, $d];
+}
+function wahaJidNum($jid) {
+    $jid = strtolower(trim((string)$jid));
+    if (preg_match('/^(\d{6,20})(?::\d+)?@(c\.us|s\.whatsapp\.net)$/', $jid, $m)) return $m[1];
+    return '';
+}
+// Nomor lawan bicara. @lid (pengenal privasi WA) dipetakan ke nomor HP:
+// medan alternatif dari engine dulu, lalu API /lids WAHA (hasil disimpan).
+function wahaResolveNum($wa, $jid, $p) {
+    $num = wahaJidNum($jid);
+    if ($num !== '') return $num;
+    $jid = strtolower(trim((string)$jid));
+    if (substr($jid, -4) !== '@lid') return '';
+    $k = (is_array($p['_data']['key'] ?? null)) ? $p['_data']['key'] : [];
+    foreach (['remoteJidAlt', 'senderPn', 'participantPn'] as $f) {
+        $alt = wahaJidNum($k[$f] ?? '');
+        if ($alt !== '') return $alt;
+    }
+    $lid = preg_replace('/\D/', '', substr($jid, 0, -4));
+    if ($lid === '') return '';
+    $f = DATA_DIR . '/waha-lids.json';
+    $cache = readJson($f, []);
+    if (!empty($cache[$lid])) return (string)$cache[$lid];
+    list($c, $d) = wahaApi($wa, 'GET', '/api/' . rawurlencode(wahaSession($wa)) . '/lids/' . rawurlencode($lid));
+    $pn = ($c >= 200 && $c < 300 && is_array($d)) ? wahaJidNum($d['pn'] ?? '') : '';
+    if ($pn !== '') {
+        deiWithLock('waha-lids', function () use ($f, $lid, $pn) {
+            $all = readJson($f, []);
+            if (!is_array($all)) $all = [];
+            $all[$lid] = $pn;
+            if (count($all) > 5000) $all = array_slice($all, -5000, null, true);
+            writeJson($f, $all);
+        });
+    }
+    return $pn;
+}
+// Jejak pesan yang DIKIRIM sistem ini (bot / dashboard), supaya pantulannya
+// (fromMe) tidak dianggap balasan CS dari HP. Dicatat SEBELUM kirim karena
+// webhook pantulan bisa tiba sebelum respons sendText kembali.
+function wahaSentFile() { return DATA_DIR . '/waha-sent.json'; }
+function wahaRememberSent($num, $id, $text) {
+    deiWithLock('waha-sent', function () use ($num, $id, $text) {
+        $now = time();
+        $all = readJson(wahaSentFile(), []);
+        if (!is_array($all)) $all = [];
+        $all = array_values(array_filter($all, function ($r) use ($now) { return ($r['t'] ?? 0) > $now - 900; }));
+        $all[] = ['t' => $now, 'id' => (string)$id, 'h' => $text !== '' ? md5(waNormNum($num) . '|' . trim((string)$text)) : ''];
+        if (count($all) > 500) $all = array_slice($all, -500);
+        writeJson(wahaSentFile(), $all);
+    });
+}
+function wahaSentByUs($num, $id, $text) {
+    $all = readJson(wahaSentFile(), []);
+    if (!is_array($all)) return false;
+    $h = md5(waNormNum($num) . '|' . trim((string)$text));
+    $now = time();
+    foreach ($all as $r) {
+        if (($r['t'] ?? 0) <= $now - 900) continue;
+        if ($id !== '' && ($r['id'] ?? '') === $id) return true;
+        if (($r['h'] ?? '') === $h) return true;
+    }
+    return false;
+}
+function wahaMsgId($p) {
+    $id = $p['id'] ?? '';
+    if (is_array($id)) $id = $id['_serialized'] ?? ($id['id'] ?? '');
+    return (string)$id;
+}
+// Terjemahkan event WAHA (message / message.any) ke payload bentuk Meta.
+// null = abaikan (grup, status, chat ke diri sendiri, pantulan kiriman sendiri).
+function wahaToMetaPayload($wa, $evt) {
+    $p = is_array($evt['payload'] ?? null) ? $evt['payload'] : [];
+    $id = wahaMsgId($p);
+    $fromMe = !empty($p['fromMe']);
+    $chat = (string)($fromMe ? ($p['to'] ?? '') : ($p['from'] ?? ''));
+    if ($chat === '' || preg_match('/@(g\.us|newsletter|broadcast)$/i', $chat)) return null;
+    $num = wahaResolveNum($wa, $chat, $p);
+    if ($num === '') { error_log('waha: lawan bicara tidak terbaca (' . $chat . ')'); return null; }
+    $me = wahaJidNum(preg_replace('/:\d+@/', '@', (string)($evt['me']['id'] ?? '')));
+    if ($me !== '' && $me === $num) return null;
+
+    $body = trim((string)($p['body'] ?? ''));
+    $type = 'text';
+    if (!empty($p['hasMedia'])) {
+        $mt = strtolower((string)($p['media']['mimetype'] ?? ''));
+        $type = strpos($mt, 'image/') === 0 ? 'image' : (strpos($mt, 'video/') === 0 ? 'video'
+              : (strpos($mt, 'audio/') === 0 ? 'audio' : ($mt !== '' ? 'document' : 'media')));
+    } elseif ($body === '') {
+        $type = 'unsupported';
+    }
+
+    if ($fromMe) {
+        if (($p['source'] ?? '') === 'api' || wahaSentByUs($num, $id, $body)) return null;
+        $etext = ($type === 'text') ? $body : ($body !== '' ? $body . "\n" . deiNonTextLabel($type) : deiNonTextLabel($type));
+        return ['entry' => [['changes' => [['value' => [
+            'message_echoes' => [['id' => $id, 'to' => $num, 'type' => 'text', 'text' => ['body' => $etext]]],
+        ]]]]]];
+    }
+
+    $msg = ['from' => $num, 'id' => $id, 'type' => $type];
+    if ($type === 'text') $msg['text'] = ['body' => $body];
+    $nama = '';
+    $dd = is_array($p['_data'] ?? null) ? $p['_data'] : [];
+    foreach ([$dd['notifyName'] ?? '', $dd['pushName'] ?? '', $dd['Info']['PushName'] ?? '', $p['notifyName'] ?? ''] as $cand) {
+        if (is_string($cand) && trim($cand) !== '') { $nama = trim($cand); break; }
+    }
+    $val = ['messages' => [$msg]];
+    if ($nama !== '') $val['contacts'] = [['wa_id' => $num, 'profile' => ['name' => $nama]]];
+    return ['entry' => [['changes' => [['value' => $val]]]]];
+}
+function waSendWaha($wa, $to, $text) {
+    $GLOBALS['wa_last_error'] = '';
+    $to = waNormNum($to);
+    if ($to === '') { $GLOBALS['wa_last_error'] = 'Nomor tujuan kosong.'; return false; }
+    if (trim((string)($wa['waha_url'] ?? '')) === '') { $GLOBALS['wa_last_error'] = 'URL WAHA belum diisi.'; return false; }
+    wahaRememberSent($to, '', $text);
+    list($c, $d) = wahaApi($wa, 'POST', '/api/sendText', ['session' => wahaSession($wa), 'chatId' => $to . '@c.us', 'text' => $text]);
+    if ($c >= 200 && $c < 300) {
+        $id = is_array($d) ? wahaMsgId($d) : '';
+        if ($id !== '') wahaRememberSent($to, $id, '');
+        return true;
+    }
+    $GLOBALS['wa_last_error'] = wahaErr($c, $d, 'Kirim lewat WAHA gagal.');
+    error_log('waSendWaha HTTP ' . $c . ': ' . $GLOBALS['wa_last_error']);
+    return false;
+}
+
 function waSend($wa, $to, $text) {
     // v1.2.36: pilih penyedia. Bawaan 'meta' supaya tenant lama tidak berubah.
     if (($wa['provider'] ?? 'meta') === 'fonnte') return waSendFonnte($wa, $to, $text);
+    if (($wa['provider'] ?? 'meta') === 'waha') return waSendWaha($wa, $to, $text);   // v1.2.76: WAHA
     $GLOBALS['wa_last_error'] = '';
     $token = $wa['access_token'] ?? '';
     $pnid  = $wa['phone_number_id'] ?? '';
@@ -2599,7 +2802,8 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
 function waHandleMetaPayload($s, $wa, $payload) {
     if (!is_array($payload)) return;
     if (!($wa['enabled'] ?? false)) return;
-    if (($wa['provider'] ?? 'meta') !== 'meta') return;
+    // v1.2.76: WAHA memakai alur ini juga (payload-nya diterjemahkan ke bentuk Meta)
+    if (!in_array(($wa['provider'] ?? 'meta'), ['meta', 'waha'], true)) return;
     $logLimit = (int)($s['api']['log_limit'] ?? 500);
     $keepCtx  = ($wa['keep_context'] ?? true);
 
@@ -4936,6 +5140,46 @@ switch ($action) {
         exit;
     }
 
+    /* ---------- v1.2.76: WAHA — PUBLIC webhook gateway WhatsApp Web sendiri ---------- */
+    case 'wa_webhook_waha': {
+        $s  = getSettings();
+        $wa = waConf($s);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo 'method not allowed'; exit; }
+        // LAPIS 1 — kunci di URL. LAPIS 2 — HMAC SHA-512 (WAHA menandatangani badan kiriman).
+        $kunci = (string)($wa['waha_webhook_key'] ?? '');
+        if ($kunci === '' || !hash_equals($kunci, (string)($_GET['key'] ?? ''))) { http_response_code(403); echo 'forbidden'; exit; }
+        $raw  = file_get_contents('php://input');
+        $hmac = strtolower(trim((string)($_SERVER['HTTP_X_WEBHOOK_HMAC'] ?? '')));
+        if ($hmac !== '' && !hash_equals(hash_hmac('sha512', $raw, $kunci), $hmac)) { http_response_code(403); echo 'bad hmac'; exit; }
+
+        $evt = json_decode($raw, true);
+        if (!is_array($evt) || ($wa['provider'] ?? 'meta') !== 'waha' || !($wa['enabled'] ?? false)) { echo 'OK'; exit; }
+        if ((string)($evt['session'] ?? '') !== wahaSession($wa)) {
+            error_log('waha: sesi tidak cocok (' . mb_substr((string)($evt['session'] ?? ''), 0, 40) . ')');
+            echo 'OK'; exit;
+        }
+        if (!empty($wa['waha_debug'])) error_log('waha mentah: ' . mb_substr($raw, 0, 800));
+        if (!in_array((string)($evt['event'] ?? ''), ['message', 'message.any'], true)) { echo 'OK'; exit; }
+
+        $payload = wahaToMetaPayload($wa, $evt);
+        if ($payload === null) { echo 'OK'; exit; }
+
+        // Mode antrean (server sendiri): jalur sama dengan webhook Meta.
+        if (deiQueueRedis()) {
+            try {
+                deiDebounceBuffer($payload);
+                deiRedis()->lPush('q:wa', json_encode(['raw' => json_encode($payload, JSON_UNESCAPED_UNICODE), 'at' => time(), 'try' => 0]));
+                echo 'OK'; exit;
+            } catch (\Throwable $e) { error_log('antrean WAHA gagal, proses langsung: ' . $e->getMessage()); }
+        }
+        $earlyAck = function_exists('fastcgi_finish_request') || function_exists('litespeed_finish_request');
+        if ($earlyAck) respondAndContinue('OK');
+        @set_time_limit(60);
+        waHandleMetaPayload($s, $wa, $payload);
+        if (!$earlyAck) { echo 'OK'; }
+        exit;
+    }
+
     /* ---------- PUBLIC: webhook Fonnte (penyedia alternatif) ---------- */
     // Jalur TERPISAH dari webhook Meta. Kalau bagian ini bermasalah, tenant
     // yang memakai Meta tidak ikut terganggu.
@@ -5535,6 +5779,8 @@ switch ($action) {
             // v1.2.36: token Fonnte diperlakukan sama seperti token Meta
             $s['whatsapp_api']['fonnte_token']        = maskKey($raw['whatsapp_api']['fonnte_token'] ?? '');
             $s['whatsapp_api']['fonnte_token_is_set'] = !empty($raw['whatsapp_api']['fonnte_token']);
+            $s['whatsapp_api']['waha_api_key']        = maskKey($raw['whatsapp_api']['waha_api_key'] ?? '');   // v1.2.76
+            $s['whatsapp_api']['waha_api_key_is_set'] = !empty($raw['whatsapp_api']['waha_api_key']);
         }
         if (isset($s['telegram']) && is_array($s['telegram'])) {
             $s['telegram']['bot_token'] = maskKey($raw['telegram']['bot_token'] ?? '');
@@ -5553,6 +5799,7 @@ switch ($action) {
             $s['whatsapp_api']['phone_number_id'] = $s['whatsapp_api']['phone_number_id'] ? '••••' : '';
             // v1.2.36: kunci webhook Fonnte juga rahasia — hanya super_admin yang perlu melihatnya
             $s['whatsapp_api']['fonnte_webhook_key'] = !empty($s['whatsapp_api']['fonnte_webhook_key']) ? '••••' : '';
+            $s['whatsapp_api']['waha_webhook_key']   = !empty($s['whatsapp_api']['waha_webhook_key']) ? '••••' : '';   // v1.2.76
         }
         jsonOut(['ok' => true, 'settings' => $s, 'role' => $role]);
         break;
@@ -5584,7 +5831,7 @@ switch ($action) {
                 }
             }
             // Preserve WhatsApp secrets when masked/empty.
-            foreach (['access_token', 'app_secret', 'fonnte_token'] as $secf) {   // v1.2.36
+            foreach (['access_token', 'app_secret', 'fonnte_token', 'waha_api_key'] as $secf) {   // v1.2.36, v1.2.76
                 if (isset($incoming['whatsapp_api'][$secf])) {
                     $v = $incoming['whatsapp_api'][$secf];
                     if (strpos($v, '•') !== false || $v === '') {
@@ -5599,9 +5846,22 @@ switch ($action) {
                 && empty($current['whatsapp_api']['fonnte_webhook_key'])) {
                 $incoming['whatsapp_api']['fonnte_webhook_key'] = bin2hex(random_bytes(16));
             }
+            // v1.2.76: WAHA — kunci webhook (juga kunci HMAC) dibuat otomatis; rapikan URL & nama sesi
+            if (($incoming['whatsapp_api']['provider'] ?? '') === 'waha'
+                && empty($incoming['whatsapp_api']['waha_webhook_key'])
+                && empty($current['whatsapp_api']['waha_webhook_key'])) {
+                $incoming['whatsapp_api']['waha_webhook_key'] = bin2hex(random_bytes(24));
+            }
+            if (isset($incoming['whatsapp_api']['waha_url'])) {
+                $wu = rtrim(trim((string)$incoming['whatsapp_api']['waha_url']), '/');
+                $incoming['whatsapp_api']['waha_url'] = preg_match('#^https?://#i', $wu) ? $wu : '';
+            }
+            if (isset($incoming['whatsapp_api']['waha_session'])) {
+                $incoming['whatsapp_api']['waha_session'] = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$incoming['whatsapp_api']['waha_session']);
+            }
 
             // Preserve verify_token / phone_number_id when masked.
-            foreach (['verify_token', 'phone_number_id', 'fonnte_webhook_key'] as $f) {   // v1.2.36
+            foreach (['verify_token', 'phone_number_id', 'fonnte_webhook_key', 'waha_webhook_key'] as $f) {   // v1.2.36, v1.2.76
                 if (isset($incoming['whatsapp_api'][$f])) {
                     $v = (string)$incoming['whatsapp_api'][$f];
                     if (strpos($v, '•') !== false) {
@@ -8632,6 +8892,85 @@ JS;
             if (empty($d['status'])) jsonOut(['ok' => false, 'error' => fonnteReason($d, 'Gagal memasang webhook.')]);
             try { waAuditLog('fonnte_webhook_set', $u['username'], '', []); } catch (\Throwable $e) {}
             jsonOut(['ok' => true, 'webhook' => $base . '?action=wa_webhook_fonnte&key=••••']);
+        }
+
+        jsonOut(['ok' => false, 'error' => 'op tidak dikenal'], 400);
+        break;
+    }
+
+    /* ---------- v1.2.76: WAHA — koneksi sesi dari dashboard (scan QR / kode tautan) ---------- */
+    case 'waha_conn': {
+        $u  = requireAuth(['super_admin', 'admin']);
+        $in = bodyInput();
+        $op = (string)($in['op'] ?? 'status');
+        $s  = getSettings();
+        $wa = waConf($s);
+        if (($wa['provider'] ?? 'meta') !== 'waha') jsonOut(['ok' => false, 'error' => 'Penyedia WhatsApp bukan WAHA.'], 400);
+        if (trim((string)($wa['waha_url'] ?? '')) === '' || (string)($wa['waha_api_key'] ?? '') === '') {
+            jsonOut(['ok' => false, 'error' => 'URL / API Key WAHA belum diisi Super Admin.'], 400);
+        }
+        $n  = wahaSession($wa);
+        $sp = rawurlencode($n);
+
+        if ($op === 'status') {
+            list($c, $d) = wahaApi($wa, 'GET', '/api/sessions/' . $sp);
+            if ($c === 404) jsonOut(['ok' => true, 'connected' => false, 'status' => 'BELUM DIBUAT', 'session' => $n]);
+            if ($c < 200 || $c >= 300) jsonOut(['ok' => false, 'error' => wahaErr($c, $d)]);
+            $st  = (string)($d['status'] ?? '');
+            $dev = wahaJidNum(preg_replace('/:\d+@/', '@', (string)($d['me']['id'] ?? '')));
+            if ($dev !== '' && (string)($wa['waha_number'] ?? '') !== $dev) {
+                $s2 = getSettings();
+                $s2['whatsapp_api']['waha_number'] = $dev;
+                writeJson(SETTINGS_FILE, $s2);
+            }
+            jsonOut(['ok' => true, 'connected' => ($st === 'WORKING'), 'status' => $st, 'session' => $n,
+                     'device' => $dev, 'name' => (string)($d['me']['pushName'] ?? '')]);
+        }
+
+        if ($op === 'qr') {
+            list($ok, $d) = wahaEnsureSession($wa);
+            if (!$ok) jsonOut(['ok' => false, 'error' => $d]);
+            $st = (string)($d['status'] ?? '');
+            if ($st === 'WORKING') jsonOut(['ok' => true, 'connected' => true]);
+            if ($st !== 'SCAN_QR_CODE') jsonOut(['ok' => true, 'connected' => false, 'wait' => true, 'status' => $st]);
+            if (($in['type'] ?? 'qr') === 'code') {
+                $num = preg_replace('/\D/', '', (string)($in['whatsapp'] ?? ''));
+                if (strpos($num, '0') === 0) $num = '62' . substr($num, 1);
+                if (strlen($num) < 9 || strlen($num) > 15) jsonOut(['ok' => false, 'error' => 'Nomor WhatsApp tidak valid.'], 400);
+                list($c, $r) = wahaApi($wa, 'POST', '/api/' . $sp . '/auth/request-code', ['phoneNumber' => $num]);
+                if ($c >= 200 && $c < 300 && !empty($r['code'])) jsonOut(['ok' => true, 'connected' => false, 'code' => (string)$r['code']]);
+                jsonOut(['ok' => false, 'error' => wahaErr($c, $r, 'Kode tautan tidak tersedia, pakai scan QR.')]);
+            }
+            list($c, $q) = wahaApi($wa, 'GET', '/api/' . $sp . '/auth/qr?format=image');
+            $img = ($c >= 200 && $c < 300) ? preg_replace('/[^A-Za-z0-9+\/=]/', '', (string)($q['data'] ?? '')) : '';
+            if ($img !== '') {
+                $mime = preg_match('#^image/[a-z]+$#', (string)($q['mimetype'] ?? '')) ? $q['mimetype'] : 'image/png';
+                jsonOut(['ok' => true, 'connected' => false, 'qr' => 'data:' . $mime . ';base64,' . $img]);
+            }
+            jsonOut(['ok' => true, 'connected' => false, 'wait' => true, 'status' => $st]);
+        }
+
+        if ($op === 'disconnect') {
+            list($c, $d) = wahaApi($wa, 'POST', '/api/sessions/' . $sp . '/logout');
+            if ($c >= 200 && $c < 300) {
+                try { waAuditLog('waha_logout', $u['username'], '', []); } catch (\Throwable $e) {}
+                jsonOut(['ok' => true]);
+            }
+            jsonOut(['ok' => false, 'error' => wahaErr($c, $d, 'Gagal memutuskan.')]);
+        }
+
+        if ($op === 'webhook') {
+            if (($u['role'] ?? '') !== 'super_admin') jsonOut(['ok' => false, 'error' => 'Khusus Super Admin.'], 403);
+            if ((string)($wa['waha_webhook_key'] ?? '') === '') jsonOut(['ok' => false, 'error' => 'Kunci webhook belum ada — simpan pengaturan dengan penyedia WAHA dulu.'], 400);
+            list($c, $d) = wahaApi($wa, 'GET', '/api/sessions/' . $sp);
+            if ($c === 404) {
+                list($c, $d) = wahaApi($wa, 'POST', '/api/sessions', ['name' => $n, 'start' => true, 'config' => wahaSessionConfig($wa)]);
+            } elseif ($c >= 200 && $c < 300) {
+                list($c, $d) = wahaApi($wa, 'PUT', '/api/sessions/' . $sp, ['name' => $n, 'config' => wahaSessionConfig($wa)]);
+            }
+            if ($c < 200 || $c >= 300) jsonOut(['ok' => false, 'error' => wahaErr($c, $d, 'Gagal memasang webhook.')]);
+            try { waAuditLog('waha_webhook_set', $u['username'], '', []); } catch (\Throwable $e) {}
+            jsonOut(['ok' => true]);
         }
 
         jsonOut(['ok' => false, 'error' => 'op tidak dikenal'], 400);

@@ -1,0 +1,30 @@
+# Gateway WAHA untuk DEI Chatbot (penyedia "WAHA", v1.2.76+)
+# Jalankan di VPS:  cp .env.example .env  (isi nilainya)  lalu  docker compose up -d
+# Port hanya dibuka ke localhost; akses publik lewat nginx + HTTPS (lihat README.md).
+services:
+  waha:
+    image: devlikeapro/waha:${WAHA_TAG:-latest}      # >= 2026.6.1: semua fitur (termasuk banyak sesi) gratis
+    container_name: waha
+    restart: always
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      WAHA_API_KEY: ${WAHA_API_KEY}                  # sama dengan "API Key WAHA" di dashboard
+      WHATSAPP_DEFAULT_ENGINE: ${WAHA_ENGINE:-NOWEB} # NOWEB / GOWS: ringan, tanpa browser
+      WHATSAPP_RESTART_ALL_SESSIONS: "True"          # sesi tersambung lagi setelah restart
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASH_USER:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASH_PASS}
+      WHATSAPP_SWAGGER_USERNAME: ${WAHA_DASH_USER:-admin}
+      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_DASH_PASS}
+      TZ: Asia/Jakarta
+      # Media (gambar/suara/dokumen) — atur lewat WAHA_DOWNLOAD_MEDIA di .env (true/false)
+      WAHA_EVENTS_DOWNLOAD_MEDIA: ${WAHA_DOWNLOAD_MEDIA:-false}
+      WAHA_API_DOWNLOAD_MEDIA: ${WAHA_DOWNLOAD_MEDIA:-false}
+      WHATSAPP_FILES_LIFETIME: ${WAHA_FILES_LIFETIME:-180}   # detik file disimpan; 0 = simpan selamanya
+      WHATSAPP_FILES_FOLDER: /app/.media
+    volumes:
+      - ./sessions:/app/.sessions                    # kredensial login WA — WAJIB dibackup
+      - ./media:/app/.media
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
