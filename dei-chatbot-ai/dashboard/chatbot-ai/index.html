@@ -700,6 +700,76 @@
     .tp-sent{display:none}
     .tp-det{padding:0 12px 12px 12px}
   }
+  /* v1.2.74: PANDUAN (guided walkthrough) */
+  #tourRoot{position:fixed;inset:0;z-index:10000}
+  #tourRoot .tour-block{position:absolute;inset:0;background:transparent}
+  #tourRoot .tour-hole{position:fixed;border-radius:12px;box-shadow:0 0 0 200vmax rgba(12,12,32,.58);outline:2px solid rgba(255,255,255,.95);outline-offset:0;pointer-events:none;transition:left .28s ease,top .28s ease,width .28s ease,height .28s ease}
+  #tourRoot.center .tour-hole{outline:none}
+  #tourRoot .tour-pop{position:fixed;background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(10,10,40,.28);padding:18px 18px 14px;color:var(--ink);transition:left .28s ease,top .28s ease;max-height:calc(100vh - 24px);overflow:auto}
+  #tourRoot .tour-x{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;display:flex}
+  #tourRoot .tour-x:hover{background:var(--bg);color:var(--ink)}
+  #tourRoot .tour-step{font-size:11.5px;font-weight:600;color:var(--brand);letter-spacing:.02em;text-transform:uppercase;margin-bottom:6px;padding-right:28px}
+  #tourRoot .tour-prev{display:inline-block;font-size:11px;font-weight:600;background:#fff7e6;color:#9a5b00;border:1px solid #f6d79a;border-radius:20px;padding:2px 9px;margin-bottom:8px}
+  #tourRoot h4{font-size:16.5px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px;padding-right:24px;line-height:1.3}
+  #tourRoot .tour-body{font-size:13.5px;line-height:1.6;color:#3a3a52}
+  #tourRoot .tour-body p+p{margin-top:8px}
+  #tourRoot .tour-body ul{margin:6px 0 0 18px}
+  #tourRoot .tour-body li{margin:2px 0}
+  #tourRoot .tour-prog{height:4px;background:var(--line);border-radius:4px;margin:14px 0 12px;overflow:hidden}
+  #tourRoot .tour-prog i{display:block;height:100%;background:var(--brand);border-radius:4px;transition:width .28s ease}
+  #tourRoot .tour-foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  #tourRoot .tour-foot .tour-hint{font-size:11.5px;color:var(--muted)}
+  #tourRoot .tour-btns{display:flex;gap:8px;margin-left:auto}
+  #tourRoot .tour-btns .btn{white-space:nowrap}
+  #tourBtns .btn{display:inline-flex;align-items:center;gap:6px}
+  /* v1.2.74: PUSAT BANTUAN (cari panduan) */
+  #helpRoot{position:fixed;inset:0;z-index:9990;display:none}
+  #helpRoot.on{display:block}
+  #helpRoot .help-back{position:absolute;inset:0;background:rgba(12,12,32,.45)}
+  #helpRoot .help-box{position:absolute;top:8vh;left:50%;transform:translateX(-50%);width:min(620px,calc(100vw - 32px));max-height:84vh;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(10,10,40,.3);display:flex;flex-direction:column;overflow:hidden;animation:fade .18s ease}
+  #helpRoot .help-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px 10px}
+  #helpRoot .help-head b{font-size:17px;letter-spacing:-.01em;display:block}
+  #helpRoot .help-head small{color:var(--muted);font-size:12.5px}
+  #helpRoot .help-x{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;display:flex}
+  #helpRoot .help-x:hover{background:var(--bg);color:var(--ink)}
+  #helpRoot .help-search{margin:4px 20px 10px;display:flex;align-items:center;gap:10px;border:1.5px solid var(--brand-line);border-radius:12px;padding:0 14px;background:var(--brand-tint);color:var(--brand)}
+  #helpRoot .help-search:focus-within{border-color:var(--brand);background:#fff}
+  #helpRoot .help-search input{flex:1;border:none;outline:none;background:transparent;font:inherit;font-size:15px;padding:12px 0;color:var(--ink);min-width:0}
+  #helpRoot .help-res{overflow-y:auto;padding:4px 20px 14px;flex:1}
+  #helpRoot .help-lbl{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 6px}
+  #helpRoot .help-item{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden}
+  #helpRoot .help-item.open{border-color:var(--brand-line);box-shadow:0 2px 10px rgba(var(--brand-rgb),.06)}
+  #helpRoot .help-q{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff;border:none;padding:12px 14px;font:inherit;font-size:14px;font-weight:600;color:var(--ink);text-align:left;cursor:pointer}
+  #helpRoot .help-q:hover{background:var(--bg)}
+  #helpRoot .help-q svg{flex-shrink:0;color:var(--muted);transition:transform .2s}
+  #helpRoot .help-item.open .help-q svg{transform:rotate(180deg)}
+  #helpRoot .help-a{display:none;padding:0 14px 14px}
+  #helpRoot .help-item.open .help-a{display:block}
+  #helpRoot .help-a ol{margin:0 0 12px 20px;font-size:13.5px;line-height:1.6;color:#3a3a52}
+  #helpRoot .help-a li{margin:3px 0}
+  #helpRoot .help-a .btn{display:inline-flex;align-items:center;gap:6px}
+  #helpRoot .help-chips{display:flex;flex-wrap:wrap;gap:6px}
+  #helpRoot .help-chips button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:6px 11px;font:inherit;font-size:12.5px;color:var(--ink);cursor:pointer}
+  #helpRoot .help-chips button:hover{border-color:var(--brand);color:var(--brand)}
+  #helpRoot .help-empty{color:var(--muted);text-align:center;padding:28px 10px;line-height:1.7}
+  #helpRoot .help-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--line);background:var(--bg);font-size:13px;color:var(--muted)}
+  #helpRoot .help-foot .btn{display:inline-flex;align-items:center;gap:6px}
+  .tour-cari{display:flex;gap:8px;margin-bottom:12px}
+  .tour-cari input{flex:1}
+  @media(max-width:860px){
+    #helpRoot .help-box{top:0;left:0;transform:none;width:100vw;height:100%;max-height:none;border-radius:0}
+    #helpRoot .help-head{padding-top:max(18px,env(safe-area-inset-top))}
+    #helpRoot .help-search input{font-size:16px}
+    #helpRoot .help-q{font-size:15px;padding:14px}
+    #helpRoot .help-foot span{display:none}
+  }
+  @media(max-width:860px){
+    #tourRoot .tour-pop{border-radius:16px}
+    #tourRoot h4{font-size:17px}
+    #tourRoot .tour-body{font-size:14.5px}
+    #tourRoot .tour-foot .tour-hint{display:none}
+    #tourRoot .tour-btns .btn{padding:10px 16px;font-size:14px}
+  }
 </style>
 <script>/* v1.2.73: brand per instalasi (DEI: kosong) */(function(){var p=location.pathname,i=p.indexOf('/dashboard/chatbot-ai'),b=i>=0?p.slice(0,i):p.replace(/\/[^\/]*$/,'');document.write('<script src="'+b+'/api/index.php?action=brand_js"><\/script>');})();</script>
 </head>
@@ -732,7 +802,7 @@
     <div class="who">
       <div class="nm" id="whoName">—</div>
       <span class="badge" id="whoRole">—</span>
-      <button id="btnNotif" type="button" title="Aktifkan notifikasi pesan baru" style="margin-right:8px"><span data-ico="bell"></span> Notifikasi</button><button id="logout">Keluar</button>
+      <button id="btnTour" type="button" title="Cari panduan &amp; tur (tekan /)"><span data-ico="circle-help"></span> Panduan</button><button id="btnNotif" type="button" title="Aktifkan notifikasi pesan baru" style="margin-right:8px"><span data-ico="bell"></span> Notifikasi</button><button id="logout">Keluar</button>
     </div>
   </aside>
 
@@ -1666,6 +1736,13 @@
         <p class="hint" style="font-size:12px;color:var(--muted);margin:8px 0">Password minimal 8 karakter. Setelah berhasil, Anda akan otomatis logout.</p>
         <button class="btn" id="btnChangePassword">Simpan Password</button>
       </div>
+      <!-- v1.2.74: Panduan -->
+      <div class="card" id="tourCard" style="margin-top:16px">
+        <h3 style="margin:0 0 6px 0;font-size:15px">Panduan Penggunaan</h3>
+        <div class="tour-cari"><input type="search" id="tourCariQ" placeholder="Cari panduan… mis. cara lihat kontak leads" autocomplete="off"><button type="button" class="btn ghost" id="tourCariBtn"><span data-ico="search"></span> Cari</button></div>
+        <p class="hint" id="tourCardNote" style="font-size:13px;color:var(--muted);margin:0 0 12px">Tur singkat menu &amp; fitur sesuai peran Anda.</p>
+        <div id="tourBtns" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
     </section>
 
     <!-- v1.2.65: PEMBARUAN (catatan rilis, khusus super_admin/admin) -->
@@ -1697,6 +1774,6 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=1.2.68"></script>
+<script src="app.js?v=1.2.74"></script>
 </body>
 </html>

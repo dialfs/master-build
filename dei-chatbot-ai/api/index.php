@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.73');
+define('DEI_VERSION', 'v1.2.74');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -3045,6 +3045,11 @@ function deiFetchReleaseNotes($force = false) {
 
 // Dipanggil dari cron_tick. Rilis pertama yang terlihat hanya dicatat (tanpa push)
 // supaya tenant yang baru dipasang tidak dibanjiri notifikasi rilis lama.
+/* v1.2.74: rilis bertipe "perbaikan" hanya ditampilkan ke Super Admin */
+function deiRelVisible($r, $role) {
+    return $role === 'super_admin' || (($r['type'] ?? '') !== 'perbaikan');
+}
+
 function deiReleaseNotify($latest) {
     if (!deiVerOk($latest)) return null;
     $st = readJson(RELNOTIFY_FILE, []);
@@ -3057,14 +3062,16 @@ function deiReleaseNotify($latest) {
     if (!empty($GLOBALS['dei_dry'])) return ['would_notify' => $latest];
     $notes = deiFetchReleaseNotes(true);
     $title = '';
+    $relType = '';
     foreach (($notes['releases'] ?? []) as $r) {
-        if ($r['version'] === $latest) { $title = $r['title'] !== '' ? $r['title'] : mb_substr($r['changelog'], 0, 110); break; }
+        if ($r['version'] === $latest) { $title = $r['title'] !== '' ? $r['title'] : mb_substr($r['changelog'], 0, 110); $relType = (string)($r['type'] ?? ''); break; }
     }
+    $pushRoles = $relType === 'perbaikan' ? ['super_admin'] : ['super_admin', 'admin'];   // v1.2.74
     $subs = array_keys(readJson(DATA_DIR . '/push-subs.json', []));
     $targets = [];
     foreach (readJson(USERS_FILE, []) as $u) {
         $un = (string)($u['username'] ?? '');
-        if ($un !== '' && in_array(($u['role'] ?? ''), ['super_admin', 'admin'], true) && in_array($un, $subs, true)) $targets[] = $un;
+        if ($un !== '' && in_array(($u['role'] ?? ''), $pushRoles, true) && in_array($un, $subs, true)) $targets[] = $un;
     }
     if ($targets) sendPushToUsers($targets, 'Pembaruan baru: ' . $latest, $title !== '' ? $title : 'Lihat apa yang baru di ' . deiBrandProduct() . '.', deiDashboardUrl() . '#pembaruan', 'dei-release');
     writeJson(RELNOTIFY_FILE, ['last_notified' => $latest, 'at_wib' => wibDate('Y-m-d H:i:s'), 'pushed' => count($targets)]);
@@ -5456,6 +5463,7 @@ switch ($action) {
                         'username' => $username,
                         'name'     => $u['name'] ?? $username,
                         'role'     => $role,
+                        'tour_seen' => (int)($u['tour_seen'] ?? 0),   // v1.2.74
                     ],
                 ]);
             }
@@ -5473,6 +5481,7 @@ switch ($action) {
             'username' => $u['username'],
             'name'     => $u['name'] ?? $u['username'],
             'role'     => $u['role'] ?? 'editor',
+            'tour_seen' => (int)($u['tour_seen'] ?? 0),   // v1.2.74
         ]]);
         break;
     }
@@ -7531,7 +7540,7 @@ switch ($action) {
     case 'release_notes': {
         $u = requireAuth(['super_admin', 'admin']);
         $n = deiFetchReleaseNotes(!empty($_GET['refresh']));
-        $rel = $n['releases'] ?? [];
+        $rel = array_values(array_filter($n['releases'] ?? [], function ($r) use ($u) { return deiRelVisible($r, $u['role'] ?? ''); }));   // v1.2.74
         $latest = $rel[0]['version'] ?? null;
         $seen = '';
         foreach (readJson(USERS_FILE, []) as $x) {
@@ -7553,6 +7562,22 @@ switch ($action) {
             'stale'             => !empty($n['stale']),
             'error'             => $n['error'] ?? '',
         ]);
+        break;
+    }
+
+    /* ---------- v1.2.74: Panduan — tandai versi tur yang sudah dilihat (semua peran) ---------- */
+    case 'tour_seen': {
+        $u = requireAuth();
+        $in = bodyInput();
+        $v = max(0, min(999, (int)($in['ver'] ?? 0)));
+        if ($v < 1) jsonOut(['ok' => false, 'error' => 'Versi panduan tidak valid.'], 400);
+        $users = readJson(USERS_FILE, []);
+        foreach ($users as $i => $x) {
+            if (($x['username'] ?? '') !== $u['username']) continue;
+            if ((int)($x['tour_seen'] ?? 0) < $v) { $users[$i]['tour_seen'] = $v; writeJson(USERS_FILE, $users); }
+            break;
+        }
+        jsonOut(['ok' => true, 'tour_seen' => $v]);
         break;
     }
 
