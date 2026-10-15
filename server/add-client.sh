@@ -50,6 +50,9 @@ mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB\` CHARACTER SET utf8mb4 COLLATE ut
           ALTER USER '$USR'@'127.0.0.1' IDENTIFIED BY '$PASS';
           GRANT ALL PRIVILEGES ON \`$DB\`.* TO '$USR'@'127.0.0.1'; FLUSH PRIVILEGES;"
 
+# Alamat server pusat bawaan (template lama berisi alamat lokal dei-pusat.test)
+php -r '$f=$argv[1]; $s=json_decode((string)@file_get_contents($f), true); if (is_array($s)) { $u=(string)($s["central_server"]["url"] ?? ""); if ($u === "" || strpos($u, ".test") !== false) { $s["central_server"]["url"]="https://chat.deintegra.com"; file_put_contents($f, json_encode($s, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)); } }' "$DIR/data/settings.json"
+
 echo "==> data/server.php (driver mysql + redis)"
 cat > "$DIR/data/server.php" <<PHP
 <?php

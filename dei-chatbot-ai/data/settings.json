@@ -58,7 +58,7 @@
     ]
   },
   "central_server": {
-    "url": "http://dei-pusat.test",
+    "url": "https://chat.deintegra.com",
     "tenant_id": "",
     "license_key": "",
     "auto_update": false,
