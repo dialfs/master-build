@@ -53,6 +53,9 @@ mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB\` CHARACTER SET utf8mb4 COLLATE ut
 # Alamat server pusat bawaan (template lama berisi alamat lokal dei-pusat.test)
 php -r '$f=$argv[1]; $s=json_decode((string)@file_get_contents($f), true); if (is_array($s)) { $u=(string)($s["central_server"]["url"] ?? ""); if ($u === "" || strpos($u, ".test") !== false) { $s["central_server"]["url"]="https://chat.deintegra.com"; file_put_contents($f, json_encode($s, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)); } }' "$DIR/data/settings.json"
 
+# Kunci Web Push (VAPID) sendiri per klien — jangan memakai kunci bawaan zip
+php -r 'require $argv[1]."/vendor/autoload.php"; $k=Minishlink\WebPush\VAPID::createVapidKeys(); file_put_contents($argv[1]."/data/vapid-keys.json", json_encode($k, JSON_PRETTY_PRINT));' "$DIR" || echo "    (VAPID gagal dibuat — notifikasi push memakai kunci bawaan)"
+
 echo "==> data/server.php (driver mysql + redis)"
 cat > "$DIR/data/server.php" <<PHP
 <?php
