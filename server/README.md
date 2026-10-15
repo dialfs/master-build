@@ -51,7 +51,7 @@ Pengaturan tambahan per klien di `data/server.php` (v1.2.72, dipasang otomatis o
 Hasil uji beban (AI tiruan 1,5 dtk/pesan): 16 worker = ±10 pesan/detik, 1.200 pesan dari
 400 nomor tanpa balasan ganda dan tanpa riwayat hilang. Target 10.000 pesan/hari ≈ puncak 5/detik.
 
-## Pasang VPS baru (Ubuntu 24.04 LTS) — dari Mac, satu perintah
+## Pasang VPS baru (Ubuntu 24.04 / 26.04 LTS) — dari Mac, satu perintah
 
 ```bash
 cd ~/Herd/master-build && git pull

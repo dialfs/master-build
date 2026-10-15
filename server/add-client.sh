@@ -18,6 +18,7 @@ SLUG="${1:-}"; DOMAIN="${2:-}"; WORKERS="${3:-16}"; SRC="${4:-https://chat.deint
 [ -n "$DOMAIN" ] || { echo "domain wajib"; exit 1; }
 [[ "$WORKERS" =~ ^[0-9]+$ ]] && [ "$WORKERS" -ge 1 ] && [ "$WORKERS" -le 64 ] || { echo "worker 1-64"; exit 1; }
 HERE="$(cd "$(dirname "$0")" && pwd)"; T="$HERE/templates"
+PHPV="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
 BRAND="${BRAND:-haltebus}"
 if [ "$BRAND" != "none" ] && [ ! -d "$HERE/brand/$BRAND" ]; then echo "brand '$BRAND' tidak ada di $HERE/brand/"; exit 1; fi
 DIR="/var/www/$SLUG"; USR="dei-$SLUG"; DB="$(echo "${SLUG}_chat" | tr '-' '_')"; CONF="/etc/dei/clients/$SLUG.conf"
@@ -88,7 +89,7 @@ echo "==> Tabel"
 sudo -u "$USR" php "$DIR/api/index.php" action=db_init
 
 echo "==> PHP-FPM, Nginx, worker, cron"
-sed "s/__SLUG__/$SLUG/g" "$T/php-fpm-pool.conf" > "/etc/php/8.3/fpm/pool.d/dei-$SLUG.conf"
+sed "s/__SLUG__/$SLUG/g" "$T/php-fpm-pool.conf" > "/etc/php/$PHPV/fpm/pool.d/dei-$SLUG.conf"
 NEW_HOST=0
 if [ -n "$PATHPART" ]; then
   # Satu vhost per domain bersama; tiap klien = satu potongan location /<slug>/
@@ -108,7 +109,7 @@ fi
 sed "s/__SLUG__/$SLUG/g; s/__WORKERS__/$WORKERS/g" "$T/supervisor-workers.conf" > "/etc/supervisor/conf.d/dei-$SLUG.conf"
 sed "s/__SLUG__/$SLUG/g" "$T/cron-client" > "/etc/cron.d/dei-$SLUG"
 touch "/var/log/dei/$SLUG-php.log" "/var/log/dei/$SLUG-worker.log"; chown "$USR" /var/log/dei/"$SLUG"-*.log
-php-fpm8.3 -t && systemctl reload php8.3-fpm
+"php-fpm$PHPV" -t && systemctl reload "php$PHPV-fpm"
 nginx -t && systemctl reload nginx
 supervisorctl reread >/dev/null && supervisorctl update >/dev/null
 

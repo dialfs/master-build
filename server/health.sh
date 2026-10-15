@@ -6,7 +6,9 @@ set -uo pipefail
 send() { [ -n "${TG_BOT_TOKEN:-}" ] && [ -n "${TG_CHAT_ID:-}" ] && curl -fsS -m 10 "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
   --data-urlencode "chat_id=$TG_CHAT_ID" --data-urlencode "text=$1" >/dev/null; echo "$(date '+%F %T') $1"; }
 [ "${1:-}" = "--alert" ] && { send "$2"; exit 0; }
-for SVC in nginx php8.3-fpm mysql redis-server supervisor; do systemctl is-active --quiet "$SVC" || send "[$(hostname)] layanan $SVC MATI"; done
+PHPV=""; RSVC=redis-server; [ -f /etc/dei-runtime.conf ] && . /etc/dei-runtime.conf
+[ -n "$PHPV" ] || PHPV="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+for SVC in nginx "php$PHPV-fpm" mysql "$RSVC" supervisor; do systemctl is-active --quiet "$SVC" || send "[$(hostname)] layanan $SVC MATI"; done
 for C in /etc/dei/clients/*.conf; do
   [ -e "$C" ] || exit 0
   SLUG=""; WORKERS=0; . "$C"

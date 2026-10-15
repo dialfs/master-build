@@ -33,7 +33,7 @@ trap cleanup EXIT
 
 echo "==> SSH ke $TARGET (masukkan password root VPS kalau diminta)"
 "${SSH[@]}" "$TARGET" '. /etc/os-release; echo "    $PRETTY_NAME, $(nproc) vCPU, $(awk "/MemTotal/{print int(\$2/1024)}" /proc/meminfo) MB RAM, disk bebas $(df -h / | awk "NR==2{print \$4}")"
-  [ "$ID" = ubuntu ] || { echo "    BUKAN Ubuntu. Instal ulang OS VPS ke Ubuntu 24.04 di panel Hostinger dulu."; exit 3; }'
+  [ "$ID" = ubuntu ] || { echo "    BUKAN Ubuntu. Instal ulang OS VPS ke Ubuntu 24.04 atau 26.04 di panel Hostinger dulu."; exit 3; }'
 
 echo "==> Kirim kit server + master zip"
 "${SSH[@]}" "$TARGET" 'rm -rf /opt/dei-src/server && mkdir -p /opt/dei-src'
