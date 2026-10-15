@@ -36,6 +36,16 @@ Yang dijamin di mode antrean:
   ulang saat slot itu hidup lagi (maks 3 percobaan, lalu ke `q:wa:dead`).
 - **Redis mati** — webhook otomatis memproses langsung (perilaku lama), idempotensi pindah ke MySQL.
 
+Pengaturan tambahan per klien di `data/server.php` (v1.2.72, dipasang otomatis oleh `add-client.sh`):
+
+| Kunci | Fungsi |
+| --- | --- |
+| `debounce_sec` => 2 | Bubble beruntun dari satu nomor (jeda < 2 dtk) digabung jadi satu panggilan AI & satu balasan. Uji: 600 bubble / 200 nomor -> 200 panggilan AI, tidak ada yang hilang. Menambah ±2 dtk ke waktu balas. |
+| `ai_fallback` => ['provider' => 'openrouter', 'model' => 'anthropic/claude-haiku-4.5'] | Kalau AI utama gagal, dicoba sekali dengan model cadangan. |
+| `ai_fail_handoff` => true, `ai_fail_text` | Kalau semua AI gagal: pelanggan dapat `ai_fail_text`, nomor dialihkan ke agent (mode manusia), notifikasi Telegram. |
+
+`wa_queue_status` menampilkan `queue_active`; `false` berarti Redis tidak terjangkau (health.sh mengirim peringatan).
+
 Hasil uji beban (AI tiruan 1,5 dtk/pesan): 16 worker = ±10 pesan/detik, 1.200 pesan dari
 400 nomor tanpa balasan ganda dan tanpa riwayat hilang. Target 10.000 pesan/hari ≈ puncak 5/detik.
 

@@ -17,7 +17,11 @@ class H(BaseHTTPRequestHandler):
             time.sleep(1.5)
             last = [m for m in body.get('messages', []) if m.get('role') == 'user'][-1]['content']
             if isinstance(last, list): last = ' '.join(x.get('text', '') for x in last)
-            out = {'choices': [{'message': {'content': 'Balasan: ' + str(last)[-60:]}}],
+            model = body.get('model', '')
+            with lk: open(LOG + '.ai', 'a').write(json.dumps({'model': model, 'last': last}, ensure_ascii=False) + '\n')  # AICALLS
+            if 'GAGALTOTAL' in str(last) or ('GAGAL' in str(last) and model == 'google/gemini-2.5-flash'):
+                b = b'{"error":{"message":"upstream down"}}'; self.send_response(502); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b); return
+            out = {'choices': [{'message': {'content': ('Balasan: ' if model == 'google/gemini-2.5-flash' else 'Cadangan: ') + str(last)[-80:]}}],
                    'usage': {'prompt_tokens': 3000, 'completion_tokens': 50, 'cost': 0.001}}
         elif '/messages' in self.path:
             with lk:

@@ -11,6 +11,7 @@ for C in /etc/dei/clients/*.conf; do
   [ -e "$C" ] || exit 0
   SLUG=""; WORKERS=0; . "$C"
   J="$(sudo -u "dei-$SLUG" php "/var/www/$SLUG/api/index.php" action=wa_queue_status 2>/dev/null)" || { send "[$SLUG] status antrean tidak bisa dibaca"; continue; }
+  [ "$(echo "$J" | jq -r '.queue_active')" = "false" ] && { send "[$SLUG] Redis tidak terjangkau — antrean mati, pesan diproses langsung (lebih lambat)"; continue; }
   P="$(echo "$J" | jq -r '.pending // 0')"; D="$(echo "$J" | jq -r '.dead // 0')"; A="$(echo "$J" | jq -r '.workers_alive // 0')"
   [ "$P" -gt "${QUEUE_ALERT:-200}" ] && send "[$SLUG] antrean menumpuk: $P pesan menunggu (worker hidup $A/$WORKERS)"
   [ "$A" -eq 0 ] && send "[$SLUG] TIDAK ADA worker hidup — pesan WA tidak dibalas"

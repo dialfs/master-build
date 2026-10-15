@@ -45,6 +45,13 @@ return [
     'queue'   => 'redis',
     'db'      => ['host' => '127.0.0.1', 'port' => 3306, 'name' => '$DB', 'user' => '$USR', 'pass' => '$PASS'],
     'redis'   => ['host' => '127.0.0.1', 'port' => 6379, 'db' => 0, 'prefix' => '$SLUG:'],
+    // v1.2.72: gabung bubble beruntun (detik, 0 = mati)
+    'debounce_sec'    => 2,
+    // v1.2.72: model cadangan kalau AI utama gagal (provider openrouter memakai API key OpenRouter di dashboard)
+    'ai_fallback'     => ['provider' => 'openrouter', 'model' => 'anthropic/claude-haiku-4.5'],
+    // v1.2.72: kalau semua AI gagal -> nomor dialihkan ke agent + notifikasi Telegram
+    'ai_fail_handoff' => true,
+    'ai_fail_text'    => 'Terima kasih, pesan Anda sudah kami terima. Tim kami akan segera membalas.',
 ];
 PHP
 chown -R "$USR:$USR" "$DIR"
