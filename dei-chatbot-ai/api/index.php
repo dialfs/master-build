@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.84');
+define('DEI_VERSION', 'v1.2.85');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2301,6 +2301,18 @@ function deiRedbusExpand($answer, $message = '', $history = []) {
         }
         if ($g && $g['to'] !== null && $g['from'] === null) return 'Berangkat dari kota mana? Nanti saya kirimkan link cek harga & pesan tiket ke ' . $nm($g['to']) . '.';
         return deiRedbusRouteNA() . ' Silakan sebutkan kota tujuan lain.';
+    }
+    // v1.2.85: penolakan AI soal harga/tiket ke kota di luar tabel -> kabar "belum tersedia" + contoh tujuan
+    if (strpos((string)$answer, '[[REDBUS') === false
+        && preg_match('/tidak (memiliki|punya|ada|tersedia)[^.\n]{0,20}informasi|belum (memiliki|punya|ada) informasi/iu', (string)$answer)
+        && preg_match('/(?:harga|tiket|rute|tarif)[^.\n]{0,40}?\bke\s+(\p{Lu}[\p{L}]+(?:\s\p{Lu}[\p{L}]+)?)/u', (string)$answer, $km)
+        && !deiRedbusCity($km[1])
+        && !(($gg = deiRedbusGuess($message, $history)) && $gg['to'] !== null)) {   // pesan pelanggan sudah berisi rute dikenal -> cadangan biasa
+        $c = deiRedbusConf(); $op = trim((string)($c['operator'] ?? ''));
+        $ex = [];
+        foreach ($c['cities'] as $k => $v) { if (is_int($v) || ctype_digit((string)$v)) $ex[] = trim(preg_replace('/\s*\(.*?\)/', '', $k)); if (count($ex) >= 8) break; }
+        return 'Mohon maaf, rute ke ' . $km[1] . ' belum tersedia' . ($op !== '' ? ' di ' . $op : '') . '. '
+            . 'Kota yang tersedia antara lain ' . implode(', ', $ex) . '. Mau cek rute yang mana?';
     }
     return deiRedbusExpandCore($answer, $message, $history);
 }
