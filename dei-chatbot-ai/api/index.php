@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.86');
+define('DEI_VERSION', 'v1.2.87');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2189,7 +2189,10 @@ function deiRedbusUrl($from, $to, $date = '') {
     $c = deiRedbusConf(); $f = deiRedbusCity($from); $t = deiRedbusCity($to);
     if (!$c || !$f || !$t || $f[1] === $t[1]) return '';
     $today = wibDate('Y-m-d');
-    $d = (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$date) && $date >= $today) ? $date : $today;
+    // v1.2.87: tanpa tanggal -> hari ini sebelum jam batas, sesudahnya besok
+    $cut = (int)($c['cutoff_hour'] ?? 15);
+    $def = ((int)wibDate('G') >= $cut) ? date('Y-m-d', strtotime($today . ' +1 day')) : $today;
+    $d = (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$date) && $date >= $today) ? $date : $def;
     $q = ['fromCityName' => $f[0], 'fromCityId' => $f[1], 'srcCountry' => 'Indonesia', 'fromCityType' => 'CITY',
           'toCityName' => $t[0], 'toCityId' => $t[1], 'destCountry' => 'Indonesia', 'toCityType' => 'CITY',
           'onward' => date('d-M-Y', strtotime($d . ' 12:00:00'))];
@@ -2368,6 +2371,7 @@ function deiRedbusExpandCore($answer, $message = '', $history = []) {
         if ($u === '') { error_log('redbus: kota tidak dikenal (' . $m[1] . ' -> ' . $m[2] . ')'); return deiRedbusRouteNA(trim($m[1]), trim($m[2])); }   // v1.2.84
         return trim($label . ' ' . $u);
     }, (string)$answer);
+    if ($label !== '') $out = preg_replace('/(?:' . preg_quote($label, '/') . '\s*){2,}/u', $label . ' ', (string)$out);   // v1.2.87: label ganda
     return trim(preg_replace("/\n{3,}/", "\n\n", (string)$out));
 }
 
