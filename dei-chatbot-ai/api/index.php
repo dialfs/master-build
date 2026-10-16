@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.88');
+define('DEI_VERSION', 'v1.2.89');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -1090,7 +1090,7 @@ function waOutCount($kind) {
         if (!is_array($all)) $all = [];
         $m = wibDate('Y-m');
         if (!isset($all[$m]) || !is_array($all[$m])) $all[$m] = ['service' => 0, 'template' => 0];
-        $k = ($kind === 'template') ? 'template' : 'service';
+        $k = in_array($kind, ['template', 'saved'], true) ? $kind : 'service';   // v1.2.89: 'saved' = bubble yang tidak jadi dikirim
         $all[$m][$k] = (int)($all[$m][$k] ?? 0) + 1;
         ksort($all);
         if (count($all) > 13) $all = array_slice($all, -13, null, true);
@@ -1102,7 +1102,48 @@ function waOutCount($kind) {
 function waOutMonth($monthKey = null) {
     $all = readJson(WA_OUT_FILE, []);
     $r = is_array($all[$monthKey ?? wibDate('Y-m')] ?? null) ? $all[$monthKey ?? wibDate('Y-m')] : [];
-    return ['service' => (int)($r['service'] ?? 0), 'template' => (int)($r['template'] ?? 0)];
+    return ['service' => (int)($r['service'] ?? 0), 'template' => (int)($r['template'] ?? 0), 'saved' => (int)($r['saved'] ?? 0)];   // v1.2.89
+}
+
+/* v1.2.89: HEMAT PESAN WA. Sejak 1 Okt 2026 Meta menagih tiap service message yang
+ * terkirim (lewat 1.000 gratis/nomor/bulan). settings.wa_hemat:
+ *   debounce_sec (0-8, bawaan 3) — bubble beruntun satu nomor dijawab sekali
+ *   skip_ack     (bawaan true)  — "ok makasih" setelah jawaban bot (bukan pertanyaan) tidak dibalas
+ *   prompt       (bawaan true)  — instruksi "satu jawaban tuntas" untuk kanal WhatsApp */
+function deiHematConf($s = null) {
+    if ($s === null) $s = getSettings();
+    $h = is_array($s['wa_hemat'] ?? null) ? $s['wa_hemat'] : [];
+    return [
+        'debounce_sec' => array_key_exists('debounce_sec', $h) ? max(0.0, min(8.0, (float)$h['debounce_sec'])) : 3.0,
+        'skip_ack'     => !array_key_exists('skip_ack', $h) || !empty($h['skip_ack']),
+        'prompt'       => !array_key_exists('prompt', $h) || !empty($h['prompt']),
+    ];
+}
+// Pesan sistem ke satu nomor maks sekali per $ttl detik. true = boleh kirim sekarang (dan dicatat).
+function deiSysOnce($num, $kind, $ttl) {
+    $k = preg_replace('/\D/', '', (string)$num) . ':' . $kind;
+    try {
+        return deiWithLock('sysonce', function () use ($k, $ttl) {
+            $f = DATA_DIR . '/sys-once.json';
+            $all = readJson($f, []);
+            if (!is_array($all)) $all = [];
+            $now = time();
+            foreach ($all as $kk => $t) { if ((int)$t < $now - 86400) unset($all[$kk]); }
+            if (isset($all[$k]) && (int)$all[$k] > $now - $ttl) return false;
+            $all[$k] = $now;
+            writeJson($f, $all);
+            return true;
+        });
+    } catch (\Throwable $e) { error_log('deiSysOnce: ' . $e->getMessage()); return true; }
+}
+// Instruksi gaya balasan WhatsApp. Ditempel di blok SETELAH titik cache supaya cache KB tetap utuh.
+function deiHematPromptBlock() {
+    return "=== GAYA BALASAN WHATSAPP (HEMAT PESAN) ===\n"
+         . "Setiap balasanmu dikirim sebagai SATU pesan WhatsApp dan setiap pesan berbiaya. Karena itu:\n"
+         . "- Jawab tuntas dalam satu balasan. Sertakan sekaligus info yang hampir pasti ditanyakan berikutnya (mis. harga + jadwal + cara pesan/link).\n"
+         . "- Bila perlu data dari pelanggan, tanyakan SEMUA yang dibutuhkan sekaligus dalam satu pesan, jangan satu per satu.\n"
+         . "- Jangan menutup dengan basa-basi yang memancing balasan tanpa isi (mis. \"Ada lagi yang bisa dibantu?\") kecuali memang perlu.\n"
+         . "- Tetap ringkas dan mudah dibaca.";
 }
 
 /* v1.2.57: satu sumber statistik untuk report_back, check_update & cron_tick
@@ -2408,7 +2449,7 @@ function deiRedbusExpandCore($answer, $message = '', $history = []) {
     return trim(preg_replace("/\n{3,}/", "\n\n", (string)$out));
 }
 
-function generateAnswer($s, $message, $history = []) {
+function generateAnswer($s, $message, $history = [], $channel = '') {
     $persona     = trim((string)($s['bot']['system_prompt'] ?? ''));
     // v1.2.3: prepend structured prompt prefix (form-generated). Empty string if all fields blank.
     $structuredPrefix = buildStructuredPromptPrefix($s['bot'] ?? []);
@@ -2427,6 +2468,7 @@ function generateAnswer($s, $message, $history = []) {
     $deiPriceBlk = pricelistPromptBlock();   // v1.2.22: '' kalau daftar harga kosong
     $deiRbBlk = deiRedbusPromptBlock();      // v1.2.81: hanya bila redbus aktif di server.php
     if ($deiRbBlk !== '') $deiPriceBlk = trim($deiPriceBlk . "\n\n" . $deiRbBlk);
+    if ($channel === 'whatsapp' && deiHematConf($s)['prompt']) $deiPriceBlk = trim($deiPriceBlk . "\n\n" . deiHematPromptBlock());   // v1.2.89
     $deiWaktuBlk = deiKonteksWaktu();        // v1.2.35: dipasang di SEMUA jalur di bawah
     $minCacheTok = 1024;   // Anthropic ignores cache on blocks below ~1024 tokens
 
@@ -2993,7 +3035,8 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     // v1.2.58: mode Manual tidak memakai AI (tidak ada biaya), jangan buang pesan
     // pelanggan & jangan kirim balasan otomatis "terlalu banyak pesan".
     if (!deiIsManual($s) && !checkRateLimit('wa:' . $from, $limit)) {
-        waSend($wa, $from, 'Anda mengirim terlalu banyak pesan. Mohon tunggu sebentar ya.');
+        if (deiSysOnce($from, 'ratelimit', 600)) waSend($wa, $from, 'Anda mengirim terlalu banyak pesan. Mohon tunggu sebentar ya.');
+        else waOutCount('saved');   // v1.2.89
         return;
     }
 
@@ -3040,11 +3083,27 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
         return;
     }
 
+    // v1.2.89: ucapan penutup ("ok makasih", 👍) setelah jawaban bot yang bukan pertanyaan -> tidak dibalas
+    $hemat = deiHematConf($s);
+    if ($hemat['skip_ack'] && $keepCtx && trim($text) !== '' && deiIsClosingPhrase($text)) {
+        $hAck = waLoadHistory($from);
+        $lastT = end($hAck);
+        $lastA = (is_array($lastT) && ($lastT['role'] ?? '') === 'assistant') ? rtrim((string)($lastT['content'] ?? '')) : '';
+        if ($lastA !== '' && mb_strpos(mb_substr($lastA, -25), '?') === false) {
+            $hAck[] = ['role' => 'user', 'content' => $text];
+            waSaveHistory($from, $hAck);
+            logPrepend(array_merge($logBase, ['a' => '', 'hemat' => 'ack']), $logLimit);
+            waOutCount('saved');
+            return;
+        }
+    }
+
     // Bot mode — generate and send an automatic answer.
     // v1.1.3: license enforcement
     $lic = getLicenseStatus($s);
     if ($lic['status'] === 'suspended') {
         $answer = $lic['message'] ?: LIC_DEFAULT_SUSPEND_MSG;
+        if (!deiSysOnce($from, 'suspended', 21600)) { waOutCount('saved'); logPrepend(array_merge($logBase, ['a' => '', 'suspended' => true]), $logLimit); return; }   // v1.2.89
         if (waSend($wa, $from, $answer)) convReply($from, 'system');   // v1.2.56
         logPrepend(array_merge($logBase, ['a' => $answer, 'suspended' => true]), $logLimit);
         return;
@@ -3053,12 +3112,13 @@ function waProcessIncoming($s, $wa, $from, $text, $senderName = '', $metaInfo = 
     $cap = getCapStatus($s);
     if ($cap['reached'] || $cap['warning']) {
         $answer = $cap['message'] ?: CAP_DEFAULT_MSG;
+        if (!deiSysOnce($from, 'cap', 21600)) { waOutCount('saved'); logPrepend(array_merge($logBase, ['a' => '', 'cap_reached' => true]), $logLimit); return; }   // v1.2.89
         if (waSend($wa, $from, $answer)) convReply($from, 'system');   // v1.2.56
         logPrepend(array_merge($logBase, ['a' => $answer, 'cap_reached' => true]), $logLimit);
         return;
     }
     $history = $keepCtx ? waLoadHistory($from) : [];
-    list($ok, $answer, $_kbUsed, $usage) = generateAnswer($s, $text, $history);
+    list($ok, $answer, $_kbUsed, $usage) = generateAnswer($s, $text, $history, 'whatsapp');   // v1.2.89
     // v1.2.5: strip markdown kalau rule no_asterisk aktif (WA channel)
     $answer = stripMarkdownIfEnabled($answer, $s);
     $deiAiError = false;   // v1.2.17
@@ -3211,7 +3271,63 @@ function waHandleMetaPayload($s, $wa, $payload) {
  * (maks 8 dtk), lalu menguras buffer: semua bubble jadi SATU panggilan AI.
  * Job pesan lain yang ikut tergabung nanti dilewati karena wamid-nya sudah ditandai. */
 function deiDebounceSec() {
-    return deiQueueRedis() ? max(0.0, min(5.0, (float)(deiServerConf()['debounce_sec'] ?? 0))) : 0.0;
+    if (!deiQueueRedis()) return 0.0;
+    // v1.2.89: server.php 'debounce_sec' menang; kalau tidak diisi pakai pengaturan Hemat Pesan
+    $sc = deiServerConf();
+    return max(0.0, min(5.0, array_key_exists('debounce_sec', $sc) ? (float)$sc['debounce_sec'] : deiHematConf()['debounce_sec']));
+}
+/* v1.2.89: DEBOUNCE MODE FILE (shared hosting, tanpa Redis). Tiap webhook mencatat pesannya
+ * di data/.debounce/<nomor>.json lalu menunggu sampai nomor itu diam N detik (maks 8).
+ * Hanya proses yang pesannya PALING AKHIR yang menjawab — semua teks digabung jadi satu.
+ * Proses lain berhenti tanpa membalas: [null, []]. Butuh webhook yang sudah ack ke Meta. */
+function deiDebounceFileCollect($s, $num, $wamid, $text) {
+    if (deiQueueRedis() || $wamid === '') return [$text, []];
+    $sec = deiHematConf($s)['debounce_sec'];
+    if ($sec <= 0) return [$text, []];
+    if (PHP_SAPI !== 'cli' && !function_exists('fastcgi_finish_request') && !function_exists('litespeed_finish_request')) return [$text, []];
+    $k = preg_replace('/\D/', '', (string)$num);
+    if ($k === '') return [$text, []];
+    $dir = DATA_DIR . '/.debounce';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $f = $dir . '/' . $k . '.json';
+    $rw = function ($fn) use ($f, $k) {
+        return deiWithLock('deb_' . $k, function () use ($f, $fn) {
+            $items = is_file($f) ? json_decode((string)@file_get_contents($f), true) : [];
+            if (!is_array($items)) $items = [];
+            $batas = microtime(true) - 600;
+            $items = array_values(array_filter($items, function ($it) use ($batas) { return is_array($it) && (float)($it['t'] ?? 0) > $batas; }));
+            $res = $fn($items);
+            if ($items) @file_put_contents($f, json_encode($items, JSON_UNESCAPED_UNICODE), LOCK_EX); else @unlink($f);
+            return $res;
+        });
+    };
+    try {
+        $rw(function (&$items) use ($wamid, $text) { $items[] = ['id' => (string)$wamid, 'text' => $text, 't' => microtime(true)]; });
+        $stop = microtime(true) + 8;
+        while (microtime(true) < $stop) {
+            $last = $rw(function (&$items) { $e = end($items); return $e ? (float)$e['t'] : 0.0; });
+            $wait = $last + $sec - microtime(true);
+            if ($wait <= 0) break;
+            usleep((int)(min($wait, 0.5) * 1e6));
+        }
+        return $rw(function (&$items) use ($wamid) {
+            $e = end($items);
+            if (!$e || (string)$e['id'] !== (string)$wamid) return [null, []];   // ada pesan lebih baru -> dia yang menjawab
+            $texts = []; $ids = [];
+            foreach ($items as $it) {
+                $id = (string)($it['id'] ?? '');
+                if ($id === '' || isset($ids[$id])) continue;
+                $ids[$id] = true;
+                $t = trim((string)($it['text'] ?? ''));
+                if ($t !== '') $texts[] = $t;
+            }
+            $items = [];
+            return [implode("\n", $texts), array_keys($ids)];
+        });
+    } catch (\Throwable $e) {
+        error_log('debounce file: ' . $e->getMessage());
+        return [$text, []];
+    }
 }
 function deiDebounceBuffer($payload) {
     if (deiDebounceSec() <= 0 || !is_array($payload)) return;
@@ -3279,14 +3395,21 @@ function waHandleMetaMessage($s, $wa, $msg, $waProfileNames, $metadata) {
                 waProcessIncoming($s, $wa, $from, deiNonTextLabel($msg['type'] ?? ''), $deiWaName, $metadata);
                 return;
             }
-            waSend($wa, $from, 'Maaf, untuk saat ini saya hanya bisa membalas pesan teks.');
+            if (deiSysOnce($from, 'nontext', 1800)) waSend($wa, $from, 'Maaf, untuk saat ini saya hanya bisa membalas pesan teks.');
+            else waOutCount('saved');   // v1.2.89
             return;
         }
         $text = trim($msg['text']['body'] ?? '');
         if ($text === '') return;
         // v1.2.72: bubble beruntun dari nomor ini digabung (mode antrean + debounce_sec)
         if (!deiIsManual($s) && waGetMode($from) === 'bot') {
-            list($text, $mergedIds) = deiDebounceCollect($from, $wamid, $text);
+            if (deiQueueRedis()) {
+                list($text, $mergedIds) = deiDebounceCollect($from, $wamid, $text);
+            } else {
+                list($text, $mergedIds) = deiDebounceFileCollect($s, $from, $wamid, $text);   // v1.2.89
+                if ($text === null) { waOutCount('saved'); return; }   // digabung ke pesan berikutnya
+            }
+            if (count($mergedIds ?? []) > 1 && deiQueueRedis()) { for ($i = 1; $i < count($mergedIds); $i++) waOutCount('saved'); }
             if ($text === '') return;
         }
         // v1.2.36: alur pemrosesan dipindah ke fungsi bersama
@@ -6225,6 +6348,9 @@ switch ($action) {
             if (isset($incoming['auto_closing']) && is_array($incoming['auto_closing'])) {
                 $merged['auto_closing'] = deiMergeSettings($current['auto_closing'] ?? [], $incoming['auto_closing']);
             }
+            if (isset($incoming['wa_hemat']) && is_array($incoming['wa_hemat'])) {   // v1.2.89
+                $merged['wa_hemat'] = deiMergeSettings($current['wa_hemat'] ?? [], $incoming['wa_hemat']);
+            }
             if (isset($incoming['escalation']) && is_array($incoming['escalation'])) {
                 $escIn = $incoming['escalation'];
                 unset($escIn['pushover_app_token']);
@@ -7566,7 +7692,7 @@ switch ($action) {
             'chats_used'     => $mCalls,   // v1.2.57: hitungan langsung (cache cap bisa basi s/d 24 jam)
             'wa_out'         => (function () { $s0 = getSettings(); $w = waConf($s0); $o = waOutMonth();
                                     return ['enabled' => !empty($w['enabled']), 'provider' => $w['provider'] ?? 'meta',
-                                            'service' => $o['service'], 'template' => $o['template'],
+                                            'service' => $o['service'], 'template' => $o['template'], 'saved' => $o['saved'],   // v1.2.89
                                             'free_quota' => WA_FREE_SERVICE_QUOTA]; })(),
             'chat_cap'       => $cap['cap'] ?? 0,
             'usage_pct'      => $cap['pct'] ?? 0,

@@ -4002,6 +4002,7 @@
           wb.style.background = wPct >= 100 ? '#c4302b' : (wPct >= 80 ? '#d97706' : '#16a34a');
           var note = paid > 0 ? (paid + ' service berbayar') : ('Gratis, sisa ' + (q - sv));
           if (tp > 0) note += ' · ' + tp + ' template (berbayar)';
+          if (wo.saved > 0) note += ' · ' + wo.saved + ' dihemat';   // v1.2.89
           var nEl = document.getElementById('ucWaNote');
           nEl.textContent = note;
           nEl.style.color = paid > 0 ? '#c4302b' : (wPct >= 80 ? '#d97706' : 'var(--muted)');
@@ -4598,6 +4599,10 @@
     api('get_settings').then(function (res) {
       if (!res.ok) return;
       var ac = res.settings.auto_closing || {}, ec = res.settings.escalation || {};
+      var hm = res.settings.wa_hemat || {};   // v1.2.89
+      $('#hm_debounce').value = (hm.debounce_sec === undefined || hm.debounce_sec === null) ? 3 : hm.debounce_sec;
+      $('#hm_skip_ack').checked = hm.skip_ack !== false;
+      $('#hm_prompt').checked = hm.prompt !== false;
       $('#ac_enabled').checked = ac.enabled === true;
       $('#ac_minutes').value = ac.minutes || 10;
       $('#ac_phone').value = ac.phone || '';
@@ -4657,7 +4662,12 @@
         text_en: $('#ac_text_en').value.trim(),
         hours: $('#ac_hours').value.trim()
       },
-      escalation: esc_
+      escalation: esc_,
+      wa_hemat: {   // v1.2.89
+        debounce_sec: Math.max(0, Math.min(8, Math.round(+$('#hm_debounce').value || 0))),
+        skip_ack: $('#hm_skip_ack').checked,
+        prompt: $('#hm_prompt').checked
+      }
     } };
     api('save_settings', { method: 'POST', body: body }).then(function (res) {
       if (res.ok) { toast('Pengaturan Respon & Eskalasi tersimpan.'); loadEskalasi(); }
