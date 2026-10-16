@@ -35,12 +35,10 @@
 </head>
 <body>
   <form class="card" id="form">
-    <div id="loginHead" style="display:flex;align-items:center;gap:13px;margin-bottom:8px">
+    <div id="loginHead" style="display:flex;align-items:center;gap:13px;margin-bottom:26px">
       <div class="logo" style="margin-bottom:0;flex-shrink:0"><img id="loginLogoImg" src="./logo-256.png" alt="DEI" style="width:100%;height:100%;border-radius:14px;display:block"></div>
       <h1 data-brand-text style="margin:0;font-size:19px;line-height:1.25">DEI Chatbot Dashboard</h1>
     </div>
-    <div id="loginTenant" style="color:var(--ink);font-size:16px;font-weight:600;margin:0 0 22px;min-height:22px"></div>
-    <p class="sub">Masuk untuk mengelola asisten AI Anda.</p>
     <div class="err" id="err"></div>
     <div class="field">
       <label for="u">Username</label>
@@ -51,7 +49,6 @@
       <input id="p" type="password" autocomplete="current-password" required>
     </div>
     <button type="submit" id="btn">Masuk</button>
-    <p class="hint">Default awal: <strong>admin</strong> / <strong>admin123</strong> — ganti segera.</p>
   </form>
 
 <script>
@@ -73,21 +70,6 @@
     if (img) img.src = base + '/dashboard/chatbot-ai/logo-256.png';
   })();
 
-  // v1.2.33: tampilkan nama bot tenant ini. 'bootstrap' dipilih karena satu-
-  // satunya sumber yang terbaca TANPA login — di halaman ini pengguna memang
-  // belum masuk. Kalau gagal, baris dibiarkan kosong: ini keterangan, bukan
-  // syarat untuk bisa login.
-  (function () {
-    var el = document.getElementById('loginTenant');
-    if (!el) return;
-    fetch(API + '?action=bootstrap&_=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        var nama = res && res.config && res.config.bot && res.config.bot.bot_name;
-        if (nama) el.textContent = nama;
-      })
-      .catch(function () { /* dibiarkan kosong */ });
-  })();
 
   var form = document.getElementById('form'),
       err = document.getElementById('err'),
