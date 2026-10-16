@@ -46,6 +46,8 @@ Pengaturan tambahan per klien di `data/server.php` (v1.2.72, dipasang otomatis o
 
 | `brand` => 'haltebus' (v1.2.73) | Dashboard tampil sebagai **Haltebus Chatbot**: warna merah Haltebus, nama "DEI" diganti "Haltebus". Ikon/logo/manifest disalin dari `server/brand/haltebus/` oleh `add-client.sh` (pakai `BRAND=none` untuk tampilan DEI). |
 
+| `redbus` (v1.2.81) | Link redBus otomatis untuk pertanyaan harga/tiket: `['op_id' => '18107', 'cities' => ['Jakarta' => 193490, 'Purwokerto' => 194407, 'Jogja' => 'Yogyakarta']]` (nilai = ID kota redBus, atau nama kota lain sebagai alias; opsional `'label' => 'Cek harga & pesan tiket:'`). AI menulis tag `[[REDBUS:asal|tujuan|YYYY-MM-DD]]`, server menggantinya dengan link (tanggal kosong = hari ini). ID kota diambil dari URL redBus (`fromCityId`). Tanpa kunci ini fitur mati. |
+
 `wa_queue_status` menampilkan `queue_active`; `false` berarti Redis tidak terjangkau (health.sh mengirim peringatan).
 
 Hasil uji beban (AI tiruan 1,5 dtk/pesan): 16 worker = ±10 pesan/detik, 1.200 pesan dari
