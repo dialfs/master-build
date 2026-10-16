@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.79');
+define('DEI_VERSION', 'v1.2.80');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -1441,10 +1441,32 @@ function callOpenRouter($settings, $systemBlocks, $messages) {
 /* v1.2.72: model cadangan (server sendiri). data/server.php:
  *   'ai_fallback' => ['provider' => 'openrouter', 'model' => 'anthropic/claude-haiku-4.5']
  * Kalau AI utama gagal, dicoba sekali dengan model cadangan. Tanpa kunci itu = perilaku lama. */
+/* v1.2.80: model cadangan dipilih Super Admin di dashboard (settings.api.fallback = "provider:model").
+ * "" = bawaan (data/server.php 'ai_fallback' bila ada), "none" = tanpa cadangan. */
+function deiAiFallback($settings) {
+    $v = trim((string)($settings['api']['fallback'] ?? ''));
+    if ($v === 'none') return null;
+    if ($v !== '' && strpos($v, ':') !== false) {
+        list($p, $m) = explode(':', $v, 2);
+        $p = ($p === 'openrouter') ? 'openrouter' : 'anthropic';
+        $m = trim($m);
+        if ($m === '') return null;
+        $fb = ['provider' => $p, 'model' => $m];
+    } else {
+        $fb = deiServerConf()['ai_fallback'] ?? null;
+        if (!is_array($fb) || empty($fb['model'])) return null;
+        $fb = ['provider' => (string)($fb['provider'] ?? ($settings['api']['provider'] ?? 'anthropic')), 'model' => (string)$fb['model']];
+    }
+    // sama dengan model utama = tidak ada gunanya dicoba ulang
+    $pp = (string)($settings['api']['provider'] ?? 'anthropic');
+    $pm = $pp === 'openrouter' ? (string)($settings['api']['openrouter_model'] ?? '') : (string)($settings['api']['model'] ?? '');
+    if ($fb['provider'] === $pp && $fb['model'] === $pm) return null;
+    return $fb;
+}
 function callClaude($settings, $systemBlocks, $messages) {
     $r = callClaudeOnce($settings, $systemBlocks, $messages);
     if (!empty($r[0])) return $r;
-    $fb = deiServerConf()['ai_fallback'] ?? null;
+    $fb = deiAiFallback($settings);
     if (!is_array($fb) || empty($fb['model'])) return $r;
     $s2 = $settings;
     $prov = (string)($fb['provider'] ?? ($settings['api']['provider'] ?? 'anthropic'));
@@ -5810,6 +5832,8 @@ switch ($action) {
         // v1.2.49: OpenRouter key (rahasia)
         $s['api']['openrouter_api_key'] = maskKey($raw['api']['openrouter_api_key'] ?? '');
         $s['api']['openrouter_key_is_set'] = !empty($raw['api']['openrouter_api_key']);
+        $sfb = deiServerConf()['ai_fallback'] ?? null;   // v1.2.80: info cadangan bawaan server
+        $s['api']['server_fallback'] = (is_array($sfb) && !empty($sfb['model'])) ? (string)$sfb['model'] : '';
         // mask WhatsApp secrets
         if (isset($s['whatsapp_api']) && is_array($s['whatsapp_api'])) {
             $s['whatsapp_api']['access_token'] = maskKey($raw['whatsapp_api']['access_token'] ?? '');
@@ -7975,7 +7999,7 @@ switch ($action) {
         if (PHP_SAPI !== 'cli') jsonOut(['ok' => false, 'error' => 'Hanya lewat CLI.'], 403);
         $out = ['ok' => true, 'version' => DEI_VERSION, 'storage' => deiServerConf()['storage'], 'queue' => deiServerConf()['queue'],
                 'queue_active' => deiQueueRedis(), 'debounce_sec' => deiDebounceSec(),
-                'ai_fallback' => (string)(deiServerConf()['ai_fallback']['model'] ?? ''), 'ai_fail_handoff' => !empty(deiServerConf()['ai_fail_handoff'])];   // v1.2.72
+                'ai_fallback' => (string)((deiAiFallback(getSettings()) ?? [])['model'] ?? ''), 'ai_fail_handoff' => !empty(deiServerConf()['ai_fail_handoff'])];   // v1.2.72
         if (deiServerConf()['queue'] === 'redis' && !deiQueueRedis()) {
             $out['ok'] = false;
             $out['warning'] = 'Redis tidak terjangkau: antrean TIDAK aktif, pesan diproses langsung oleh webhook.';

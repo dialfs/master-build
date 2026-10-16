@@ -2006,6 +2006,15 @@
       $('#a_or_key').value = a.openrouter_api_key || '';
       $('#a_or_key').placeholder = a.openrouter_key_is_set ? '•••• (terisi — kosongkan untuk tidak mengubah)' : 'sk-or-...';
       setOrModel(a.openrouter_model || 'google/gemini-2.5-flash');
+      (function(){ // v1.2.80: model cadangan
+        var fs = $('#a_fallback'); if (!fs) return;
+        var d = $('#a_fallback_default');
+        if (d) d.textContent = a.server_fallback ? ('Bawaan server (' + a.server_fallback + ')') : 'Bawaan (tidak ada cadangan)';
+        var v = a.fallback || '';
+        var ada = false; for (var i = 0; i < fs.options.length; i++) { if (fs.options[i].value === v) { ada = true; break; } }
+        if (!ada && v) { var o = document.createElement('option'); o.value = v; o.textContent = v; fs.appendChild(o); }
+        fs.value = v;
+      })();
       wireAiProvider();
       wireOrModel();
       toggleAiProvider();
@@ -2115,6 +2124,7 @@
       provider: $('#a_provider') ? $('#a_provider').value : 'anthropic',
       model: $('#a_model').value,
       openrouter_model: getOrModel(),
+      fallback: $('#a_fallback') ? $('#a_fallback').value : '',   // v1.2.80
       max_tokens: +$('#a_maxtok').value || 400,
       rate_limit: +$('#a_rate').value || 20,
       kb_max_results: +$('#a_kbmax').value || 5,

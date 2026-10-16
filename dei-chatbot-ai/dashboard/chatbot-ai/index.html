@@ -1443,6 +1443,7 @@
           <div class="row"><label class="fl">Model</label>
             <select id="a_or_model_sel">
               <optgroup label="Google Gemini">
+                <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite — paling hemat</option>
                 <option value="google/gemini-2.5-flash">Gemini 2.5 Flash — cepat &amp; murah</option>
                 <option value="google/gemini-2.5-pro">Gemini 2.5 Pro — pintar</option>
               </optgroup>
@@ -1465,6 +1466,25 @@
             <input type="text" id="a_or_model" class="mono" placeholder="mis. mistralai/mistral-large" style="margin-top:8px;display:none">
             <div class="help">Daftar lengkap &amp; harga: openrouter.ai/models</div>
           </div>
+        </div>
+        <!-- v1.2.80: model cadangan -->
+        <div class="row"><label class="fl">Model Cadangan</label>
+          <select id="a_fallback">
+            <option value="" id="a_fallback_default">Bawaan server</option>
+            <option value="none">Tidak pakai cadangan</option>
+            <optgroup label="OpenRouter (pakai OpenRouter API Key)">
+              <option value="openrouter:google/gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+              <option value="openrouter:google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="openrouter:anthropic/claude-haiku-4.5">Claude Haiku 4.5</option>
+              <option value="openrouter:openai/gpt-4o-mini">GPT-4o mini</option>
+              <option value="openrouter:deepseek/deepseek-chat">DeepSeek V3</option>
+            </optgroup>
+            <optgroup label="Anthropic langsung (pakai Claude API Key)">
+              <option value="anthropic:claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              <option value="anthropic:claude-sonnet-4-6">Claude Sonnet 4.6</option>
+            </optgroup>
+          </select>
+          <div class="help">Dipakai sekali bila model utama gagal menjawab (gangguan penyedia, batas kuota, dsb). Pilih model dari penyedia yang API key-nya sudah diisi; sebaiknya berbeda dari model utama.</div>
         </div>
         <div class="grid2">
           <div class="row"><label class="fl">Max Tokens Balasan</label><input type="number" id="a_maxtok"></div>
