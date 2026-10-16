@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.82');
+define('DEI_VERSION', 'v1.2.83');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2220,14 +2220,15 @@ function deiRedbusGuess($message, $history = []) {
     $names = array_keys($c['cities']);
     usort($names, function ($a, $b) { return mb_strlen($b) - mb_strlen($a); });
     $rx = '/(?<![\p{L}])(' . implode('|', array_map(function ($n) { return preg_quote(mb_strtolower($n), '/'); }, $names)) . ')(?![\p{L}])/u';
-    $intent = false; $to = null; $from = null; $date = ''; $seen = [];
+    $unknown = false; $intent = false; $to = null; $from = null; $date = ''; $seen = [];
     $today = wibDate('Y-m-d');
     // salah ketik ringan (purwekerto -> purwokerto): kata >=5 huruf, jarak edit <=1 (<=2 bila >=8 huruf)
     $single = array_values(array_filter(array_map('mb_strtolower', $names), function ($n) { return strpos($n, ' ') === false && strlen($n) >= 5; }));
     foreach ($texts as $k => $t) {
         $texts[$k] = preg_replace_callback('/\p{L}{5,}/u', function ($w) use ($single) {
             $x = $w[0]; if (in_array($x, $single, true)) return $x;
-            foreach ($single as $n) { if (abs(strlen($n) - strlen($x)) <= 2 && levenshtein($x, $n) <= (strlen($n) >= 8 ? 2 : 1)) return $n; }
+            // v1.2.83: salah ketik — huruf pertama sama, jarak 1 (2 hanya bila >=9 huruf); "malang" bukan "magelang"
+            foreach ($single as $n) { if ($n[0] === $x[0] && abs(strlen($n) - strlen($x)) <= 1 && levenshtein($x, $n) <= (strlen($n) >= 9 ? 2 : 1)) return $n; }
             return $x;
         }, $t);
     }
@@ -2242,6 +2243,10 @@ function deiRedbusGuess($message, $history = []) {
                 if ($d < $today) $d = date('Y-m', strtotime(substr($today, 0, 7) . '-01 +1 month')) . sprintf('-%02d', (int)$m[1]);
                 if (checkdate((int)substr($d, 5, 2), (int)substr($d, 8, 2), (int)substr($d, 0, 4))) $date = $d;
             }
+        }
+        // v1.2.83: "ke <kota di luar tabel>" -> tujuan tidak dikenal, biarkan jawaban AI
+        if (preg_match_all('/\b(?:ke|tujuan|menuju)\s+(\p{L}{3,})/u', $t, $km)) {
+            foreach ($km[1] as $w) { if (!deiRedbusCity($w) && !in_array($w, ['mana', 'sana', 'sini', 'kota', 'arah', 'luar', 'dalam'], true)) $unknown = true; }
         }
         if (!preg_match_all($rx, $t, $mm, PREG_OFFSET_CAPTURE)) continue;
         foreach ($mm[1] as $hit) {
@@ -2258,6 +2263,7 @@ function deiRedbusGuess($message, $history = []) {
         elseif ($from === null && ($to !== null || $s[1] === 0)) $from = $s[0];
         elseif ($to === null) $to = $s[0];
     }
+    if ($unknown && $to === null) return ['from' => $from, 'to' => null, 'date' => $date, 'intent' => $intent];   // v1.2.83
     if ($from !== null && $to === null && count($seen) <= 1) { $to = $from; $from = null; }   // satu kota saja = tujuan
     return ['from' => $from, 'to' => $to, 'date' => $date, 'intent' => $intent];
 }
@@ -2274,11 +2280,15 @@ function deiRedbusExpand($answer, $message = '', $history = []) {
         if ($g['from'] === null) {
             return $refuse ? 'Berangkat dari kota mana? Nanti saya kirimkan link cek harga & pesan tiket ke ' . trim(preg_replace('/\s*\(.*?\)/', '', $g['to'])) . '.' : $answer;
         }
+        // v1.2.83: AI sudah bilang rute tidak tersedia -> jangan tempel link
+        if (preg_match('/(belum|tidak) (tersedia|bisa dicek|dapat dicek|melayani)|tidak ada di daftar/iu', (string)$answer)) return $answer;
         $u = deiRedbusUrl($g['from'], $g['to'], $g['date']);
         if ($u === '') return $answer;
         $line = trim((string)($c['label'] ?? 'Cek harga & pesan tiket:') . ' ' . $u);
         $nm = function ($x) { return trim(preg_replace('/\s*\(.*?\)/', '', $x)); };   // "Yogyakarta (jogja)" -> "Yogyakarta"
         if ($refuse) return 'Harga & kursi terbaru rute ' . $nm($g['from']) . ' – ' . $nm($g['to']) . ' bisa dicek langsung di redBus.' . "\n\n" . $line;
+        $toNm = mb_strtolower(trim(preg_replace('/\s*\(.*?\)/', '', $g['to'])));
+        if (mb_strpos(mb_strtolower((string)$answer), $toNm) === false) return $answer;   // v1.2.83: jawaban bukan soal rute ini
         return rtrim((string)$answer) . "\n\n" . $line;
     }
     $c = deiRedbusConf();
