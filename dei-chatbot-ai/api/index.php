@@ -13,7 +13,7 @@ date_default_timezone_set('Asia/Jakarta');
 // lama -- itulah cara kita mendeteksi update gagal senyap.
 // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
 // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
-define('DEI_VERSION', 'v1.2.83');
+define('DEI_VERSION', 'v1.2.84');
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 define('DATA_DIR', __DIR__ . '/../data');
@@ -2204,10 +2204,10 @@ function deiRedbusPromptBlock() {
         . "tulis di baris terakhir jawaban tag persis seperti ini: [[REDBUS:<kota asal>|<kota tujuan>|<tanggal YYYY-MM-DD>]].\n"
         . "- Isi tanggal hanya bila pelanggan menyebut tanggal atau hari (hitung dari tanggal hari ini di atas); bila tidak, kosongkan: [[REDBUS:Jakarta|Purwokerto|]].\n"
         . "- Kota yang dikenal: " . $names . ".\n"
-        . "- Jangan menulis link redBus sendiri; sistem mengganti tag dengan link resmi.\n"
+        . "- JANGAN PERNAH menulis URL/link redbus.id sendiri; sistem mengganti tag dengan link resmi.\n"
         . "- PENTING: aturan ini berlaku walaupun harga tidak ada di knowledge base. Untuk pertanyaan harga/tiket/kursi JANGAN menjawab 'tidak memiliki informasi' dan jangan menyuruh menghubungi tim; harga & kursi terbaru selalu ada di link redBus.\n"
         . "- Bila kota asal belum disebut (mis. 'harga ke Purwokerto'), tanyakan singkat: berangkat dari kota mana. Setelah pelanggan menjawab, tulis tagnya.\n"
-        . "- Bila kota asal/tujuan tidak ada di daftar, sampaikan rute itu belum bisa dicek lewat link dan tawarkan rute dari daftar kota di atas.";
+        . "- Hanya kota di daftar yang dilayani. Bila kota asal/tujuan tidak ada di daftar, jawab singkat bahwa rute itu tidak tersedia (tanpa tag, tanpa link) lalu tawarkan kota tujuan dari daftar.";
 }
 // v1.2.82: tebak rute dari pesan pelanggan (pesan sekarang + 2 pesan pelanggan sebelumnya).
 // Hasil: ['from' => nama|null, 'to' => nama|null, 'date' => Y-m-d|'', 'intent' => bool]
@@ -2270,7 +2270,41 @@ function deiRedbusGuess($message, $history = []) {
 
 // Ganti tag di jawaban AI dengan link; tag yang tidak bisa dibuat linknya dibuang.
 // v1.2.82: tanpa tag -> cadangan dari pesan pelanggan.
+// v1.2.84: pembungkus — buang link redbus.id tulisan AI, lalu pastikan ada link resmi atau kabar "tidak tersedia".
+function deiRedbusRouteNA($from = '', $to = '') {
+    $c = deiRedbusConf() ?: []; $op = trim((string)($c['operator'] ?? ''));
+    $nm = function ($x) { return trim(preg_replace('/\s*\(.*?\)/', '', (string)$x)); };
+    $r = ($from !== '' && $to !== '') ? ' ' . $nm($from) . ' – ' . $nm($to) : ' tersebut';
+    return 'Mohon maaf, rute' . $r . ' belum tersedia' . ($op !== '' ? ' di ' . $op : '') . '.';
+}
 function deiRedbusExpand($answer, $message = '', $history = []) {
+    if (!deiRedbusConf()) return $answer;
+    $raw = false;
+    if (preg_match('~redbus\.id~i', (string)$answer)) {
+        $raw = true;   // baris yang memuat link tulisan AI dibuang seluruhnya
+        $answer = trim(preg_replace("/\n{3,}/", "\n\n", preg_replace('~^.*(?:https?://)?(?:www\.)?redbus\.id\S*.*$\n?~imu', '', (string)$answer)));
+    }
+    // tag dengan kota di luar tabel -> seluruh jawaban jadi kabar "tidak tersedia" (tanpa kalimat "berikut linknya")
+    if (preg_match_all('/\[\[REDBUS:([^|\]]*)\|([^|\]]*)(?:\|([^\]]*))?\]\]/u', (string)$answer, $tm, PREG_SET_ORDER)) {
+        foreach ($tm as $m) if (deiRedbusUrl(trim($m[1]), trim($m[2]), trim($m[3] ?? '')) === '') {
+            error_log('redbus: kota tidak dikenal (' . $m[1] . ' -> ' . $m[2] . ')');
+            return deiRedbusRouteNA(trim($m[1]), trim($m[2])) . ' Silakan sebutkan kota tujuan lain.';
+        }
+    }
+    if ($raw && strpos((string)$answer, '[[REDBUS') === false) {
+        // AI menulis link sendiri: ganti seluruhnya dengan link resmi, tanya kota asal, atau kabar tidak tersedia
+        $g = $message !== '' ? deiRedbusGuess($message, $history) : null;
+        $nm = function ($x) { return trim(preg_replace('/\s*\(.*?\)/', '', (string)$x)); };
+        if ($g && $g['to'] !== null && $g['from'] !== null && ($u = deiRedbusUrl($g['from'], $g['to'], $g['date'])) !== '') {
+            $c = deiRedbusConf();
+            return 'Harga & kursi terbaru rute ' . $nm($g['from']) . ' – ' . $nm($g['to']) . ' bisa dicek langsung di redBus.' . "\n\n" . trim((string)($c['label'] ?? 'Cek harga & pesan tiket:') . ' ' . $u);
+        }
+        if ($g && $g['to'] !== null && $g['from'] === null) return 'Berangkat dari kota mana? Nanti saya kirimkan link cek harga & pesan tiket ke ' . $nm($g['to']) . '.';
+        return deiRedbusRouteNA() . ' Silakan sebutkan kota tujuan lain.';
+    }
+    return deiRedbusExpandCore($answer, $message, $history);
+}
+function deiRedbusExpandCore($answer, $message = '', $history = []) {
     if (strpos((string)$answer, '[[REDBUS') === false) {
         $c = deiRedbusConf();
         if (!$c || $message === '' || stripos((string)$answer, 'redbus.id') !== false) return $answer;
@@ -2295,7 +2329,7 @@ function deiRedbusExpand($answer, $message = '', $history = []) {
     $label = $c ? (string)($c['label'] ?? 'Cek harga & pesan tiket:') : '';
     $out = preg_replace_callback('/\[\[REDBUS:([^|\]]*)\|([^|\]]*)(?:\|([^\]]*))?\]\]/u', function ($m) use ($label) {
         $u = deiRedbusUrl(trim($m[1]), trim($m[2]), trim($m[3] ?? ''));
-        if ($u === '') { error_log('redbus: kota tidak dikenal (' . $m[1] . ' -> ' . $m[2] . ')'); return ''; }
+        if ($u === '') { error_log('redbus: kota tidak dikenal (' . $m[1] . ' -> ' . $m[2] . ')'); return deiRedbusRouteNA(trim($m[1]), trim($m[2])); }   // v1.2.84
         return trim($label . ' ' . $u);
     }, (string)$answer);
     return trim(preg_replace("/\n{3,}/", "\n\n", (string)$out));
