@@ -41,12 +41,13 @@ certbot --nginx -d wa.domain-anda.com
 ```
 
 ## 3. Hubungkan tenant
+Tenant di cPanel (mis. Pomelotel): `bash ~/Herd/master-build/server/waha/waha-tenant.sh pomeloteljkt` — cek/pasang WAHA publik, cetak URL + API key + nama sesi untuk diisi.
 1. Dashboard tenant (Super Admin) › Widget & API › WhatsApp Bot › Penyedia **WAHA**: isi URL (`https://wa.domain-anda.com`), API Key, Nama Sesi (unik per tenant, mis. `sinarjaya`). Aktifkan bot, Simpan.
 2. Kartu **Koneksi WhatsApp** › **Hubungkan (scan QR)** — sesi dibuat otomatis lengkap dengan webhook (`message.any` + `session.status`, HMAC SHA-512). Admin klien bisa melakukan langkah ini sendiri.
 3. Sesi lama / ganti domain tenant: Super Admin klik **Pasang webhook otomatis**.
 
 ## Opsi media
-Di `.env`: `WAHA_DOWNLOAD_MEDIA=false` (bawaan) atau `true`, lalu `./media.sh on|off` (atau ubah `.env` + `docker compose up -d`).
+Di `.env`: `WAHA_DOWNLOAD_MEDIA=true` (bawaan sejak v1.2.94 — tenant mengunduh media dari sini dalam 3 menit, lalu menyimpannya 30 hari) atau `false`, lalu `./media.sh on|off` (atau ubah `.env` + `docker compose up -d`).
 
 | | `false` (mati) | `true` (nyala) |
 |---|---|---|

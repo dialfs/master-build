@@ -18,8 +18,8 @@ services:
       WHATSAPP_SWAGGER_PASSWORD: ${WAHA_DASH_PASS}
       TZ: Asia/Jakarta
       # Media (gambar/suara/dokumen) — atur lewat WAHA_DOWNLOAD_MEDIA di .env (true/false)
-      WAHA_EVENTS_DOWNLOAD_MEDIA: ${WAHA_DOWNLOAD_MEDIA:-false}
-      WAHA_API_DOWNLOAD_MEDIA: ${WAHA_DOWNLOAD_MEDIA:-false}
+      WAHA_EVENTS_DOWNLOAD_MEDIA: ${WAHA_DOWNLOAD_MEDIA:-true}
+      WAHA_API_DOWNLOAD_MEDIA: ${WAHA_DOWNLOAD_MEDIA:-true}
       WHATSAPP_FILES_LIFETIME: ${WAHA_FILES_LIFETIME:-180}   # detik file disimpan; 0 = simpan selamanya
       WHATSAPP_FILES_FOLDER: /app/.media
     volumes:
