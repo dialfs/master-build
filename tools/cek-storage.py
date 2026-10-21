@@ -17,7 +17,8 @@ RULES = {
     r"(read|write)Json\(CONV_STATE_FILE": {'convStateMutate'},
     r"waSessionFile\(":               {'waSessionFile', 'waLoadHistory', 'waSaveHistory'},
     r"WA_SESSIONS_DIR":               {'waSessionFile', 'waSaveHistory', 'deiPurgeSessions'},
-    r"['\"](wa-contacts|chatbot-log|conv-state)\.json['\"]": set(),
+    r"CONV_OPEN_FILE|CONV_DIR":       {'convStoreMutate', 'convStoreGet', 'convStoreOpen', 'convStoreEvict', 'convStoreRange', 'convFileAppend', 'convTrackingSince'},   # v1.2.101
+    r"['\"](wa-contacts|chatbot-log|conv-state|conv-open)\.json['\"]": set(),
 }
 src = open(sys.argv[1], encoding='utf-8').read().split('\n')
 func, bad = '<luar fungsi>', []

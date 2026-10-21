@@ -25,6 +25,8 @@ if __name__ == "__main__":
         for d in (A, B):
             if isinstance(d, dict):
                 for k in ('ms', 'generated', 'now', 'ts_now', 'cached_at'): d.pop(k, None)
+                if isinstance(d.get('conv'), dict):   # v1.2.101: id & waktu percakapan berbeda per jalan
+                    d['conv'] = {k: (('<t>' if v else 0) if (k.endswith('_at') or k == 'id') else v) for k, v in d['conv'].items()}
         same = norm(A) == norm(B)
         if not same: bad += 1
         print(f'{a:22s} {"SAMA" if same else "BEDA"}  ok={A.get("ok") if isinstance(A,dict) else "?"} ukuran={len(norm(A))}')
