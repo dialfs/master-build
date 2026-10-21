@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Rilis v1.2.100 TANPA konfirmasi (diminta Dias 21 Okt 2026). Log: ~/Herd/master-build/tools/patch-v1.2.100/rilis.log
+exec > >(tee "$HOME/Herd/master-build/tools/patch-v1.2.100/rilis.log") 2>&1
+# Rilis v1.2.100: push master-build + dei-pusat ke GitHub, lalu deploy dei-pusat ke chat.deintegra.com.
+# Deploy live baru jalan setelah Anda ketik "ya".
+set -uo pipefail
+HERD="$HOME/Herd"
+echo "== 1/4 master-build: tarik remote lalu push (arsip tool; gagal tidak menghentikan rilis) =="
+cd "$HERD/master-build"
+if git pull --rebase --autostash origin main && git push origin HEAD; then echo "master-build OK"
+else echo "(!) master-build belum ter-push — lanjut ke dei-pusat. Bereskan nanti: cd ~/Herd/master-build && git status"; git rebase --abort 2>/dev/null; fi
+echo; echo "== 2/4 Push dei-pusat =="
+cd "$HERD/dei-pusat"
+git pull --rebase origin main || { echo "GAGAL tarik dei-pusat — berhenti."; read -r -p "Enter..." _; exit 1; }
+git push origin main || { echo "GAGAL push dei-pusat — berhenti."; read -r -p "Enter..." _; exit 1; }
+echo; echo "== 3/4 Cek server vs lokal + dry-run deploy =="
+./dev/pull.sh | tail -15
+./dev/deploy.sh | tail -25
+echo
+J=ya; echo "Deploy LIVE (otomatis ya)"
+if [[ "$J" == "ya" ]]; then
+  echo "== 4/4 Deploy =="
+  ./dev/deploy.sh --go | tail -15
+  echo; echo "Cek manifest:"; curl -s https://chat.deintegra.com/releases/v1.2.100/manifest.json | head -8
+else
+  echo "Deploy dibatalkan (push GitHub sudah jalan)."
+fi
+echo; read -r -p "Tekan Enter untuk menutup..." _
