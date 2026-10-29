@@ -1,0 +1,161 @@
+    <!-- v1.2.109: guest-comment / v1.2.110: customer-feedback -->
+    <section class="panel" id="panel-gc">
+      <style>
+        #panel-gc .gc-head{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;flex-wrap:wrap}
+        #panel-gc .gc-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+        #panel-gc .gc-tabs button.active{background:var(--brand);color:#fff}
+        #panel-gc .gc-lock{display:flex;gap:14px;align-items:flex-start;border-color:#f5d48a;background:#fffbeb}
+        #panel-gc .gc-lock-ic{width:40px;height:40px;border-radius:10px;background:#fef3c7;color:#b45309;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        #panel-gc .gc-lock p{color:#6b4d0d;margin-top:3px;font-size:13px}
+        #panel-gc .gc-filter{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:end}
+        #panel-gc .gc-filter .row{margin:0}
+        #panel-gc .gc-filter .gc-q{grid-column:span 2}
+        #panel-gc .gc-filter .gc-fbtn{display:flex;gap:8px;grid-column:span 6;justify-content:flex-end}
+        #panel-gc .gc-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+        #panel-gc .gc-kpi{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;min-width:0}
+        #panel-gc .gc-kpi small{display:block;color:var(--muted);font-size:12px}
+        #panel-gc .gc-kpi b{display:block;font-size:24px;letter-spacing:-.02em;margin:2px 0}
+        #panel-gc .gc-kpi b i{font-style:normal;font-size:13px;color:var(--muted);font-weight:500}
+        #panel-gc .gc-kpi span{font-size:12px;color:var(--muted)}
+        #panel-gc .gc-kpi.warn b{color:var(--warn)}
+        #panel-gc .gc-dist div{display:flex;align-items:center;gap:6px;font-size:11.5px;line-height:1.55}
+        #panel-gc .gc-dist em{font-style:normal;color:var(--muted);width:22px}
+        #panel-gc .gc-dist em:last-child{text-align:right}
+        #panel-gc .gc-dist span{flex:1;height:6px;background:var(--bg);border-radius:4px;overflow:hidden}
+        #panel-gc .gc-dist span i{display:block;height:100%;background:#f59e0b}
+        #panel-gc .gc-stars{white-space:nowrap}
+        #panel-gc .gc-st{color:#d9d9e3;font-size:14px}
+        #panel-gc .gc-st.on{color:#f59e0b}
+        #panel-gc .gc-asp{display:grid;grid-template-columns:minmax(120px,200px) 1fr 80px;gap:12px;align-items:center;padding:7px 0}
+        #panel-gc .gc-asp-l{font-weight:500;font-size:13px}
+        #panel-gc .gc-bar{height:9px;background:var(--bg);border-radius:6px;overflow:hidden}
+        #panel-gc .gc-bar i{display:block;height:100%;background:var(--ok);border-radius:6px}
+        #panel-gc .gc-asp.mid .gc-bar i{background:#f59e0b}
+        #panel-gc .gc-asp.bad .gc-bar i{background:var(--warn)}
+        #panel-gc .gc-asp-v{text-align:right;font-weight:600}
+        #panel-gc .gc-asp-v small{color:var(--muted);font-weight:400}
+        #panel-gc .gc-item{padding:16px 18px;margin-bottom:12px}
+        #panel-gc .gc-item.low{border-left:3px solid var(--warn)}
+        #panel-gc .gc-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+        #panel-gc .gc-who{font-weight:600;font-size:14.5px}
+        #panel-gc .gc-room{color:var(--brand)}
+        #panel-gc .gc-meta{color:var(--muted);font-size:12px;display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
+        #panel-gc .gc-meta svg{vertical-align:-2px}
+        #panel-gc .gc-avg{text-align:right;flex-shrink:0}
+        #panel-gc .gc-avg b{display:block;font-size:18px}
+        #panel-gc .gc-rts{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+        #panel-gc .gc-rt{font-size:12px;background:var(--bg);border-radius:6px;padding:3px 8px;color:var(--ink)}
+        #panel-gc .gc-rt.low{background:var(--warn-bg);color:var(--warn)}
+        #panel-gc .gc-cm{white-space:normal;line-height:1.55;background:var(--brand-tint);border-radius:8px;padding:10px 12px;font-size:13.5px}
+        #panel-gc .gc-cm.none{background:none;padding:0;color:var(--muted);font-size:12.5px}
+        #panel-gc .gc-foot{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+        #panel-gc .gc-badge{font-size:11.5px;font-weight:600;border-radius:20px;padding:3px 10px}
+        #panel-gc .gc-acts{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+        #panel-gc .gc-acts .btn{display:inline-flex;align-items:center;gap:4px}
+        #panel-gc .gc-note{margin-top:10px;font-size:13px;border-top:1px dashed var(--line);padding-top:8px}
+        #panel-gc .gc-note small{display:block;color:var(--muted);font-size:11.5px}
+        #panel-gc .gc-edit{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+        #panel-gc .gc-empty{text-align:center;color:var(--muted);padding:34px 18px}
+        #panel-gc .gc-empty p{margin:8px 0 12px}
+        #panel-gc .gc-asprow{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:8px}
+        #panel-gc .gc-link{display:flex;gap:16px;padding:14px 0;border-top:1px solid var(--line)}
+        #panel-gc .gc-link:first-of-type{border-top:0}
+        #panel-gc .gc-qr{width:132px;flex-shrink:0}
+        #panel-gc .gc-qr img{width:132px;height:132px;image-rendering:pixelated;border:1px solid var(--line);border-radius:8px;display:block}
+        #panel-gc .gc-link-b{min-width:0;flex:1}
+        #panel-gc .gc-link-b p{color:var(--muted);font-size:12.5px;margin:2px 0 8px}
+        #panel-gc .gc-link-b code{display:block;font-size:12px;background:var(--bg);padding:7px 9px;border-radius:7px;word-break:break-all}
+        #panel-gc .gc-link-a{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+        #panel-gc .gc-link-a .btn{display:inline-flex;align-items:center;gap:4px;text-decoration:none}
+        @media (max-width:900px){
+          #panel-gc .gc-filter{grid-template-columns:1fr 1fr}
+          #panel-gc .gc-filter .gc-q,#panel-gc .gc-filter .gc-fbtn{grid-column:span 2}
+          #panel-gc .gc-kpis{grid-template-columns:1fr 1fr}
+        }
+        @media (max-width:560px){
+          #panel-gc .gc-asp{grid-template-columns:1fr 64px}
+          #panel-gc .gc-asp .gc-bar{grid-column:span 2;order:3}
+          #panel-gc .gc-asprow{grid-template-columns:1fr auto}
+          #panel-gc .gc-asprow input:nth-of-type(3){grid-column:1}
+          #panel-gc .gc-link{flex-direction:column}
+          #panel-gc .gc-acts{margin-left:0}
+        }
+      </style>
+      <div class="ph gc-head"><div><h2>Customer Feedback</h2><p>Survei kepuasan pelanggan lewat chatbot WhatsApp dan form web (QR di meja, kasir, kamar, atau tiket). Rating rendah langsung diberitahukan ke tim.</p></div><span class="pill off" id="gcStatus">–</span></div>
+      <div class="card gc-lock hide" id="gcLock"></div>
+      <div class="gc-tabs" id="gcTabs">
+        <button class="btn ghost sm active" type="button" data-gcv="list">Ringkasan &amp; Daftar</button>
+        <button class="btn ghost sm" type="button" data-gcv="link"><span data-ico="globe" data-ico-size="14"></span> Tautan &amp; QR</button>
+        <button class="btn ghost sm" type="button" data-gcv="set" data-role-card="super_admin,admin"><span data-ico="settings" data-ico-size="14"></span> Pengaturan</button>
+      </div>
+
+      <div id="gcView-list">
+        <div class="card">
+          <div class="gc-filter">
+            <div class="row"><label class="fl">Dari</label><input type="date" id="gcFrom"></div>
+            <div class="row"><label class="fl">Sampai</label><input type="date" id="gcTo"></div>
+            <div class="row"><label class="fl">Kanal</label><select id="gcChan"><option value="all">Semua</option><option value="whatsapp">WhatsApp</option><option value="web">Form web</option></select></div>
+            <div class="row"><label class="fl">Rating</label><select id="gcRate"><option value="all">Semua</option><option value="low">Ada rating rendah</option><option value="high">Rata-rata ≥ 4</option></select></div>
+            <div class="row"><label class="fl">Status</label><select id="gcStat"><option value="all">Semua</option><option value="baru">Baru</option><option value="ditindak">Ditindaklanjuti</option><option value="selesai">Selesai</option></select></div>
+            <div class="row"><label class="fl">Cari</label><input type="text" id="gcQ" placeholder="nama, nomor, komentar…"></div>
+            <div class="gc-fbtn"><button class="btn ghost sm" type="button" id="gcExport"><span data-ico="download" data-ico-size="14"></span> Ekspor CSV</button><button class="btn sm" type="button" id="gcApply">Terapkan</button></div>
+          </div>
+        </div>
+        <div class="gc-kpis" id="gcKpis"></div>
+        <div class="card"><h3>Rata-rata per aspek</h3><div class="desc">Hijau ≥ 4, kuning di bawah 4, merah mendekati ambang rating rendah. Angka kecil = jumlah penilaian.</div><div id="gcAsp"></div></div>
+        <div id="gcList"></div>
+        <div id="gcMore" style="text-align:center"></div>
+      </div>
+
+      <div id="gcView-link" class="hide">
+        <div class="card"><h3>Tautan &amp; QR Code</h3>
+          <div class="desc">Cetak QR untuk meja, kasir, kamar, tiket, atau struk. Isi nomor referensi (mis. nomor meja/kamar) supaya pelanggan tidak perlu mengetiknya (opsional).</div>
+          <div class="row" style="max-width:240px"><label class="fl">Nomor referensi (opsional)</label><input type="text" id="gcRoom" maxlength="10" placeholder="mis. 305 / A12"></div>
+          <div id="gcLinks"></div>
+          <div class="help" style="margin-top:12px">Pelanggan juga bisa memulai survei dengan mengetik kata kunci di chat WhatsApp. Untuk mengirim ajakan setelah transaksi lewat WhatsApp API resmi (Meta), pakai template pesan yang sudah disetujui di menu <b>Blast WA</b> berisi tautan form web di atas.</div>
+        </div>
+      </div>
+
+      <div id="gcView-set" class="hide">
+        <div class="card"><h3>Pengaturan Customer Feedback</h3>
+          <div class="toggle-row"><div><div class="tt">Aktifkan Customer Feedback</div><div class="td">Bot WhatsApp memandu survei saat pelanggan mengetik kata kunci, dan form web bisa diisi.</div></div><label class="switch"><input type="checkbox" id="gc_enabled"><span class="sl"></span></label></div>
+        </div>
+        <div class="card"><h3>Aspek penilaian (1–5)</h3>
+          <div class="desc">Maksimal 8 aspek. Label Inggris dipakai untuk pelanggan yang menulis dalam bahasa Inggris.</div>
+          <div class="row" style="max-width:320px"><label class="fl">Pakai preset industri</label><select id="gc_preset"><option value="">— pilih untuk mengisi otomatis —</option><option value="umum">Umum</option><option value="hotel">Hotel / penginapan</option><option value="resto">Restoran / kafe</option><option value="bus">Bus / travel</option><option value="klinik">Klinik / kesehatan</option><option value="toko">Toko / online shop</option><option value="jasa">Jasa / agensi</option></select></div>
+          <div id="gc_aspects"></div>
+          <button class="btn ghost sm" type="button" id="gc_asp_add">+ Tambah aspek</button>
+        </div>
+        <div class="card"><h3>Pertanyaan &amp; teks</h3>
+          <div class="toggle-row"><div><div class="tt">Tanyakan nama pelanggan</div></div><label class="switch"><input type="checkbox" id="gc_ask_name"><span class="sl"></span></label></div>
+          <div class="toggle-row"><div><div class="tt">Tanyakan nomor referensi</div><div class="td">Mis. nomor kamar, meja, pesanan, atau kode booking. Dilewati otomatis bila QR sudah membawa nomornya.</div></div><label class="switch"><input type="checkbox" id="gc_ask_room"><span class="sl"></span></label></div>
+          <div class="toggle-row"><div><div class="tt">Kolom No. HP di form web (opsional diisi)</div></div><label class="switch"><input type="checkbox" id="gc_ask_phone_web"><span class="sl"></span></label></div>
+          <div class="toggle-row"><div><div class="tt">AI mengarahkan pelanggan ke survei</div><div class="td">Saat pelanggan ingin memberi kesan/keluhan, AI menyarankan kata kunci (WA) atau tautan form (widget web).</div></div><label class="switch"><input type="checkbox" id="gc_ai_hint"><span class="sl"></span></label></div>
+          <div class="grid2" style="margin-top:14px">
+            <div class="row"><label class="fl">Label nomor referensi (Indonesia)</label><input type="text" id="gc_ref_label" maxlength="40" placeholder="Nomor pesanan"></div>
+            <div class="row"><label class="fl">Label nomor referensi (English)</label><input type="text" id="gc_ref_label_en" maxlength="40" placeholder="Order number"></div>
+            <div class="row"><label class="fl">Pembuka (Indonesia)</label><textarea id="gc_intro" rows="3"></textarea></div>
+            <div class="row"><label class="fl">Pembuka (English)</label><textarea id="gc_intro_en" rows="3"></textarea></div>
+            <div class="row"><label class="fl">Terima kasih (Indonesia)</label><textarea id="gc_thanks" rows="3"></textarea></div>
+            <div class="row"><label class="fl">Terima kasih (English)</label><textarea id="gc_thanks_en" rows="3"></textarea></div>
+          </div>
+          <div class="row"><label class="fl">Kata kunci pemicu di WhatsApp</label><input type="text" id="gc_keywords" placeholder="customer feedback, survei, kesan pesan"><div class="help">Pisahkan dengan koma. Kata kunci pertama dipakai di QR WhatsApp dan disarankan AI. Ketik <b>batal</b> / <b>cancel</b> untuk berhenti di tengah survei.</div></div>
+        </div>
+        <div class="card"><h3>Ulasan Google</h3>
+          <div class="desc">Tautan ulasan ditawarkan ke <b>semua</b> pelanggan setelah mengisi — tidak hanya yang memberi nilai tinggi, sesuai kebijakan Google (menyaring siapa yang diajak review bisa membuat ulasan ditahan).</div>
+          <div class="row"><label class="fl">Tautan tulis ulasan Google</label><input type="text" id="gc_review_url" placeholder="https://g.page/r/…/review"><div class="help">Dari Google Business Profile › Minta ulasan. Kosongkan bila tidak dipakai.</div></div>
+          <div class="grid2">
+            <div class="row"><label class="fl">Teks ajakan (Indonesia)</label><input type="text" id="gc_review_text"><div class="help"><code>{link}</code> diganti tautan.</div></div>
+            <div class="row"><label class="fl">Teks ajakan (English)</label><input type="text" id="gc_review_text_en"></div>
+          </div>
+        </div>
+        <div class="card"><h3>Peringatan rating rendah</h3>
+          <div class="desc">Bila ada aspek dengan nilai di bawah atau sama dengan ambang, Supervisor/Admin mendapat notifikasi push &amp; Telegram (bila aktif), plus WhatsApp ke nomor staf di bawah.</div>
+          <div class="grid2">
+            <div class="row"><label class="fl">Ambang rating rendah</label><select id="gc_low"><option value="1">≤ 1</option><option value="2">≤ 2</option><option value="3">≤ 3</option><option value="4">≤ 4</option></select></div>
+            <div class="row"><label class="fl">WhatsApp staf (opsional)</label><input type="text" id="gc_alert_wa" placeholder="0812xxxx, 0813xxxx"><div class="help">Maks. 5 nomor, pisahkan koma. Di WhatsApp API resmi (Meta), pesan hanya terkirim bila nomor staf pernah chat ke nomor bisnis dalam 24 jam terakhir.</div></div>
+          </div>
+        </div>
+        <button class="btn" type="button" id="gc_save"><span data-ico="save" data-ico-size="15"></span> Simpan Pengaturan</button>
+      </div>
+    </section>
