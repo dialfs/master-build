@@ -1,0 +1,62 @@
+== 1/3 chmod 644 di omowaynuenco ==
+./api/index.php
+./assets/js/chat-widget.js
+./dashboard/chatbot-ai/app.js
+./dashboard/chatbot-ai/login.html
+./dashboard/chatbot-ai/index.html
+./backup-pre-update/20260730-221407-manual-to-v1.2.41
+./backup-pre-update/20260730-221407-manual-to-v1.2.41/api
+./backup-pre-update/20260730-221407-manual-to-v1.2.41/assets
+./backup-pre-update/20260730-221407-manual-to-v1.2.41/assets/js
+./backup-pre-update/20260730-221407-manual-to-v1.2.41/dashboard
+./backup-pre-update/20260730-221407-manual-to-v1.2.41/dashboard/chatbot-ai
+-rw-r--r-- 1 u1545168 u1545168 644013 Oct 29 07:41 api/index.php
+-rw-r--r-- 1 u1545168 u1545168  39764 Oct 16 13:13 assets/js/chat-widget.js
+-rw-r--r-- 1 u1545168 u1545168 152656 Oct 28 16:43 dashboard/chatbot-ai/index.html
+
+== 2/3 Uji alamat ==
+200  dashboard/chatbot-ai/
+200  dashboard/chatbot-ai/login.html
+200  assets/js/chat-widget.js
+200  api/index.php?action=bootstrap
+
+== 3/3 Commit + deploy master.zip (izin 644) ==
+master/:
+total 4112
+-rw-r--r--  1 dias  staff  1720718 Oct 29 15:03 dei-master.zip
+-rw-r--r--@ 1 dias  staff      195 Oct 29 15:03 master.json
+
+releases/v1.2.107/:
+total 352
+-rw-r--r--  1 dias  staff     624 Oct 29 14:42 manifest.json
+-rw-r--r--  1 dias  staff  172503 Oct 29 14:42 update.zip
+[main 3724742] master: v1.2.107 izin file 644 (perbaikan 403)
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+From github.com:dialfs/dei-pusat
+ * branch            main       -> FETCH_HEAD
+Current branch main is up to date.
+To github.com:dialfs/dei-pusat.git
+   0a6e150..3724742  main -> main
+File list size: 0
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 8.20K
+Total bytes received: 8.09K
+
+sent 8.20K bytes  received 8.09K bytes  10.86K bytes/sec
+total size is 30.46M  speedup is 1,870.55
+Permission OK.
+Selesai. Cek: https://chat.deintegra.com/releases/ + panel admin.
+master:
+total 1688
+-rw-r--r-- 1 u1545168 u1545168 1720718 Oct 29 15:03 dei-master.zip
+-rw-r--r-- 1 u1545168 u1545168     195 Oct 29 15:03 master.json
+
+releases/v1.2.107:
+total 176
+-rw-r--r-- 1 u1545168 u1545168    624 Oct 29 14:42 manifest.json
+-rw-r--r-- 1 u1545168 u1545168 172503 Oct 29 14:42 update.zip
+200  releases/v1.2.107/manifest.json
+200  releases/v1.2.107/update.zip
+200  master/master.json
+200  master/dei-master.zip

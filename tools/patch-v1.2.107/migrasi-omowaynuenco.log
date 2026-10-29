@@ -1,0 +1,33 @@
+== 1/5 Cek tenant di hosting ==
+DIR=/home/u1545168/public_html/chatbot.deintegra.com/omowaynuenco
+versi: v1.2.106
+data: 3.8M	/home/u1545168/public_html/chatbot.deintegra.com/omowaynuenco/data
+cron:
+  (tidak ada cron untuk omowaynuenco)
+php CLI: php (8.4.27)
+pdo_mysql: ada
+uapi: ada
+
+Lanjut backup + perbarui kode ke v1.2.107 + pindah ke MySQL? (ketik ya) 
+== 2/5 Unggah paket master v1.2.107 ==
+
+== 3/5 Backup + perbarui kode + buat DB + impor ==
+backup: /home/u1545168/backup-omowaynuenco-pre-mysql-20261029-145148.tar.gz (7.9M)
+kode: v1.2.106 -> v1.2.107
+DB dibuat: u1545168_omoway
+db_init: OK (6 tabel)
+db_import: {"log":500,"contacts":35,"sessions":0,"conv_state":0,"conversations":0}
+
+== Verifikasi jumlah (berkas vs MySQL) ==
+  log         berkas    500  mysql    500  OK
+  kontak      berkas     35  mysql     35  OK
+  sesi WA     berkas      0  mysql      0  OK
+  conv_state  berkas      0  mysql      0  OK
+  percakapan  berkas      0  mysql      0  OK
+
+== 4/5 Uji alamat publik ==
+{"ok":true,"config":{"chatbot_enabled":true,"whatsapp_enabled":false,"whatsapp_number":"","whatsapp_message":"Halo, saya tertarik dengan layanan Anda.","lead_form":{"enabled":true,"allow_skip":false,"consent_enabled":false,"save_contact":true,"title":"Sebelum mulai chat","subtitle":"Isi data singkat
+
+== 5/5 Selesai (kode keluar 0) ==
+Cek dashboard: https://chatbot.deintegra.com/omowaynuenco/dashboard/chatbot-ai/ (Percakapan, Kontak, Statistik).
+Tekan Enter untuk menutup...

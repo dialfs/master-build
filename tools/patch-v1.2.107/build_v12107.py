@@ -18,7 +18,9 @@ src=P+'/master/dei-master.zip'; tmp=src+'.tmp'
 with zipfile.ZipFile(src) as zi, zipfile.ZipFile(tmp,'w',zipfile.ZIP_DEFLATED) as zo:
     repl={'dei-chatbot-ai/'+f:f for f in files}
     for it in zi.infolist():
-        if it.filename in repl: zo.write(T+'/'+repl[it.filename], it.filename)
+        if it.filename in repl:   # izin file selalu 644 (sumber lokal bisa 600 -> 403 di hosting)
+            zi2=zipfile.ZipInfo(it.filename, it.date_time); zi2.compress_type=zipfile.ZIP_DEFLATED; zi2.external_attr=0o100644<<16
+            zo.writestr(zi2, open(T+'/'+repl[it.filename],'rb').read())
         else: zo.writestr(it, zi.read(it.filename))
 os.replace(tmp, src)
 json.dump({"version":V,"released_at":now,"size":os.path.getsize(src),"md5":md5(src),"description":"paket penuh untuk instalasi baru ("+V+")"}, open(P+'/master/master.json','w'), ensure_ascii=False, indent=2)
