@@ -1,0 +1,17 @@
+      <!-- v1.2.112: login-log -->
+      <div class="card" id="llCard" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between">
+          <h3 style="margin:0">Riwayat Login</h3>
+          <div class="help" id="llStats" style="margin:0"></div>
+        </div>
+        <div class="desc">Setiap percobaan masuk dasbor — berhasil maupun gagal — beserta IP dan perangkat. Disimpan 180 hari (maks. 3.000 catatan). Banyak "Gagal" dari IP asing = tanda ada yang mencoba menebak password.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+          <select id="llUser" style="width:auto"><option value="">Semua pengguna</option></select>
+          <select id="llStatus" style="width:auto"><option value="">Semua status</option><option value="ok">Berhasil</option><option value="fail">Gagal</option></select>
+          <select id="llDays" style="width:auto"><option value="1">24 jam</option><option value="7">7 hari</option><option value="30" selected>30 hari</option><option value="90">90 hari</option><option value="180">180 hari</option></select>
+          <button class="btn ghost sm" id="llRefresh" type="button">Muat ulang</button>
+          <button class="btn ghost sm" id="llCsv" type="button">Unduh CSV</button>
+        </div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Waktu (WIB)</th><th>Pengguna</th><th>Status</th><th>Metode</th><th>IP</th><th>Perangkat</th></tr></thead><tbody id="llRows"></tbody></table></div>
+        <div class="help" id="llMore" style="margin-top:8px"></div>
+      </div>
