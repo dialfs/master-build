@@ -1,0 +1,25 @@
+  /* v1.2.147: leads-kanban */
+  .lk-view{display:inline-flex;gap:0}
+  .lk-view .btn{border-radius:0}
+  .lk-view .btn:first-child{border-radius:8px 0 0 8px}
+  .lk-view .btn:last-child{border-radius:0 8px 8px 0;margin-left:-1px}
+  .lk-view .btn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  #panel-leads.lk-on .lead-filter{display:none!important}
+  .lk-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;align-items:flex-start}
+  .lk-col{flex:0 0 260px;background:#eef0f7;border-radius:12px;padding:10px;min-height:120px;transition:background .12s,box-shadow .12s}
+  .lk-col.lk-over{background:var(--brand-soft);box-shadow:inset 0 0 0 2px var(--brand)}
+  .lk-col-h{display:flex;align-items:center;justify-content:space-between;margin:2px 4px 10px;font-size:13px;font-weight:700}
+  .lk-col-h .lk-n{font-weight:600;color:var(--muted);font-size:12px;background:#fff;border-radius:10px;padding:1px 8px}
+  .lk-list{display:flex;flex-direction:column;gap:8px;min-height:60px}
+  .lk-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 11px;cursor:grab;font-size:13px;box-shadow:0 1px 2px rgba(20,20,60,.04)}
+  .lk-card:active{cursor:grabbing}
+  .lk-card.lk-drag{opacity:.45}
+  .lk-card .lk-t{font-weight:700;font-size:14px;line-height:1.3;word-break:break-word}
+  .lk-card .lk-s{color:var(--muted);font-size:11.5px;margin-top:1px}
+  .lk-card .lk-r{margin-top:7px;color:#3b3b55;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .lk-card .lk-note{margin-top:6px;font-size:12px;color:#92400e;background:#fffbeb;border-radius:6px;padding:4px 7px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .lk-card .lk-f{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .lk-card .lk-f select{width:auto;flex:1;min-width:0;padding:4px 6px;font-size:12px;border-radius:7px}
+  .lk-card .lk-chat{border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 7px;cursor:pointer;color:var(--brand);display:inline-flex}
+  .lk-empty{color:var(--muted);font-size:12px;text-align:center;padding:14px 4px;border:1px dashed #cfd2e3;border-radius:9px}
+  @media(max-width:760px){.lk-col{flex-basis:78vw}}
