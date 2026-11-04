@@ -1,0 +1,44 @@
+    <!-- v1.2.138: filter-topik -->
+    <section class="panel" id="panel-topik">
+      <style>
+        #panel-topik .tf-head{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;flex-wrap:wrap}
+        #panel-topik .gc-lock{display:flex;gap:14px;align-items:flex-start;border-color:#f5d48a;background:#fffbeb}
+        #panel-topik .gc-lock-ic{width:40px;height:40px;border-radius:10px;background:#fef3c7;color:#b45309;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        #panel-topik .gc-lock p{color:#6b4d0d;margin-top:3px;font-size:13px}
+        #panel-topik .tf-bar{height:8px;border-radius:6px;background:#eef0f4;overflow:hidden;margin:6px 0}
+        #panel-topik .tf-bar span{display:block;height:100%;border-radius:6px}
+        #panel-topik .tf-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+        #panel-topik .tf-row input{flex:1}
+        #panel-topik .tf-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+        #panel-topik .tf-trow{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(180px,2fr) minmax(130px,1fr) auto;gap:8px;align-items:center;margin-bottom:6px}
+        #panel-topik .tf-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+        #panel-topik .tf-tools select{max-width:260px}
+        #panel-topik .tf-grid{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2.4fr);gap:16px;align-items:start}
+        @media (max-width:900px){ #panel-topik .tf-grid{grid-template-columns:1fr} #panel-topik .tf-trow{grid-template-columns:1fr auto} #panel-topik .tf-trow input[data-tptd],#panel-topik .tf-trow select{grid-column:1} }
+      </style>
+      <div class="ph tf-head"><div><h2>Topik &amp; Divisi</h2><p>AI membaca 20 pesan terakhir tiap chat WhatsApp lalu memberi label topik (mis. tanya harga, cicilan, STNK) dan divisi. Label dipakai untuk menyaring Percakapan WA.</p></div><span class="pill off" id="tfStatus">–</span></div>
+      <div class="card gc-lock hide" id="tfLock"></div>
+      <div class="card" id="tfQuota"></div>
+      <div class="card">
+        <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="tfEnabled"> Aktifkan klasifikasi topik otomatis</label>
+        <p style="font-size:12px;color:var(--muted);margin:4px 0 12px">Klasifikasi berjalan saat chat diam 3 menit, tiap 5 pesan baru dari pelanggan, dan saat chat ditandai Selesai. Saat pertama diaktifkan, chat 7 hari terakhir ikut diklasifikasi. Agent bisa mengoreksi label dari kepala chat — label koreksi tidak ditimpa AI.</p>
+        <div class="tf-tools" style="margin-bottom:14px">
+          <select id="tfPreset"></select>
+          <button type="button" class="btn ghost sm" id="tfApplyPreset"><span data-ico="sparkles" data-ico-size="14"></span> Terapkan preset</button>
+          <span style="color:var(--muted);font-size:12px" id="tfCount"></span>
+        </div>
+        <div class="tf-grid">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Divisi</b><button type="button" class="btn ghost sm" id="tfAddDiv">+ Divisi</button></div>
+            <div id="tfDivList"></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Topik</b><button type="button" class="btn ghost sm" id="tfAddTopic">+ Topik</button></div>
+            <div id="tfTopicList"></div>
+            <p style="font-size:12px;color:var(--muted);margin-top:6px">Divisi chat = divisi dari topik utamanya. Petunjuk membantu AI (contoh: "DP, angsuran, tenor, leasing").</p>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px"><button type="button" class="btn" id="tfSave"><span data-ico="save" data-ico-size="14"></span> Simpan</button></div>
+      </div>
+    </section>
+
