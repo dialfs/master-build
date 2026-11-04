@@ -1,0 +1,110 @@
+== 0/4 Build + Lint ==
+No syntax errors detected in /Users/dias/Herd/dei-tenant/api/index.php
+2026-11-04 17:22:18 423756 b3101f866388658ce72fb4025c4d30da master 1828729 2076135056d6468fb3cbe1690e545b98
+
+== 1/4 master-build: commit + push (arsip tool) ==
+[main 5aaa837] tools: patch v1.2.139 topik-riwayat
+ 4 files changed, 258 insertions(+)
+ create mode 100755 tools/patch-v1.2.138/rilis-v1.2.138-deploy.command
+ create mode 100755 tools/patch-v1.2.139/build_v12139.py
+ create mode 100644 tools/patch-v1.2.139/patch_v12139_topik_riwayat.py
+ create mode 100755 tools/patch-v1.2.139/rilis-v1.2.139-auto.command
+From https://github.com/dialfs/master-build
+ * branch            main       -> FETCH_HEAD
+   9e31571..24cad9a  main       -> origin/main
+Created autostash: 45ad0e0
+Current branch main is up to date.
+Applied autostash.
+To https://github.com/dialfs/master-build.git
+   24cad9a..5aaa837  HEAD -> main
+master-build OK
+
+== 2/4 dei-pusat: commit + push ==
+=== PREFLIGHT ===
+   semua .php OK
+   html & rilis OK
+PREFLIGHT LULUS
+[main 3ca9007] release: v1.2.139 (Filter Topik membaca riwayat impor WAHA + scan chat lama per periode)
+ 4 files changed, 22 insertions(+), 5 deletions(-)
+ create mode 100644 releases/v1.2.139/manifest.json
+ create mode 100644 releases/v1.2.139/update.zip
+From https://github.com/dialfs/dei-pusat
+ * branch            main       -> FETCH_HEAD
+Current branch main is up to date.
+To https://github.com/dialfs/dei-pusat.git
+   79def9e..3ca9007  main -> main
+
+== 3/4 Cek server vs lokal + dry-run deploy ==
+>f+++++++++ releases/v1.2.6/update.zip
+.f...p..... releases/v1.2.60/update.zip
+.f...p..... releases/v1.2.61/update.zip
+cd+++++++++ releases/v1.2.7/
+>f+++++++++ releases/v1.2.7/manifest.json
+>f+++++++++ releases/v1.2.7/update.zip
+.f...p..... releases/v1.2.75/update.zip
+.f...p..... releases/v1.2.76/update.zip
+cd+++++++++ releases/v1.2.8/
+>f+++++++++ releases/v1.2.8/manifest.json
+>f+++++++++ releases/v1.2.8/update.zip
+cd+++++++++ releases/v1.2.9/
+>f+++++++++ releases/v1.2.9/manifest.json
+>f+++++++++ releases/v1.2.9/update.zip
+.f...p..... releases/v1.2.93/manifest.json
+<f+++++++++ releases/v1.2.139/update.zip
+.f...p..... releases/v1.2.53/update.zip
+.f...p..... releases/v1.2.54/update.zip
+.f...p..... releases/v1.2.60/update.zip
+.f...p..... releases/v1.2.61/update.zip
+.f...p..... releases/v1.2.75/update.zip
+.f...p..... releases/v1.2.76/update.zip
+.f...p..... releases/v1.2.93/manifest.json
+
+Number of files: 305 (reg: 202, dir: 103)
+Number of created files: 3 (reg: 2, dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 4
+Total file size: 42.43M bytes
+Total transferred file size: 2.25M bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 11.14K
+Total bytes received: 175
+
+sent 11.14K bytes  received 175 bytes  7.54K bytes/sec
+total size is 42.43M  speedup is 3,748.59 (DRY RUN)
+
+Deploy LIVE otomatis (atas perintah Dias).
+== 4/4 Deploy ==
+Number of regular files transferred: 4
+Total file size: 42.43M bytes
+Total transferred file size: 2.25M bytes
+Literal data: 702.51K bytes
+Matched data: 1.55M bytes
+File list size: 0
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 712.63K
+Total bytes received: 8.41K
+
+sent 712.63K bytes  received 8.41K bytes  288.42K bytes/sec
+total size is 42.43M  speedup is 58.84
+Permission OK.
+Selesai. Cek: https://chat.deintegra.com/releases/ + panel admin.
+
+Cek manifest:
+{
+  "version": "v1.2.139",
+  "released_at": "2026-11-04 17:22:18",
+  "zip": "update.zip",
+  "size": 423756,
+  "md5": "b3101f866388658ce72fb4025c4d30da",
+  "title": "Filter Topik: Riwayat Impor & Scan Chat Lama",
+  "type": "peningkatan",
+
+Cek endpoint klasifikasi (harus menolak tanpa lisensi):
+{"ok":false,"error":"Tenant tidak terdaftar di server pusat."}
+
+Tekan Enter untuk menutup...
