@@ -1,0 +1,31 @@
+## main...origin/main [ahead 2]
+=== PREFLIGHT ===
+   semua .php OK
+   html & rilis OK
+PREFLIGHT LULUS
+MODE: UPLOAD
+Total file size: 42.85M bytes
+Total transferred file size: 2.25M bytes
+Literal data: 682.37K bytes
+Matched data: 1.57M bytes
+File list size: 0
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 693.33K
+Total bytes received: 8.37K
+
+sent 693.33K bytes  received 8.37K bytes  280.68K bytes/sec
+total size is 42.85M  speedup is 61.07
+Permission OK.
+
+Cek manifest:
+{
+  "version": "v1.2.140",
+  "released_at": "2026-11-04 17:31:54",
+  "zip": "update.zip",
+  "size": 423845,
+  "md5": "1be9cc531d03215f28b90084f8ca098f",
+  "title": "Perkiraan Biaya Scan Hanya untuk Super Admin",
+  "type": "perbaikan",
+
+Tekan Enter untuk menutup...
