@@ -1,0 +1,163 @@
+--- /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/dashboard/chatbot-ai/app.js.bak-v12151-20261105-103214	2026-11-05 10:32:15.229238858 +0000
++++ /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/dashboard/chatbot-ai/app.js	2026-11-05 10:39:22.438656608 +0000
+@@ -4491,8 +4491,19 @@
+     var inner = (ch && /[A-Z0-9À-ɏ]/.test(ch)) ? esc(ch) : ico('user-round', Math.round(sz * 0.45));
+     return '<div class="wa-av" style="width:' + sz + 'px;height:' + sz + 'px;font-size:' + Math.round(sz * 0.38) + 'px;background:' + pal[h % pal.length] + '">' + inner + '</div>';
+   }
+-  function waInfoRender(res, k, claim) {
++  // v1.2.151: kontrol-kanan — di layar lebar, kontrol chat pindah dari kepala chat ke panel kanan
++  function waCtlWide() { return document.body.classList.contains('wa-full') && window.matchMedia && window.matchMedia('(min-width:1280px)').matches; }
++  function waInfoRender(res, k, claim, ctl) {
+     var box = $('#waInfo'); if (!box) return;
++    if (ctl) {
++      var t151 = (k && k.last_ts) ? waConvTimeInfo(k.last_ts) : null;
++      var row151 = function (l, v) { return '<div><dt>' + l + '</dt><dd>' + v + '</dd></div>'; };
++      box.innerHTML = ctl + '<dl class="wa-ctl-dl">' +
++        row151('Ditangani', claim ? esc(claim.agent_username) : '<span style="color:var(--muted);font-weight:400">Belum ada</span>') +
++        (t151 && t151.label ? row151('Aktivitas terakhir', esc(t151.label)) : '') +
++        (k && k.flag === 'done' && k.flag_note ? row151('Catatan', esc(k.flag_note)) : '') + '</dl>';
++      return;
++    }
+     var nm = (k && k.name) || '';
+     var chL = '', curCh = res.ch || 'utama';
+     (res.channels || []).forEach(function (c) { if (c.id === curCh) chL = c.label + ((c.number && c.label !== '+' + c.number) ? ' (+' + c.number + ')' : ''); });
+@@ -4509,6 +4520,22 @@
+       (k && k.flag === 'done' && k.flag_note ? row('Catatan', esc(k.flag_note)) : '') +
+       '</dl>';
+   }
++  var _ctl151Bound = false;
++  function waCtlBind151() {
++    if (_ctl151Bound) return; _ctl151Bound = true;
++    document.addEventListener('click', function (e) {
++      var h = $('#waThreadHead'); if (!h || !h.classList.contains('tools-open')) return;
++      if (!window.matchMedia('(max-width:860px)').matches) return;
++      if (e.target.closest('.wa-th-tools') || e.target.closest('#waThMore')) return;
++      waState.thTools = false; h.classList.remove('tools-open');
++    });
++    if (window.matchMedia) {
++      var mq = window.matchMedia('(min-width:1280px)'), fn = function () {
++        if (waState.current && !!waState.ctlWide !== waCtlWide()) fetchWaThread(waState.current, true);
++      };
++      if (mq.addEventListener) mq.addEventListener('change', fn); else if (mq.addListener) mq.addListener(fn);
++    }
++  }
+   function renderWaThread(res) {
+     var num = res.number;
+     waState.canQuote = ['meta', 'waha'].indexOf(res.wa_prov || 'meta') > -1;   // v1.2.121: wa-balas-kutip
+@@ -4644,6 +4671,27 @@
+     var _csNow = CONTACT_STAGE[_stageNow] || CONTACT_STAGE.new;   // v1.2.124: wa-layout-penuh — Lead Rating di bawah nama/nomor
+     var _vipHtml = '<button type="button" id="waVipToggle" data-vip="' + (_vipNow ? '1' : '0') + '" title="' + (_vipNow ? 'VIP \u2014 klik untuk hapus tanda' : 'Tandai sebagai kontak VIP') + '" style="' + _vipBtnStyle + ';border-radius:6px;padding:3px 7px;display:' + (_stageNow === 'active_customer' ? 'inline-flex' : 'none') + ';align-items:center;gap:3px;cursor:pointer">' + ico('star',13) + ' VIP</button>';
+     var _viaTxt = (_konv && _konv.ch_label && (res.channels || []).length > 1) ? (_nama ? ' · ' : '') + '<span class="wa-th-via" title="Balasan dikirim dari nomor ini">via ' + esc(_konv.ch_label) + '</span>' : '';
++    var _wide151 = waCtlWide();
++    var _rate151 = '<div class="wa-rate-row"><label class="wa-rate" title="Lead Rating" style="background:' + _csNow.bg + ';color:' + _csNow.fg + '">' + ico('tag',12) +
++            '<select id="waStageSelect">' + _stageOpts + '</select>' + ico('chevron-down',12) + '</label>' +
++          tfThreadRowHtml(res) + '</div>';
++    if (_wide151) {
++      var _mine151 = isMine ? '<span class="tag" style="background:#d1fae5;color:#065f46;flex:none">' + ico('user-round',12) + ' Saya</span>' : '';
++      $('#waThreadHead').innerHTML =
++        '<div class="wa-th-top wa-th-slim">' + waAvatarHtml(_nama, res.number, 36) +
++          '<div class="wa-th-id"><div class="wa-th-name">' + esc(_nama || ('+' + res.number)) + ' <a href="#" id="waEditName" title="Ubah nama" style="text-decoration:none;font-size:12px;font-weight:400">' + ico('pen-tool',12) + '</a></div>' +
++          '<div class="wa-th-sub">' + (_nama ? '+' + esc(res.number) : '') + _viaTxt + '</div></div>' + _mine151 +
++        '</div>';
++      waInfoRender(res, _konv, claim,
++        '<div class="wa-ctl">' +
++          '<div class="wa-ctl-act">' + actionBtns + '</div>' +
++          '<div class="wa-ctl-lbl">Lead rating &amp; topik</div>' + _rate151 +
++          '<div class="wa-ctl-meta">' + _statusBadge + (_konv ? waFlagBadgeHtml(_konv) : '') + _awaBadge + _attnBadge + '</div>' +
++          '<div class="wa-th-tools">' + toolBtns + _vipHtml + _leadLink + '</div>' +
++        '</div>');
++      waState.ctlWide = true;
++    } else {
++    waState.ctlWide = false;
+     $('#waThreadHead').innerHTML =
+       '<div class="wa-th-top">' +
+         '<button type="button" class="wa-th-back" id="waThBack" title="Kembali ke daftar">' + ico('arrow-left',18) + '</button>' +
+@@ -4657,11 +4705,14 @@
+         '</div>' +
+         '<div class="wa-th-act">' + actionBtns + '<button type="button" class="wa-th-more" id="waThMore" title="Serahkan, pindah nomor, VIP, lead">' + ico('more-horizontal',18) + '</button></div>' +
+       '</div>' +
+-      '<div class="wa-th-tools">' + _metaRow + toolBtns + _vipHtml + _leadLink + '</div>';
++      '<div class="wa-th-tools"><div class="wa-sheet-hd"><b>Alat chat</b><button type="button" id="waSheetClose" aria-label="Tutup">' + ico('x',18) + '</button></div>' + _metaRow + toolBtns + _vipHtml + _leadLink + '</div>';   // v1.2.151: lembar bawah di HP
+     $('#waThreadHead').classList.toggle('tools-open', !!waState.thTools);
+     if ($('#waThBack')) $('#waThBack').onclick = function () { var w = document.querySelector('.wachat-wrap'); if (w) w.classList.remove('showing-thread'); };
+-    if ($('#waThMore')) $('#waThMore').onclick = function () { waState.thTools = !waState.thTools; $('#waThreadHead').classList.toggle('tools-open', waState.thTools); };
++    if ($('#waThMore')) $('#waThMore').onclick = function (ev) { ev.stopPropagation(); waState.thTools = !waState.thTools; $('#waThreadHead').classList.toggle('tools-open', waState.thTools); };
++    if ($('#waSheetClose')) $('#waSheetClose').onclick = function () { waState.thTools = false; $('#waThreadHead').classList.remove('tools-open'); };
+     waInfoRender(res, _konv, claim);
++    }
++    waCtlBind151();
+     tfBindThread(num, res);   // v1.2.138: filter-topik
+     // Attach event handlers
+     if ($('#waEditName')) $('#waEditName').onclick = function (ev) { ev.preventDefault(); editWaContactName(num); };  // v1.2.19
+--- /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/dashboard/chatbot-ai/index.html.bak-v12151-20261105-102458	2026-11-05 10:24:58.361212481 +0000
++++ /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/dashboard/chatbot-ai/index.html	2026-11-05 10:43:12.324726439 +0000
+@@ -305,6 +305,10 @@
+     /* v1.2.7 back btn only mobile */
+   }
+ 
++/* v1.2.151: tombol-tetap — tombol lampiran/template/Kirim tidak ikut memanjang saat teks panjang */
++#waComposeRow{align-items:flex-end}
++#waComposeRow > .btn{flex-shrink:0;height:38px;align-self:flex-end;display:inline-flex;align-items:center;justify-content:center}
++
+ /* === v1.2.124: wa-layout-penuh — Percakapan WA setinggi layar, kotak balas selalu terlihat === */
+ body.wa-full main{max-width:1440px;height:100vh;height:100dvh;display:flex;flex-direction:column;padding-top:18px;padding-bottom:14px}
+ body.wa-full #panel-wachat.active{display:flex;flex-direction:column;flex:1;min-height:0;animation:none}
+@@ -1019,6 +1023,39 @@
+   }
+ }
+ 
++/* === v1.2.151: kontrol-kanan — kepala chat tipis, kontrol di panel kanan (>=1280px); lembar bawah di HP === */
++.wa-th-slim{align-items:center!important;padding:8px 16px!important;flex-wrap:nowrap!important}
++.wa-th-slim .wa-th-name{font-size:14px}
++.wachat-info .wa-ctl{display:flex;flex-direction:column;gap:10px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
++.wachat-info .wa-ctl-act{display:grid;grid-template-columns:1fr 1fr;gap:6px}
++.wachat-info .wa-ctl-act > *{min-width:0}
++.wachat-info .wa-ctl-act .btn{margin:0!important;justify-content:center;width:100%;padding:7px 8px!important;font-size:12.5px!important;white-space:nowrap}
++.wachat-info .wa-ctl-act > .btn:only-child,.wachat-info .wa-ctl-act > div,.wachat-info .wa-ctl-act > span{grid-column:1/-1}
++.wachat-info .wa-ctl-act > div{display:flex;flex-direction:column;gap:6px;align-items:stretch!important}
++.wachat-info .wa-ctl-act .tag{white-space:normal;margin:0!important}
++.wachat-info .wa-ctl-lbl{font-size:11.5px;color:var(--muted);margin-bottom:-4px}
++.wachat-info .wa-rate-row{margin:0;flex-direction:column;align-items:flex-start;gap:6px}
++.wachat-info .wa-rate-row .tf-th-row{white-space:normal}
++.wachat-info .wa-th-tools{flex-direction:column;align-items:stretch;padding:0;border:0;gap:8px}
++.wachat-info .wa-th-tools .wa-assign{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:0 8px;height:34px}
++.wachat-info .wa-th-tools .wa-assign select{flex:1;min-width:0;max-width:none;border:0;background:transparent;height:100%;font:inherit;font-size:12.5px;padding:0;box-shadow:none}
++.wachat-info .wa-th-tools > .tag,.wachat-info .wa-th-tools > button{align-self:flex-start}
++.wachat-info .wa-ctl-dl{gap:10px}
++.wachat-info .wa-ctl-meta{display:flex;flex-wrap:wrap;gap:6px}
++.wachat-info .wa-ctl-meta:empty{display:none}
++.wa-sheet-hd{display:none}
++@media(max-width:860px){
++  #waThreadHead{container-type:normal}
++  #waThreadHead.tools-open .wa-th-tools{position:fixed;left:0;right:0;bottom:0;z-index:80;flex-direction:column;align-items:stretch;gap:10px;background:#fff;border:0;border-radius:16px 16px 0 0;padding:14px 16px calc(env(safe-area-inset-bottom,0px) + 18px);max-height:75vh;overflow-y:auto;box-shadow:0 0 0 100vmax rgba(15,23,42,.38);font-size:14px}
++  #waThreadHead.tools-open .wa-sheet-hd{display:flex;align-items:center;justify-content:space-between;font-size:15px}
++  .wa-sheet-hd button{border:0;background:none;padding:4px;cursor:pointer;color:var(--ink)}
++  #waThreadHead.tools-open .wa-th-tools .wa-assign{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:0 10px;height:42px}
++  #waThreadHead.tools-open .wa-th-tools .wa-assign select{flex:1;max-width:none;border:0;background:transparent;height:100%;font-size:16px}
++  #waThreadHead.tools-open .wa-th-tools > *:not(.wa-sheet-hd){align-self:flex-start}
++  #waThreadHead.tools-open .wa-th-tools > .wa-assign{align-self:stretch}
++  #waThreadHead.tools-open .wa-th-tools > a{padding:8px 0;font-size:14px!important}
++}
++
+ /* === v1.2.149: kepala-chat-mobile — Lead Rating + Topik baris sendiri di HP === */
+ @media(max-width:860px){
+   #waThreadHead .wa-th-top{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;column-gap:8px;row-gap:0;align-items:center}
+@@ -2598,6 +2635,6 @@
+   </main>
+ </div>
+ <div class="toast" id="toast"></div>
+-<script src="app.js?v=1.2.150"></script><!-- v1.2.150: claim-patuh -->
++<script src="app.js?v=1.2.151"></script><!-- v1.2.151: kontrol-kanan -->
+ </body>
+ </html>
+--- /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/api/index.php.bak-v12151-20261105-104311	2026-11-05 10:43:12.202502107 +0000
++++ /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/api/index.php	2026-11-05 10:43:12.311171176 +0000
+@@ -13,7 +13,7 @@
+ // lama -- itulah cara kita mendeteksi update gagal senyap.
+ // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
+ // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
+-define('DEI_VERSION', 'v1.2.150');   // v1.2.150: claim-patuh
++define('DEI_VERSION', 'v1.2.151');   // v1.2.151: kontrol-kanan
+ error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
+ 
+ define('DATA_DIR', __DIR__ . '/../data');
