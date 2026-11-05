@@ -7,7 +7,7 @@ set -uo pipefail
 HERD="$HOME/Herd"; V=v1.2.151
 echo "== 1/4 Sinkron GitHub =="
 for R in master-build dei-pusat; do
-  cd "$HERD/$R" && rm -f .git/*.lock && git pull --rebase origin main && git push origin main || { echo "$R sinkron GAGAL"; read -r -p "Enter..." _; exit 1; }
+  cd "$HERD/$R" && rm -f .git/*.lock && git pull --ff-only origin main || { echo "$R sinkron GAGAL"; read -r -p "Enter..." _; exit 1; }
 done
 echo; echo "== 2/4 Cocokkan paket dengan dei-tenant lokal =="
 php -l "$HERD/dei-tenant/api/index.php" || { echo "LINT GAGAL"; read -r -p "Enter..." _; exit 1; }

@@ -1,0 +1,39 @@
+--- /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/dashboard/chatbot-ai/index.html.bak-v12152-20261105-105853	2026-11-05 10:58:53.517382773 +0000
++++ /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/dashboard/chatbot-ai/index.html	2026-11-05 10:58:53.592763686 +0000
+@@ -1040,6 +1040,17 @@
+ .wachat-info .wa-th-tools .wa-assign{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:0 8px;height:34px}
+ .wachat-info .wa-th-tools .wa-assign select{flex:1;min-width:0;max-width:none;border:0;background:transparent;height:100%;font:inherit;font-size:12.5px;padding:0;box-shadow:none}
+ .wachat-info .wa-th-tools > .tag,.wachat-info .wa-th-tools > button{align-self:flex-start}
++/* v1.2.152: tombol-warna — aksi panel kanan satu per baris, warna sesuai fungsi */
++.wachat-info .wa-ctl-act{grid-template-columns:1fr!important}
++.wachat-info .wa-ctl-act .btn{font-size:13px!important;padding:8px 10px!important;gap:6px}
++.wachat-info #waReleaseBtn{background:#fff!important;color:#334155!important;border:1px solid #cbd5e1!important}
++.wachat-info #waReleaseBtn:hover{background:#f1f5f9!important}
++.wachat-info #waResolveBtn{background:#ecfdf5!important;color:#047857!important;border:1px solid #6ee7b7!important}
++.wachat-info #waResolveBtn:hover{background:#d1fae5!important}
++.wachat-info #waAdminTakeoverBtn,.wachat-info #waRequestTakeoverBtn{background:#fffbeb!important;color:#92400e!important;border:1px solid #fcd34d!important}
++.wachat-info #waAdminTakeoverBtn:hover,.wachat-info #waRequestTakeoverBtn:hover{background:#fef3c7!important}
++.wachat-info #waTakeoverApproveBtn{background:#059669!important;color:#fff!important;border:1px solid #059669!important}
++.wachat-info #waTakeoverDenyBtn{background:#fff!important;color:#b91c1c!important;border:1px solid #fca5a5!important}
+ .wachat-info .wa-ctl-dl{gap:10px}
+ .wachat-info .wa-ctl-meta{display:flex;flex-wrap:wrap;gap:6px}
+ .wachat-info .wa-ctl-meta:empty{display:none}
+@@ -2635,6 +2646,6 @@
+   </main>
+ </div>
+ <div class="toast" id="toast"></div>
+-<script src="app.js?v=1.2.151"></script><!-- v1.2.151: kontrol-kanan -->
++<script src="app.js?v=1.2.152"></script><!-- v1.2.152: tombol-warna -->
+ </body>
+ </html>
+--- /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/api/index.php.bak-v12152-20261105-105853	2026-11-05 10:58:53.561545044 +0000
++++ /sessions/rcw-01f3pjwdfgnm5uree5csddpn/mnt/dei-tenant/api/index.php	2026-11-05 10:58:53.633752196 +0000
+@@ -13,7 +13,7 @@
+ // lama -- itulah cara kita mendeteksi update gagal senyap.
+ // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
+ // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
+-define('DEI_VERSION', 'v1.2.151');   // v1.2.151: kontrol-kanan
++define('DEI_VERSION', 'v1.2.152');   // v1.2.152: tombol-warna
+ error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
+ 
+ define('DATA_DIR', __DIR__ . '/../data');
