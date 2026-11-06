@@ -1,0 +1,567 @@
+--- a/api/index.php	2026-11-06 10:29:27.301692404 +0700
++++ b/api/index.php	2026-11-06 10:32:58.542210395 +0700
+@@ -13,12 +13,14 @@
+ // lama -- itulah cara kita mendeteksi update gagal senyap.
+ // Nilai 'dev' berarti berkas ini sumber yang dipatch manual (deintegra),
+ // bukan hasil pemasangan dari rilis -- itu jujur, bukan tanda masalah.
+-define('DEI_VERSION', 'v1.2.152');   // v1.2.152: tombol-warna
++define('DEI_VERSION', 'v1.2.153');   // v1.2.153: jadwal-kirim
+ error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
+ 
+ define('DATA_DIR', __DIR__ . '/../data');
+ define('SETTINGS_FILE', DATA_DIR . '/settings.json');
+ define('USERS_FILE', DATA_DIR . '/users.json');
++define('SCHED_FILE', DATA_DIR . '/sched-msgs.json');   // v1.2.153: jadwal-kirim
++define('SCHED_DIR', DATA_DIR . '/sched-msgs');
+ define('KB_FILE', DATA_DIR . '/knowledge-base.json');
+ define('LOG_FILE', DATA_DIR . '/chatbot-log.json');
+ define('PUSH_CATEGORIES_FILE', DATA_DIR . '/push-categories.json');  // v1.2.13: kategori custom (file sendiri, bukan settings)
+@@ -8550,6 +8552,211 @@
+ }
+ 
+ /* ---------- SWEEP 1: Auto-Closing WA ---------- */
++/* ============================================================================
++ * v1.2.153: jadwal-kirim — pesan WA terjadwal dari thread Percakapan WA.
++ * data/sched-msgs.json {items:{id:{...}}} dikunci deiWithLock('sched'); sama untuk
++ * mode file & mysql (data kecil). Yang selesai diarsip ke data/sched-msgs/YYYY-MM.jsonl
++ * dan tetap di berkas 48 jam supaya statusnya terlihat di thread.
++ * Dikirim oleh cron_tick (schedSweep) memakai waSend, dicatat sebagai balasan agent.
++ * ========================================================================== */
++define('SCHED_MIN_AHEAD', 60);          // dtk (UI meminta >= 2 menit)
++define('SCHED_MAX_AHEAD', 30 * 86400);
++define('SCHED_MAX_LATE', 6 * 3600);    // cron mati lebih lama -> expired
++define('SCHED_RETRY', 1800);        // gagal kirim: dicoba ulang tiap tick selama 30 menit
++define('SCHED_PER_NUM', 10);
++define('SCHED_PER_TENANT', 500);
++define('SCHED_KEEP', 2 * 86400);
++
++function schedMutate($fn) {
++    return deiWithLock('sched', function () use ($fn) {
++        $db = readJson(SCHED_FILE, []);
++        if (!is_array($db) || !is_array($db['items'] ?? null)) $db = ['items' => []];
++        $r = $fn($db);
++        writeJson(SCHED_FILE, $db);
++        return $r;
++    });
++}
++function schedReadAll() {
++    $db = readJson(SCHED_FILE, []);
++    return (is_array($db) && is_array($db['items'] ?? null)) ? $db['items'] : [];
++}
++function schedArchive($it) {
++    if (!is_dir(SCHED_DIR)) @mkdir(SCHED_DIR, 0755, true);
++    @file_put_contents(SCHED_DIR . '/' . wibDate('Y-m', (int)($it['created_at'] ?? time())) . '.jsonl',
++        json_encode($it, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . "\n", FILE_APPEND | LOCK_EX);
++}
++function schedPublic($it, $u = null) {
++    $o = array_intersect_key($it, array_flip(['id', 'num', 'at', 'text', 'by', 'by_name', 'created_at', 'cancel_on_reply', 'status', 'sent_at', 'reason', 'last_err', 'cancelled_by']));
++    if ($u) $o['can'] = schedCanManage($u, $it);
++    return $o;
++}
++function schedCanManage($u, $it) {
++    return deiIsLead((string)($u['role'] ?? '')) || (string)($it['by'] ?? '') === (string)($u['username'] ?? '');
++}
++// Agent biasa hanya melihat jadwalnya sendiri; Supervisor/Admin/SA melihat semua.
++function schedVisible($u, $num = '') {
++    $out = [];
++    $lead = deiIsLead((string)($u['role'] ?? ''));
++    foreach (schedReadAll() as $it) {
++        if ($num !== '' && (string)($it['num'] ?? '') !== $num) continue;
++        if (!$lead && (string)($it['by'] ?? '') !== (string)($u['username'] ?? '')) continue;
++        $out[] = $it;
++    }
++    usort($out, function ($a, $b) { return (int)$a['at'] <=> (int)$b['at']; });
++    return $out;
++}
++function schedPendingCounts($u) {
++    $c = [];
++    foreach (schedVisible($u) as $it) {
++        if (in_array($it['status'] ?? '', ['pending', 'sending'], true)) { $n = (string)$it['num']; $c[$n] = ($c[$n] ?? 0) + 1; }
++    }
++    return $c;
++}
++// Pesan masuk terakhir (detik) dari nomor ini; $winCh = '' -> semua nomor bisnis.
++function schedLastInbound($num, $winCh, $logs = null) {
++    foreach (($logs === null ? logReadAll() : $logs) as $e) {
++        if (($e['channel'] ?? '') === 'whatsapp' && waNormNum($e['ip'] ?? '') === $num && ($e['q'] ?? '') !== ''
++            && ($winCh === null || waInboundOnCh($e, $winCh))) return (int)strtotime((string)$e['ts']);
++    }
++    return 0;
++}
++// Batas akhir boleh kirim teks bebas (WhatsApp API resmi: 24 jam sejak pesan pelanggan).
++function schedWindowEnd($num, $s, $logs = null) {
++    if (waWinFree($num, $s)) return PHP_INT_MAX;
++    $li = schedLastInbound($num, waWinCh($num, $s), $logs);
++    return $li > 0 ? $li + 86400 : 0;
++}
++// Pemeriksaan saat membuat/mengubah jadwal (memanggil jsonOut bila ditolak).
++function schedCheckInput($u, $num, $text, $at, $s, $selfId = '') {
++    deiGuardSpvScope($u, $num);
++    deiGuardAgentStage($u, $num);
++    if (($u['role'] ?? '') === 'wa_agent') {
++        $cl = waClaimGet($num);
++        if ($cl && ($cl['agent_username'] ?? '') !== $u['username']) jsonOut(['ok' => false, 'error' => 'Chat ini dipegang ' . ($cl['agent_username'] ?? 'agent lain') . '. Minta take-over dulu.'], 403);
++    }
++    if ($text === '') jsonOut(['ok' => false, 'error' => 'Isi pesan wajib diisi.'], 400);
++    $now = time();
++    if ($at < $now + SCHED_MIN_AHEAD) jsonOut(['ok' => false, 'error' => 'Waktu kirim minimal 2 menit dari sekarang.'], 400);
++    if ($at > $now + SCHED_MAX_AHEAD) jsonOut(['ok' => false, 'error' => 'Jadwal paling lama 30 hari ke depan.'], 400);
++    $we = schedWindowEnd($num, $s);
++    if ($we !== PHP_INT_MAX && $at >= $we) {
++        jsonOut(['ok' => false, 'error' => $we <= $now
++            ? 'Jendela 24 jam tertutup — WhatsApp API resmi tidak mengizinkan teks bebas sampai pelanggan mengirim pesan lagi.'
++            : 'Jendela 24 jam WhatsApp API resmi untuk chat ini berakhir ' . wibDate('d/m H:i', $we) . ' WIB. Jadwalkan sebelum jam itu.'], 400);
++    }
++    $nNum = 0; $nAll = 0;
++    foreach (schedReadAll() as $it) {
++        if (($it['id'] ?? '') === $selfId || !in_array($it['status'] ?? '', ['pending', 'sending'], true)) continue;
++        $nAll++; if ((string)$it['num'] === $num) $nNum++;
++    }
++    if ($selfId === '' && $nNum >= SCHED_PER_NUM) jsonOut(['ok' => false, 'error' => 'Maksimal ' . SCHED_PER_NUM . ' jadwal tertunda per kontak.'], 400);
++    if ($selfId === '' && $nAll >= SCHED_PER_TENANT) jsonOut(['ok' => false, 'error' => 'Maksimal ' . SCHED_PER_TENANT . ' jadwal tertunda per tenant.'], 400);
++}
++function schedUserByName($un) {
++    foreach ((array)readJson(USERS_FILE, []) as $x) { if (($x['username'] ?? '') === $un) return $x; }
++    return null;
++}
++// Kirim satu jadwal. Hasil: ['st' => sent|skipped|expired|failed|pending, 'reason' => ...]
++function schedSendOne($it, $s, $now, &$logs) {
++    $num = (string)$it['num'];
++    $at  = (int)$it['at'];
++    if ($now - $at > SCHED_MAX_LATE) return ['st' => 'expired', 'reason' => 'Terlambat lebih dari 6 jam dari jadwal (cron tidak berjalan) — tidak dikirim.'];
++    if ($logs === null) $logs = logReadAll();
++    if (!empty($it['cancel_on_reply'])) {
++        $li = schedLastInbound($num, null, $logs);
++        if ($li > (int)$it['created_at']) return ['st' => 'skipped', 'reason' => 'Pelanggan sudah membalas setelah jadwal dibuat — dibatalkan otomatis.'];
++    }
++    $by = schedUserByName((string)$it['by']);
++    if (!$by) return ['st' => 'skipped', 'reason' => 'Akun pembuat jadwal sudah dihapus.'];
++    if (($by['role'] ?? '') === 'wa_agent') {
++        $cl = waClaimGet($num);
++        if ($cl && ($cl['agent_username'] ?? '') !== $it['by']) return ['st' => 'skipped', 'reason' => 'Chat sudah dipegang ' . ($cl['agent_username'] ?? 'agent lain') . '.'];
++        if (!deiAgentCanReplyNum($by, $num)) return ['st' => 'skipped', 'reason' => 'Lead Rating kontak di luar izin balas akun pembuat.'];
++    }
++    $we = schedWindowEnd($num, $s, $logs);
++    if ($we !== PHP_INT_MAX && $now >= $we) return ['st' => 'skipped', 'reason' => 'Jendela 24 jam WhatsApp API resmi sudah tertutup.'];
++    $text = (string)$it['text'];
++    if (!empty($GLOBALS['dei_dry'])) { $GLOBALS['esc_dry_log'][] = ['sched' => $it['id'], 'to' => $num, 'text' => $text]; return ['st' => 'pending', 'dry' => 1]; }
++    $wa = waConf($s);
++    $GLOBALS['dei_out_src'] = 'agent';
++    $GLOBALS['wa_reply_to'] = '';
++    if (!waSend($wa, $num, $text)) {
++        $wr = trim((string)($GLOBALS['wa_last_error'] ?? '')) ?: 'gagal mengirim via WhatsApp';
++        if ($now - $at < SCHED_RETRY) return ['st' => 'pending', 'reason' => '', 'last_err' => $wr];
++        return ['st' => 'failed', 'reason' => 'Gagal terkirim selama 30 menit: ' . $wr];
++    }
++    $oid = (string)($GLOBALS['wa_last_out_id'] ?? '');
++    try { waSetMode($num, 'human', 'agent_reply'); } catch (\Throwable $e) {}
++    try { deiRecordAgentReply($num, (string)$it['by'], 'sched'); } catch (\Throwable $e) {}
++    try { convReply($num, 'agent'); } catch (\Throwable $e) {}
++    if ($wa['keep_context'] ?? true) {
++        $h = waLoadHistory($num); $h[] = ['role' => 'assistant', 'content' => $text]; waSaveHistory($num, $h);
++    }
++    logPrepend([
++        'ts' => date('Y-m-d H:i:s'), 'q' => '', 'a' => $text, 'ip' => $num,
++        'channel' => 'whatsapp', 'dir' => 'manual', 'sched' => (string)$it['id'], 'sched_by' => (string)$it['by'],
++        'utm_source' => 'whatsapp', 'utm_medium' => 'manual', 'utm_campaign' => '', 'page' => '', 'referrer' => '',
++    ] + array_filter(['out_id' => $oid]), (int)($s['api']['log_limit'] ?? 500));
++    $logs = null;   // log berubah
++    try { waAuditLog('sched_sent', (string)$it['by'], $num, ['id' => $it['id'], 'late' => max(0, $now - $at)]); } catch (\Throwable $e) {}
++    return ['st' => 'sent'];
++}
++// Ambil (kunci) satu jadwal untuk dikirim -> status 'sending'. null bila sudah diambil/berubah.
++function schedTake($id, $now, $force = false) {
++    return schedMutate(function (&$db) use ($id, $now, $force) {
++        $x = $db['items'][$id] ?? null;
++        if (!$x || ($x['status'] ?? '') !== 'pending' || (!$force && (int)$x['at'] > $now)) return null;
++        $db['items'][$id]['status'] = 'sending'; $db['items'][$id]['try_at'] = $now;
++        return $db['items'][$id];
++    });
++}
++function schedFinish($id, $res) {
++    $fin = schedMutate(function (&$db) use ($id, $res) {
++        if (!isset($db['items'][$id])) return null;
++        $x = &$db['items'][$id];
++        $x['status'] = $res['st'];
++        if (array_key_exists('last_err', $res)) $x['last_err'] = $res['last_err'];
++        if ($res['st'] === 'pending') return null;
++        $x['reason'] = (string)($res['reason'] ?? '');
++        $x['done_at'] = time();
++        if ($res['st'] === 'sent') { $x['sent_at'] = time(); unset($x['last_err']); }
++        return $x;
++    });
++    if ($fin) schedArchive($fin);
++    return $fin;
++}
++function schedSweep($s) {
++    $now = time();
++    $all = schedReadAll();
++    if (!$all) return [];
++    $due = []; $stale = false; $old = false;
++    foreach ($all as $id => $it) {
++        $st = $it['status'] ?? '';
++        if ($st === 'pending' && (int)$it['at'] <= $now) $due[] = $it;
++        elseif ($st === 'sending' && $now - (int)($it['try_at'] ?? 0) > 600) $stale = true;
++        elseif (!in_array($st, ['pending', 'sending'], true) && $now - (int)($it['done_at'] ?? $now) > SCHED_KEEP) $old = true;
++    }
++    if ($stale || $old) schedMutate(function (&$db) use ($now) {
++        foreach ($db['items'] as $id => $x) {
++            $st = $x['status'] ?? '';
++            if ($st === 'sending' && $now - (int)($x['try_at'] ?? 0) > 600) $db['items'][$id]['status'] = 'pending';   // proses sebelumnya mati di tengah jalan
++            elseif (!in_array($st, ['pending', 'sending'], true) && $now - (int)($x['done_at'] ?? $now) > SCHED_KEEP) unset($db['items'][$id]);
++        }
++    });
++    if (!$due) return [];
++    usort($due, function ($a, $b) { return (int)$a['at'] <=> (int)$b['at']; });
++    $out = []; $logs = null;
++    foreach (array_slice($due, 0, 20) as $it) {
++        $t = schedTake((string)$it['id'], $now);
++        if (!$t) continue;
++        try { $res = schedSendOne($t, $s, $now, $logs); }
++        catch (\Throwable $e) { $res = ['st' => 'pending', 'last_err' => $e->getMessage()]; }
++        schedFinish((string)$t['id'], $res);
++        $out[] = ['id' => $t['id'], 'num' => $t['num'], 'st' => $res['st']] + (!empty($res['dry']) ? ['dry' => 1] : []);
++    }
++    return $out;
++}
++
+ function autoClosingSweep($s) {
+     if (deiIsManual($s)) return [];      // v1.2.58: mode Manual tanpa pesan otomatis
+     $ac = deiAcConf($s);
+@@ -10289,6 +10496,8 @@
+             'stage' => deiNumStageVip($num)[0], 'vip' => deiNumStageVip($num)[1],
+             'tp' => tpActive() ? tpPublic(waContactGet($num) ?: []) : null,   // v1.2.138: filter-topik
+             'claim' => waClaimGet($num),   // v1.2.141: filter-chat-terpilih — status claim tidak bergantung pada daftar terfilter
++            'sched' => (function () use ($u, $num) { try { return array_map(function ($x) use ($u) { return schedPublic($x, $u); }, schedVisible($u, $num)); } catch (\Throwable $e) { return []; } })(),   // v1.2.153: jadwal-kirim
++            'win_end' => (function () use ($num, $s116) { $w = schedWindowEnd($num, $s116); return $w === PHP_INT_MAX ? 0 : $w; })(),
+         ]);
+         break;
+     }
+@@ -10443,6 +10652,96 @@
+         break;
+     }
+ 
++    /* ---------- v1.2.153: jadwal-kirim — pesan WA terjadwal ---------- */
++    case 'sched_list': {
++        $u = requireAuth(['super_admin','admin','wa_agent']);
++        $num = waNormNum($_GET['number'] ?? '');
++        if ($num !== '') deiGuardAgentPrivate($u, $num);
++        jsonOut(['ok' => true, 'items' => array_map(function ($x) use ($u) { return schedPublic($x, $u); }, schedVisible($u, $num))]);
++        break;
++    }
++    case 'sched_create':
++    case 'sched_update': {
++        $u = requireAuth(['super_admin','admin','wa_agent']);
++        $s = getSettings();
++        $in = bodyInput();
++        $text = trim((string)($in['text'] ?? ''));
++        if (mb_strlen($text) > 4000) $text = mb_substr($text, 0, 4000);
++        $at = (int)($in['at'] ?? 0);
++        $cor = !array_key_exists('cancel_on_reply', $in) || !empty($in['cancel_on_reply']);
++        if ($action === 'sched_update') {
++            $id = (string)($in['id'] ?? '');
++            $cur = schedReadAll()[$id] ?? null;
++            if (!$cur || ($cur['status'] ?? '') !== 'pending') jsonOut(['ok' => false, 'error' => 'Jadwal tidak ditemukan atau sudah diproses.'], 404);
++            if (!schedCanManage($u, $cur)) jsonOut(['ok' => false, 'error' => 'Hanya pembuat jadwal atau Supervisor/Admin yang boleh mengubah.'], 403);
++            $num = (string)$cur['num'];
++            schedCheckInput($u, $num, $text, $at, $s, $id);
++            $it = schedMutate(function (&$db) use ($id, $text, $at, $cor) {
++                $x = $db['items'][$id] ?? null;
++                if (!$x || ($x['status'] ?? '') !== 'pending') return null;
++                $db['items'][$id]['text'] = $text; $db['items'][$id]['at'] = $at; $db['items'][$id]['cancel_on_reply'] = $cor ? 1 : 0;
++                $db['items'][$id]['updated_at'] = time();
++                return $db['items'][$id];
++            });
++            if (!$it) jsonOut(['ok' => false, 'error' => 'Jadwal sudah diproses.'], 409);
++            waAuditLog('sched_update', $u['username'], $num, ['id' => $id, 'at' => $at]);
++        } else {
++            $num = waNormNum($in['number'] ?? '');
++            if ($num === '') jsonOut(['ok' => false, 'error' => 'number wajib'], 400);
++            deiGuardAgentPrivate($u, $num);
++            schedCheckInput($u, $num, $text, $at, $s);
++            $it = ['id' => 's' . wibDate('ymd') . bin2hex(random_bytes(4)), 'num' => $num, 'at' => $at, 'text' => $text,
++                   'by' => $u['username'], 'by_name' => (string)($u['name'] ?? $u['username']), 'created_at' => time(),
++                   'cancel_on_reply' => $cor ? 1 : 0, 'status' => 'pending'];
++            schedMutate(function (&$db) use ($it) { $db['items'][$it['id']] = $it; });
++            waAuditLog('sched_create', $u['username'], $num, ['id' => $it['id'], 'at' => $at]);
++        }
++        jsonOut(['ok' => true, 'item' => schedPublic($it, $u)]);
++        break;
++    }
++    case 'sched_cancel': {
++        $u = requireAuth(['super_admin','admin','wa_agent']);
++        $id = (string)(bodyInput()['id'] ?? '');
++        $cur = schedReadAll()[$id] ?? null;
++        if (!$cur) jsonOut(['ok' => false, 'error' => 'Jadwal tidak ditemukan.'], 404);
++        if (!schedCanManage($u, $cur)) jsonOut(['ok' => false, 'error' => 'Hanya pembuat jadwal atau Supervisor/Admin yang boleh membatalkan.'], 403);
++        $fin = schedMutate(function (&$db) use ($id, $u) {
++            $x = $db['items'][$id] ?? null;
++            if (!$x || ($x['status'] ?? '') !== 'pending') return null;
++            $db['items'][$id]['status'] = 'cancelled'; $db['items'][$id]['done_at'] = time();
++            $db['items'][$id]['cancelled_by'] = $u['username'];
++            $db['items'][$id]['reason'] = 'Dibatalkan oleh ' . ($u['name'] ?? $u['username']) . '.';
++            return $db['items'][$id];
++        });
++        if (!$fin) jsonOut(['ok' => false, 'error' => 'Jadwal sudah diproses (sedang/sudah terkirim).'], 409);
++        schedArchive($fin);
++        waAuditLog('sched_cancel', $u['username'], (string)$cur['num'], ['id' => $id]);
++        jsonOut(['ok' => true]);
++        break;
++    }
++    case 'sched_send_now': {
++        $u = requireAuth(['super_admin','admin','wa_agent']);
++        $s = getSettings();
++        $id = (string)(bodyInput()['id'] ?? '');
++        $cur = schedReadAll()[$id] ?? null;
++        if (!$cur) jsonOut(['ok' => false, 'error' => 'Jadwal tidak ditemukan.'], 404);
++        if (!schedCanManage($u, $cur)) jsonOut(['ok' => false, 'error' => 'Hanya pembuat jadwal atau Supervisor/Admin.'], 403);
++        $t = schedTake($id, time(), true);
++        if (!$t) jsonOut(['ok' => false, 'error' => 'Jadwal sudah diproses.'], 409);
++        $logs = null;
++        $t['cancel_on_reply'] = 0;   // dikirim atas perintah langsung
++        $t['at'] = time();
++        try { $res = schedSendOne($t, $s, time(), $logs); } catch (\Throwable $e) { $res = ['st' => 'pending', 'last_err' => $e->getMessage()]; }
++        if ($res['st'] === 'pending') {
++            schedFinish($id, $res);
++            jsonOut(['ok' => false, 'error' => 'Gagal mengirim: ' . ($res['last_err'] ?? 'coba lagi') . '. Jadwal tetap menunggu.'], 502);
++        }
++        $fin = schedFinish($id, $res);
++        if ($res['st'] !== 'sent') jsonOut(['ok' => false, 'error' => (string)($res['reason'] ?? 'Tidak terkirim.')], 409);
++        jsonOut(['ok' => true, 'item' => $fin ? schedPublic($fin, $u) : null]);
++        break;
++    }
++
+     case 'wa_send_manual': {
+         $u = requireAuth(['super_admin','admin','wa_agent']);
+         $s = getSettings();
+@@ -13337,6 +13636,7 @@
+             $r['mode_swept'] = waModeSweepIdle();
+         } catch (\Throwable $e) { $r['err_sweep'] = $e->getMessage(); }
+         try { $r['closed'] = autoClosingSweep($s); }   catch (\Throwable $e) { $r['closed'] = []; $r['err_closing'] = $e->getMessage(); }
++        try { $scr = schedSweep($s); if ($scr) $r['sched'] = $scr; } catch (\Throwable $e) { $r['err_sched'] = $e->getMessage(); }   // v1.2.153: jadwal-kirim
+         try { $r['escalated'] = escalationSweep($s); } catch (\Throwable $e) { $r['escalated'] = []; $r['err_escalation'] = $e->getMessage(); }
+         try { $hfr = handoverFallbackSweep($s); if ($hfr) $r['handover_fallback'] = $hfr; } catch (\Throwable $e) { $r['err_handover_fallback'] = $e->getMessage(); }   // v1.2.126: respon-median
+         try { $r['sessions_purged'] = deiPurgeSessions(); } catch (\Throwable $e) { $r['err_purge'] = $e->getMessage(); }   // v1.2.71
+@@ -13947,6 +14247,7 @@
+             'stage_counts' => $stCounts, 'stage' => $stF,   // v1.2.117: filter-lead-rating
+             'tp' => $tpOn ? (tpClientConf() + ['f' => $tpF, 'fd' => $tpDF, 'ever' => $tpEver, 'counts' => $tpCounts, 'dcounts' => $tpDCounts]) : ['on' => false],   // v1.2.138: filter-topik
+             'agents' => deiIsLead($u['role']) ? deiAssignableUsers($u) : [],
++            'sched' => (function () use ($u) { try { return (object)schedPendingCounts($u); } catch (\Throwable $e) { return (object)[]; } })(),   // v1.2.153: jadwal-kirim
+         ]);
+         break;
+     }
+--- a/dashboard/chatbot-ai/app.js	2026-11-06 10:29:27.349692407 +0700
++++ b/dashboard/chatbot-ai/app.js	2026-11-06 10:38:12.164670953 +0700
+@@ -27,6 +27,7 @@
+     'octagon-alert':     '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/>',
+     'triangle-alert':    '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+     'clock-3':           '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16.5 12"/>',
++    'alarm-clock':       '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M6.38 18.7 4 21"/><path d="M17.64 18.67 20 21"/>',   // v1.2.153: jadwal-kirim
+     'ban':               '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+     'check-circle-2':    '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+     // Avatar Icon Mode (v1.1.9 hybrid)
+@@ -3817,6 +3818,7 @@
+     waQuoteInit();   // v1.2.121: wa-balas-kutip
+     waScrollInit();   // v1.2.123: wa-scroll-stabil
+     waQrInit();   // v1.2.122: template-balasan
++    waSchedInit();   // v1.2.153: jadwal-kirim
+     if ($('#waSearch')) $('#waSearch').oninput = function () { waState.q = this.value; renderWaConvs(); };   // v1.2.125: wa-tampilan-sama
+     initPushNotif();  // v1.2.8: init push notif saat buka menu WA
+     // v1.2.7: back button — mobile balik ke list
+@@ -3962,6 +3964,7 @@
+       waState.isAdmin = !!res.is_admin;
+       waState.replyMode = res.reply_mode || 'ai';   // v1.2.58
+       waState.agents = res.agents || [];
++      waState.schedCounts = res.sched || {};   // v1.2.153: jadwal-kirim
+       waState.channels = res.channels || [];   // v1.2.98: multi-nomor
+       if (waState.ch && !waState.channels.some(function (c) { return c.id === waState.ch; })) waState.ch = '';
+       waState.stageCounts = res.stage_counts || null;   // v1.2.117: filter-lead-rating
+@@ -4279,6 +4282,7 @@
+       var subNomor = '<div class="wa-conv-sub">' + (c.name ? '<span>+' + esc(c.number) + '</span>' : '') + contactStageBadgeHtml(c.stage, c.vip) + '</div>';   // v1.2.124: Lead Rating di bawah nama/nomor
+       // v1.2.39: badge tag kontak (stage + VIP kalau ada)
+       var stageBadge = '';   // v1.2.124: Lead Rating pindah ke baris nomor
++      if ((waState.schedCounts || {})[c.number]) stageBadge += ' <span class="tag" style="background:#e0f2fe;color:#075985" title="Pesan terjadwal menunggu dikirim">' + ico('alarm-clock', 11) + ' ' + waState.schedCounts[c.number] + ' terjadwal</span>';   // v1.2.153: jadwal-kirim
+       if (c.has_history) stageBadge += ' <span class="tag" style="background:#fef3c7;color:#92400e" title="Ada riwayat chat dari sebelum terhubung ke dashboard">' + ico('clock-3', 11) + ' riwayat</span>';   // v1.2.105
+       if (c.ch_label && (waState.channels || []).length > 1) stageBadge += ' <span class="tag" style="background:#ede9fe;color:#5b21b6" title="Nomor WhatsApp yang dihubungi">' + ico('phone', 11) + ' ' + esc(c.ch_label) + '</span>';   // v1.2.98: multi-nomor
+       return '<div class="wa-conv' + (_open ? ' is-open' : '') + '" data-num="' + esc(c.number) + '" style="' + bg + accent + '">' + waAvatarHtml(c.name, c.number, 38) + '<div class="wa-conv-b">' +   // v1.2.134: chat-aktif; v1.2.135: wa-fix
+@@ -4798,6 +4802,8 @@
+       (m.media_out || []).forEach(function (md, j) { h += waBubble('', 'bot', m.ts, md, '', { k: 'o' + j + m.ts }); });   // v1.2.123
+       return h;
+     }).join('') || '<div style="color:var(--muted);margin:auto">Belum ada pesan.</div>';
++    waState.sched = res.sched || []; waState.schedWinEnd = res.win_end || 0; waState.schedNum = num;   // v1.2.153: jadwal-kirim
++    _waHtml += waSchedHtml(waState.sched);
+     // v1.2.123: wa-scroll-stabil — isi sama persis (polling tanpa pesan baru): DOM & gambar dibiarkan, posisi tidak disentuh
+     if (_waBody && !(_waSame && waState.bodyHtml === _waHtml)) {
+       _waBody.innerHTML = _waHtml;
+@@ -4836,6 +4842,8 @@
+     $('#waReplySend').disabled = !canReply;
+     if ($('#waAttachBtn')) $('#waAttachBtn').disabled = !canReply || res.wa_prov === 'fonnte';   // v1.2.120: wa-lampiran
+     if ($('#waQrBtn')) $('#waQrBtn').disabled = !canReply;   // v1.2.122: template-balasan
++    if ($('#waSchedBtn')) $('#waSchedBtn').disabled = !canReply;   // v1.2.153: jadwal-kirim
++    if (!canReply || (waState.schedOpen && waState.schedOpen !== num)) waSchedClose();
+     if (!canReply) waQrClose();
+     if (waState.attach && waState.attachNum !== num) waAttachClear();
+     if (waState.replyTo && (waState.replyTo.num !== num || !canReply)) waQuoteClear();   // v1.2.121
+@@ -5059,6 +5067,117 @@
+     var el = $('#waReplyInput'); if (!el || el.tagName !== 'TEXTAREA') return;
+     el.style.height = 'auto'; el.style.height = Math.min(150, Math.max(38, el.scrollHeight + 2)) + 'px';
+   }
++
++  /* ---- v1.2.153: jadwal-kirim — jadwalkan pesan di thread Percakapan WA ---- */
++  function waSchedFmt(ts) {
++    var d = new Date(ts * 1000), now = new Date();
++    var hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
++    var t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
++    var dd = Math.floor((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - t0) / 86400000);
++    if (dd === 0) return 'hari ini ' + hm;
++    if (dd === 1) return 'besok ' + hm;
++    var H = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'], B = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
++    return H[d.getDay()] + ' ' + d.getDate() + ' ' + B[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : '') + ' ' + hm;
++  }
++  function waSchedHtml(list) {
++    var ST = { skipped: 'Tidak dikirim', expired: 'Kedaluwarsa', failed: 'Gagal terkirim' };
++    return (list || []).filter(function (x) { return ['pending', 'sending', 'skipped', 'expired', 'failed'].indexOf(x.status) > -1; }).map(function (x) {
++      var live = x.status === 'pending' || x.status === 'sending';
++      var meta = live
++        ? ico('alarm-clock', 12) + ' <b>Terjadwal ' + esc(waSchedFmt(x.at)) + '</b><span>oleh ' + esc(x.by_name || x.by) + '</span>' +
++          (x.cancel_on_reply ? '<span title="Batal otomatis bila pelanggan membalas sebelum jam kirim">· batal bila dibalas</span>' : '') +
++          (x.status === 'sending' ? '<span>· sedang dikirim…</span>' : '') +
++          (x.last_err ? '<span style="color:#b45309">· dicoba ulang: ' + esc(x.last_err) + '</span>' : '') +
++          ((x.can && x.status === 'pending') ? '<a href="#" data-sact="edit" data-sid="' + esc(x.id) + '">Edit</a><a href="#" data-sact="now" data-sid="' + esc(x.id) + '">Kirim sekarang</a><a href="#" data-sact="cancel" data-sid="' + esc(x.id) + '" style="color:#b91c1c">Batal</a>' : '')
++        : ico('triangle-alert', 12) + ' <b>' + esc(ST[x.status] || x.status) + '</b><span>(jadwal ' + esc(waSchedFmt(x.at)) + ')</span><span>' + esc(x.reason || '') + '</span>';
++      return '<div class="wa-sbub' + (live ? '' : ' bad') + '" data-k="s' + esc(x.id) + x.status + x.at + '">' + esc(x.text) + '<div class="ws-meta">' + meta + '</div></div>';
++    }).join('');
++  }
++  function waSchedClose() {
++    if (waState.schedEdit && $('#waReplyInput')) { $('#waReplyInput').value = ''; waQrAutosize(); }   // isi edit jangan tertinggal di kotak balas
++    waState.schedOpen = null; waState.schedEdit = null;
++    if ($('#waSchedPop')) { $('#waSchedPop').style.display = 'none'; $('#waSchedPop').innerHTML = ''; }
++    if ($('#waSchedBtn')) $('#waSchedBtn').classList.remove('active');
++  }
++  function waSchedLocal(d) {   // Date -> nilai input datetime-local
++    var p = function (n) { return ('0' + n).slice(-2); };
++    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
++  }
++  function waSchedOpen(edit) {
++    var pop = $('#waSchedPop'), num = waState.current; if (!pop || !num) return;
++    if (waState.attach && waState.attachNum === num) { toast('Lampiran belum bisa dijadwalkan — kirim lampiran langsung, atau hapus lampiran untuk menjadwalkan teks.', true); return; }
++    waQrClose();
++    waState.schedOpen = num; waState.schedEdit = edit ? edit.id : null;
++    if (edit) { $('#waReplyInput').value = edit.text; waQrAutosize(); }
++    var d0 = edit ? new Date(edit.at * 1000) : new Date(Date.now() + 3600000);
++    if (!edit) { d0.setMinutes(Math.ceil(d0.getMinutes() / 5) * 5, 0, 0); }
++    var mn = new Date(Date.now() + 2 * 60000), mx = new Date(Date.now() + 30 * 86400000);
++    pop.innerHTML =
++      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><strong>' + ico('alarm-clock', 14) + ' ' + (edit ? 'Ubah jadwal' : 'Jadwalkan pesan') + '</strong><span style="flex:1"></span>' +
++        '<button type="button" id="wsX" title="Tutup" style="border:0;background:transparent;cursor:pointer;color:var(--muted);display:inline-flex">' + ico('x', 16) + '</button></div>' +
++      '<div class="ws-row"><input type="datetime-local" id="wsAt" value="' + waSchedLocal(d0) + '" min="' + waSchedLocal(mn) + '" max="' + waSchedLocal(mx) + '"></div>' +
++      '<div class="ws-row"><button type="button" class="ws-chip" data-q="1h">+1 jam</button><button type="button" class="ws-chip" data-q="3h">+3 jam</button>' +
++        '<button type="button" class="ws-chip" data-q="tom">Besok 09:00</button><button type="button" class="ws-chip" data-q="mon">Senin 09:00</button></div>' +
++      '<label class="ws-row" style="cursor:pointer;margin-bottom:8px"><input type="checkbox" id="wsCor"' + ((!edit || edit.cancel_on_reply) ? ' checked' : '') + '> Batalkan otomatis bila pelanggan membalas sebelum jam kirim</label>' +
++      '<div class="ws-warn" id="wsWarn" style="display:none"></div>' +
++      '<div style="display:flex;gap:8px;align-items:center"><span class="help" style="margin:0;flex:1">Isi pesan diambil dari kotak balas.</span>' +
++        '<button type="button" class="btn" id="wsGo">' + ico('alarm-clock', 14) + ' ' + (edit ? 'Simpan jadwal' : 'Jadwalkan') + '</button></div>';
++    pop.style.display = 'block';
++    if ($('#waSchedBtn')) $('#waSchedBtn').classList.add('active');
++    var at = function () { var v = $('#wsAt').value; return v ? Math.floor(new Date(v).getTime() / 1000) : 0; };
++    var check = function () {
++      var t = at(), w = $('#wsWarn'), msg = '', we = waState.schedNum === num ? waState.schedWinEnd : 0;
++      if (!t) msg = 'Pilih tanggal & jam kirim.';
++      else if (t < Date.now() / 1000 + 120) msg = 'Waktu kirim minimal 2 menit dari sekarang.';
++      else if (t > Date.now() / 1000 + 30 * 86400) msg = 'Jadwal paling lama 30 hari ke depan.';
++      else if (we && t >= we) msg = 'Jendela 24 jam WhatsApp API resmi berakhir ' + waSchedFmt(we) + ' — pesan teks bebas tidak bisa dikirim setelah itu.';
++      w.style.display = msg ? 'block' : 'none'; w.textContent = msg;
++      $('#wsGo').disabled = !!msg;
++      return !msg;
++    };
++    $('#wsAt').oninput = check;
++    $$('#waSchedPop .ws-chip').forEach(function (b) { b.onclick = function () {
++      var d = new Date(), q = b.dataset.q;
++      if (q === '1h' || q === '3h') { d = new Date(Date.now() + (q === '1h' ? 1 : 3) * 3600000); d.setSeconds(0, 0); }
++      else { d.setHours(9, 0, 0, 0); if (q === 'tom') d.setDate(d.getDate() + 1); else d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7)); }
++      $('#wsAt').value = waSchedLocal(d); check();
++    }; });
++    $('#wsX').onclick = waSchedClose;
++    $('#wsGo').onclick = function () {
++      if (!check()) return;
++      var text = $('#waReplyInput').value.trim();
++      if (!text) { toast('Tulis isi pesan di kotak balas dulu.', true); $('#waReplyInput').focus(); return; }
++      var btn = this; btn.disabled = true;
++      var body = { text: text, at: at(), cancel_on_reply: $('#wsCor').checked ? 1 : 0 };
++      if (waState.schedEdit) body.id = waState.schedEdit; else body.number = num;
++      api(waState.schedEdit ? 'sched_update' : 'sched_create', { method: 'POST', body: body }).then(function (r) {
++        btn.disabled = false;
++        if (r && r.ok) {
++          toast((waState.schedEdit ? 'Jadwal diperbarui: ' : 'Pesan dijadwalkan: ') + waSchedFmt(r.item.at) + '.');
++          $('#waReplyInput').value = ''; waQuoteClear(); waQrAutosize(); waSchedClose();
++          fetchWaThread(num); fetchWaConvs(true);
++        } else toast((r && r.error) || 'Gagal menjadwalkan.', true);
++      });
++    };
++    check();
++  }
++  function waSchedInit() {
++    if (waState.schedBound) return;
++    waState.schedBound = true;
++    if ($('#waSchedBtn')) $('#waSchedBtn').onclick = function () { if (this.disabled) return; if (waState.schedOpen) waSchedClose(); else waSchedOpen(null); };
++    var body = $('#waThreadBody');
++    if (body) body.addEventListener('click', function (ev) {
++      var a = ev.target.closest ? ev.target.closest('[data-sact]') : null; if (!a) return;
++      ev.preventDefault();
++      var id = a.getAttribute('data-sid'), act = a.getAttribute('data-sact'), num = waState.current;
++      var it = (waState.sched || []).filter(function (x) { return x.id === id; })[0]; if (!it) return;
++      var done = function (r, ok) { if (r && r.ok) { toast(ok); fetchWaThread(num); fetchWaConvs(true); } else { toast((r && r.error) || 'Gagal.', true); fetchWaThread(num); } };
++      if (act === 'edit') { waSchedOpen(it); $('#waReplyInput').focus(); }
++      else if (act === 'cancel') { if (confirm('Batalkan pesan terjadwal ini?')) api('sched_cancel', { method: 'POST', body: { id: id } }).then(function (r) { if (waState.schedEdit === id) { waSchedClose(); $('#waReplyInput').value = ''; } done(r, 'Jadwal dibatalkan.'); }); }
++      else if (act === 'now') { if (confirm('Kirim pesan ini sekarang?')) api('sched_send_now', { method: 'POST', body: { id: id } }).then(function (r) { done(r, 'Pesan terkirim.'); }); }
++    });
++  }
++
+   function waQrClose() {
+     waState.qrOpen = null;
+     if ($('#waQrPop')) { $('#waQrPop').style.display = 'none'; $('#waQrPop').innerHTML = ''; }
+--- a/dashboard/chatbot-ai/index.html	2026-11-06 10:29:27.237692400 +0700
++++ b/dashboard/chatbot-ai/index.html	2026-11-06 10:35:41.917722933 +0700
+@@ -307,6 +307,18 @@
+ 
+ /* v1.2.151: tombol-tetap — tombol lampiran/template/Kirim tidak ikut memanjang saat teks panjang */
+ #waComposeRow{align-items:flex-end}
++/* v1.2.153: jadwal-kirim */
++.wa-sched-pop{margin-bottom:8px;border:1px solid var(--line);border-radius:10px;background:var(--card,#fff);box-shadow:0 6px 20px rgba(0,0,0,.08);padding:12px;font-size:13px}
++.wa-sched-pop .ws-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
++.wa-sched-pop input[type=datetime-local]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;min-width:0;flex:1 1 200px}
++.wa-sched-pop .ws-chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer;color:inherit}
++.wa-sched-pop .ws-chip:hover{background:var(--brand-soft)}
++.wa-sched-pop .ws-warn{color:#b45309;margin-bottom:8px}
++.wa-sbub{align-self:flex-end;max-width:78%;background:#f8fafc;border:1.5px dashed #94a3b8;color:var(--ink);padding:8px 12px;border-radius:12px;margin:4px 0;white-space:pre-wrap;font-size:14px;line-height:1.45}
++.wa-sbub.bad{border-color:#fca5a5;background:#fef2f2}
++.wa-sbub .ws-meta{font-size:11px;color:var(--muted);margin-top:6px;white-space:normal;display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center}
++.wa-sbub .ws-meta a{color:var(--brand);text-decoration:none;font-weight:600}
++.wa-sbub.bad .ws-meta{color:#991b1b}
+ #waComposeRow > .btn{flex-shrink:0;height:38px;align-self:flex-end;display:inline-flex;align-items:center;justify-content:center}
+ 
+ /* === v1.2.124: wa-layout-penuh — Percakapan WA setinggi layar, kotak balas selalu terlihat === */
+@@ -1418,6 +1430,7 @@
+             <div class="wachat-body" id="waThreadBody"></div>
+             <div class="wachat-reply" id="waReplyBar" style="display:none">
+               <div class="help" id="waWindowNote" style="margin-bottom:8px"></div>
++              <div id="waSchedPop" class="wa-sched-pop" style="display:none"></div><!-- v1.2.153: jadwal-kirim -->
+               <div id="waQrPop" style="display:none;margin-bottom:8px;border:1px solid var(--line);border-radius:10px;background:var(--card, #fff);box-shadow:0 6px 20px rgba(0,0,0,.08);overflow:hidden"></div><!-- v1.2.122: template-balasan -->
+               <!-- v1.2.121: wa-balas-kutip -->
+               <div id="waQuoteBar" style="display:none;align-items:center;gap:8px;margin-bottom:8px;padding:6px 10px;border-left:3px solid #16a34a;border-radius:8px;font-size:13px;background:var(--brand-soft)"></div>
+@@ -1428,6 +1441,7 @@
+                 <input type="file" id="waAttachFile" style="display:none" accept=".jpg,.jpeg,.png,.mp4,.3gp,.mp3,.ogg,.m4a,.aac,.amr,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip">
+                 <button class="btn ghost" id="waQrBtn" type="button" title="Template balasan (atau ketik / di kotak balas)" style="padding:7px 10px"><span data-ico="file-text" data-ico-size="16"></span></button><!-- v1.2.122: template-balasan -->
+                 <textarea id="waReplyInput" rows="1" placeholder="Tulis balasan manual…" style="flex:1;resize:none;min-height:38px;max-height:150px;line-height:1.4;padding:8px 10px;font:inherit;border:1px solid var(--line);border-radius:8px;overflow-y:auto"></textarea>
++                <button class="btn ghost" id="waSchedBtn" type="button" title="Jadwalkan kirim pesan ini" style="padding:7px 10px"><span data-ico="alarm-clock" data-ico-size="16"></span></button><!-- v1.2.153: jadwal-kirim -->
+                 <button class="btn" id="waReplySend">Kirim</button>
+               </div>
+             </div>
+@@ -2646,6 +2660,6 @@
+   </main>
+ </div>
+ <div class="toast" id="toast"></div>
+-<script src="app.js?v=1.2.152"></script><!-- v1.2.152: tombol-warna -->
++<script src="app.js?v=1.2.153"></script><!-- v1.2.153: jadwal-kirim -->
+ </body>
+ </html>
