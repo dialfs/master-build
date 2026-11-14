@@ -1,0 +1,32 @@
+  <div class="card" id="blCard"><!-- v1.2.173: bayar-mandiri -->
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Pembayaran Online (Duitku)</h2>
+      <button class="ghost" onclick="loadBlOrders()">Muat ulang pesanan</button>
+    </div>
+    <div class="hint" style="margin:6px 0 10px">Tenant trial &amp; berbayar (Starter–Pro, punya tanggal berakhir) bisa berlangganan, perpanjang, dan naik paket sendiri di <code>/bayar/</code>. Memakai merchant Duitku deintegra.com. Lunas → trial dikonversi / masa aktif diperpanjang otomatis. Naik paket di tengah masa aktif mendapat potongan sisa hari paket lama; turun paket hanya 7 hari terakhir.</div>
+    <div id="blState" class="hint" style="margin-bottom:10px">memuat…</div>
+    <label style="font-size:13px"><input type="checkbox" id="bl_enabled"> <b>Buka pembayaran online</b></label>
+    <div class="row" style="gap:10px;margin-top:10px">
+      <div style="flex:1;min-width:130px"><label>Starter / bulan (Rp)</label><input id="bl_price_starter" type="number" min="0" step="1000" style="width:100%"></div>
+      <div style="flex:1;min-width:130px"><label>Growth / bulan (Rp)</label><input id="bl_price_growth" type="number" min="0" step="1000" style="width:100%"></div>
+      <div style="flex:1;min-width:130px"><label>Business / bulan (Rp)</label><input id="bl_price_business" type="number" min="0" step="1000" style="width:100%"></div>
+      <div style="flex:1;min-width:130px"><label>Pro / bulan (Rp)</label><input id="bl_price_pro" type="number" min="0" step="1000" style="width:100%"></div>
+      <div style="flex:1;min-width:110px"><label>Diskon 3 bulan (%)</label><input id="bl_disc_3" type="number" min="0" max="50" style="width:100%"></div>
+      <div style="flex:1;min-width:110px"><label>Diskon 12 bulan (%)</label><input id="bl_disc_12" type="number" min="0" max="50" style="width:100%"></div>
+    </div>
+    <div class="row" style="gap:10px;margin-top:6px">
+      <div style="flex:1;min-width:180px"><label>Mode Duitku</label><select id="bl_duitku_env" style="width:100%"><option value="">Ikut file deintegra.com</option><option value="sandbox">Sandbox (uji)</option><option value="production">Production</option></select></div>
+      <div style="flex:2;min-width:260px"><label>File kredensial Duitku (server ini)</label><input id="bl_duitku_file" style="width:100%"></div>
+      <div style="flex:1;min-width:200px"><label>URL halaman bayar (kosong = URL pusat)</label><input id="bl_pay_base" style="width:100%" placeholder="https://chat.deintegra.com"></div>
+    </div>
+    <div class="row" style="gap:10px;margin-top:6px">
+      <div style="flex:1;min-width:200px"><label>Email notifikasi lunas</label><input id="bl_admin_email" style="width:100%" placeholder="(kosong = adminEmail Duitku)"></div>
+      <div style="flex:1;min-width:200px"><label>Link kebijakan refund</label><input id="bl_refund_url" style="width:100%"></div>
+      <div style="flex:1;min-width:120px"><label>Batas bayar (menit)</label><input id="bl_expiry_minutes" type="number" min="30" style="width:100%"></div>
+    </div>
+    <label style="font-size:13px;margin-top:10px;display:block"><input type="checkbox" id="bl_reminders"> Kirim pengingat perpanjangan ke WhatsApp tenant (H-7, H-3, H-1, saat berakhir, H+6) — jam 08–20 WIB, lewat WAHA pendaftaran</label>
+    <button onclick="saveBlCfg()" style="margin-top:12px">Simpan Pembayaran Online</button>
+    <h2 style="margin:18px 0 8px;font-size:15px">Pesanan <span id="blBadge"></span></h2>
+    <div id="blOrders" style="overflow-x:auto"><div style="color:var(--muted)">memuat…</div></div>
+  </div>
+

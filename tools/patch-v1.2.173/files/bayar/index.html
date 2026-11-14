@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="id">
+<head>
+<!-- v1.2.173: bayar-mandiri -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Berlangganan DEI Chatbot</title>
+<meta name="theme-color" content="#140383">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--brand:#140383;--brand-2:#3b2bd6;--ink:#14142b;--muted:#5d6479;--line:#e2e5ee;--bg:#f5f6fa;--ok:#16a34a;--err:#c4302b;--warn:#b45309;--card:#fff;--teal:#0e7490}
+  *{box-sizing:border-box} html,body{margin:0}
+  body{font-family:'Plus Jakarta Sans',-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  header{background:linear-gradient(160deg,#140383 0%,#0b0250 100%);color:#fff;padding:22px 20px 70px}
+  .in{max-width:1040px;margin:0 auto}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800}
+  .logo .mk{width:32px;height:32px;border-radius:9px;background:#fff;color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:13px}
+  header h1{font-size:28px;margin:22px 0 4px;letter-spacing:-.4px;line-height:1.2}
+  header p{margin:0;color:rgba(255,255,255,.8)}
+  main{max-width:1040px;margin:-48px auto 40px;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 20px 50px -34px rgba(20,3,131,.4);margin-bottom:16px}
+  .cur{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .cur .b{font-weight:800;font-size:18px} .cur .s{color:var(--muted);font-size:14px}
+  .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:#eef0fb;color:var(--brand)}
+  .pill.warn{background:#fef3c7;color:#92400e} .pill.bad{background:#fee2e2;color:#991b1b} .pill.ok{background:#dcfce7;color:#166534}
+  h2{font-size:17px;margin:0 0 12px;letter-spacing:-.2px}
+  .tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .tier{border:2px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;position:relative;background:#fff;transition:border-color .15s,box-shadow .15s;display:flex;flex-direction:column}
+  .tier:hover{border-color:#c7d2fe}
+  .tier.sel{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(59,43,214,.14)}
+  .tier.dis{opacity:.5;cursor:not-allowed}
+  .tier .nm{font-weight:800;font-size:16px} .tier .pr{font-size:21px;font-weight:800;margin:6px 0 2px;letter-spacing:-.4px} .tier .pr small{font-size:12px;font-weight:600;color:var(--muted)}
+  .tier ul{list-style:none;padding:0;margin:10px 0 0;font-size:13px;color:#33384c;display:grid;gap:5px}
+  .tier li:before{content:"✓ ";color:var(--ok);font-weight:700} .tier li.no{color:#9aa0b4} .tier li.no:before{content:"– ";color:#cbd5e1}
+  .tier .tag{position:absolute;top:-10px;right:12px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:3px 8px;border-radius:9px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff}
+  .tier .tag.me{background:#140383}
+  .tier .note{font-size:12px;color:var(--warn);margin-top:8px}
+  .durs{display:flex;gap:8px;flex-wrap:wrap}
+  .dur{border:2px solid var(--line);border-radius:11px;padding:10px 16px;cursor:pointer;font-weight:700;background:#fff;font:inherit;font-weight:700;color:var(--ink)}
+  .dur small{display:block;font-weight:600;color:var(--ok);font-size:11.5px}
+  .dur.sel{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(59,43,214,.14)}
+  .grid2{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:start}
+  .sum table{width:100%;border-collapse:collapse;font-size:14px} .sum td{padding:7px 0;border-bottom:1px solid var(--line)} .sum td:last-child{text-align:right;white-space:nowrap}
+  .sum tr.tot td{font-weight:800;font-size:18px;border-bottom:0;padding-top:12px}
+  .sum .info{background:#eef4ff;border:1px solid #c7d7fe;color:#1e3a8a;border-radius:10px;padding:10px 12px;font-size:13.5px;margin-top:12px}
+  label{display:block;font-size:13px;font-weight:600;margin:12px 0 5px}
+  input[type=text],input[type=email],input[type=tel]{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:15px}
+  input:focus{outline:none;border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(59,43,214,.14)}
+  .chk{display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--muted);margin-top:14px;font-weight:400}
+  .chk input{margin-top:3px;accent-color:var(--brand)} .chk a{color:var(--brand);font-weight:600}
+  .btn{width:100%;margin-top:16px;background:var(--brand);color:#fff;border:0;border-radius:11px;padding:14px 16px;font:inherit;font-weight:800;font-size:16px;cursor:pointer;text-decoration:none;display:block;text-align:center}
+  .btn:hover{background:#1d0aa8} .btn[disabled]{opacity:.6;cursor:default} .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .err{display:none;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 12px;font-size:13.5px;margin-top:12px}
+  .pay{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center}
+  .center{text-align:center;padding:30px 10px}
+  .tick{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;margin:0 auto 12px;font-size:30px;font-weight:800}
+  .tick.ok{background:#dcfce7;color:var(--ok)} .tick.wait{background:#eef0fb;color:var(--brand)} .tick.bad{background:#fee2e2;color:var(--err)}
+  .spin{width:26px;height:26px;border:3px solid #c7d2fe;border-top-color:var(--brand);border-radius:50%;animation:sp 0.8s linear infinite;margin:0 auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .hide{display:none!important}
+  footer{text-align:center;color:var(--muted);font-size:12.5px;padding:10px 16px 30px}
+  @media(max-width:900px){.tiers{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
+  @media(max-width:520px){.tiers{grid-template-columns:1fr}header h1{font-size:23px}.card{padding:18px}}
+</style>
+</head>
+<body>
+<header><div class="in">
+  <div class="logo"><span class="mk">DEI</span> DEI Chatbot</div>
+  <h1 id="hTitle">Berlangganan DEI Chatbot</h1>
+  <p id="hSub">Pilih paket, bayar online, paket langsung aktif otomatis.</p>
+</div></header>
+<main>
+  <div id="vLoad" class="card center"><div class="spin"></div><p style="color:var(--muted)">Memuat…</p></div>
+
+  <div id="vMsg" class="card center hide"></div>
+
+  <div id="vOrder" class="card center hide"></div>
+
+  <div id="vBuy" class="hide">
+    <div class="card cur" id="curBox"></div>
+    <div class="card">
+      <h2>1. Pilih paket</h2>
+      <div class="tiers" id="tiers"></div>
+    </div>
+    <div class="card">
+      <h2>2. Durasi langganan</h2>
+      <div class="durs" id="durs"></div>
+    </div>
+    <div class="grid2">
+      <div class="card sum">
+        <h2>Ringkasan</h2>
+        <div id="sum"><div class="spin"></div></div>
+      </div>
+      <div class="card">
+        <h2>3. Data pemesan</h2>
+        <label for="fName">Nama</label><input id="fName" type="text" autocomplete="name" maxlength="80">
+        <label for="fEmail">Email (untuk bukti bayar)</label><input id="fEmail" type="email" autocomplete="email">
+        <label for="fPhone">Nomor WhatsApp</label><input id="fPhone" type="tel" autocomplete="tel" placeholder="08…">
+        <label class="chk"><input type="checkbox" id="fAgree"> <span>Saya setuju dengan <a id="refLink" href="https://deintegra.com/kebijakan-refund" target="_blank" rel="noopener">kebijakan pembayaran &amp; refund</a>. Langganan tidak diperpanjang otomatis.</span></label>
+        <div class="err" id="err"></div>
+        <button class="btn" id="btnPay" type="button">Bayar sekarang</button>
+        <div class="pay">Transfer bank / Virtual Account, e-wallet, QRIS, kartu — diproses aman oleh Duitku.</div>
+      </div>
+    </div>
+  </div>
+</main>
+<footer>PT Daya Estima Integra · deintegra.com · WhatsApp <a href="https://wa.me/6285111230487" style="color:inherit">+62 851 1123 0487</a></footer>
+<script>
+(function(){
+  var API = '../backend/index.php';
+  var qs = new URLSearchParams(location.search), TOK = (qs.get('t')||'').trim(), ORDER = (qs.get('order')||qs.get('merchantOrderId')||'').trim();
+  var $ = function(id){ return document.getElementById(id); };
+  var esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); };
+  var rp = function(n){ return 'Rp' + Number(n||0).toLocaleString('id-ID'); };
+  var BLN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  var tgl = function(s){ var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||''); return m ? (+m[3])+' '+BLN[+m[2]-1]+' '+m[1] : (s||'-'); };
+  var NM = {starter:'Starter',growth:'Growth',business:'Business',pro:'Pro'};
+  var RANK = {starter:0,growth:1,business:2,pro:3};
+  var D = null, sel = {tier:'', months:1}, qSeq = 0, Q = null;
+
+  function show(v){ ['vLoad','vMsg','vOrder','vBuy'].forEach(function(k){ $(k).classList.toggle('hide', k!==v); }); }
+  function msg(icon, cls, title, body){ $('vMsg').innerHTML = '<div class="tick '+cls+'">'+icon+'</div><h2>'+title+'</h2><p style="color:var(--muted);max-width:520px;margin:6px auto 0">'+body+'</p>'; show('vMsg'); }
+  function contact(){ return ' <a href="https://wa.me/6285111230487?text='+encodeURIComponent('Halo DEI, saya mau berlangganan DEI Chatbot.')+'" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">Hubungi kami via WhatsApp</a>.'; }
+  function get(action, extra){ return fetch(API+'?action='+action+'&t='+encodeURIComponent(TOK)+(extra||'')+'&_='+Date.now(),{cache:'no-store'}).then(function(r){ return r.json().catch(function(){ return {ok:false,error:'Respons tidak valid.'}; }); }); }
+  function post(action, body){ body.t = TOK; return fetch(API+'?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){ return r.json().catch(function(){ return {ok:false,error:'Respons tidak valid.'}; }); }); }
+
+  if(!TOK){ msg('!', 'bad', 'Tautan tidak lengkap', 'Buka halaman ini dari tombol <b>Berlangganan</b> / <b>Perpanjang</b> di dashboard chatbot Anda, atau dari pesan WhatsApp kami.'+contact()); return; }
+  if(ORDER){ pollOrder(0); return; }
+  load();
+
+  function load(){
+    get('billing_info').then(function(r){
+      if(!r.ok){ msg('!', 'bad', 'Belum bisa dibuka', esc(r.error||'Terjadi kesalahan.')+contact()); return; }
+      D = r;
+      if(!r.eligible){ msg('i', 'wait', esc(r.tenant.name), esc(r.reason)+contact()); return; }
+      if(!r.ready){ msg('!', 'bad', 'Pembayaran online sedang disiapkan', 'Silakan coba lagi nanti.'+contact()); return; }
+      render();
+    }).catch(function(){ msg('!', 'bad', 'Gagal terhubung', 'Periksa koneksi internet lalu muat ulang halaman.'); });
+  }
+
+  function render(){
+    var t = D.tenant;
+    $('hTitle').textContent = t.trial ? 'Lanjutkan chatbot '+t.name : 'Langganan chatbot '+t.name;
+    $('hSub').textContent = t.trial ? 'Pilih paket supaya bot tetap membalas pelanggan setelah trial.' : 'Perpanjang atau naik paket. Aktif otomatis begitu pembayaran diterima.';
+    var st;
+    if(t.trial) st = '<span class="pill '+((t.days_left||0)<=3?'warn':'')+'">Trial '+esc(NM[t.tier]||t.tier)+'</span> <span class="s">'+((t.days_left||0)>0?'berakhir '+tgl(t.trial_ends)+' ('+t.days_left+' hari lagi)':'sudah berakhir')+'</span>';
+    else {
+      var dl = t.days_left, cls = dl==null?'':(dl<0||t.license_status!=='active'?'bad':(dl<=7?'warn':'ok'));
+      st = '<span class="pill '+cls+'">Paket '+esc(NM[t.tier]||t.tier)+'</span> <span class="s">'+(t.expires_at?(dl<0?'berakhir sejak ':'aktif sampai ')+tgl(t.expires_at)+(dl>=0?' ('+dl+' hari lagi)':''):'')+(t.license_status==='suspended'?' · <b style="color:var(--err)">layanan dihentikan sementara</b>':'')+'</span>';
+    }
+    $('curBox').innerHTML = '<div><div class="b">'+esc(t.name)+'</div><div style="margin-top:4px">'+st+'</div></div>';
+    var c = t.customer||{};
+    $('fName').value = c.name||''; $('fEmail').value = c.email||''; $('fPhone').value = (c.phone||'').replace(/^62/,'0');
+    if(D.refund_url) $('refLink').href = D.refund_url;
+    // paket awal: paket sekarang (perpanjang), trial -> paket trial, Starter berbayar -> tetap Starter
+    sel.tier = (D.tiers[t.tier] && D.tiers[t.tier].ok) ? t.tier : (D.tiers.growth.ok ? 'growth' : Object.keys(D.tiers).filter(function(k){return D.tiers[k].ok;})[0]||'');
+    var h = '';
+    Object.keys(D.tiers).forEach(function(k){
+      var x = D.tiers[k], me = !t.trial && k===t.tier, tag = me ? '<span class="tag me">Paket Anda</span>' : (k==='growth' ? '<span class="tag">Populer</span>' : '');
+      var f = ['<li>'+Number(x.chat_cap).toLocaleString('id-ID')+' balasan AI / bulan</li>','<li>Chatbot WhatsApp + widget web</li>','<li>Knowledge Base, Produk & Leads</li>',
+        x.wa_numbers?'<li>+'+x.wa_numbers+' nomor WhatsApp</li>':'<li class="no">Nomor WA tambahan</li>',
+        x.business_units?'<li>'+x.business_units+' unit bisnis</li>':'<li class="no">Unit bisnis</li>',
+        x.classify?'<li>Filter Topik & Divisi ('+Number(x.classify).toLocaleString('id-ID')+')</li>':'<li class="no">Filter Topik & Divisi</li>',
+        RANK[k]>=1?'<li>Customer Feedback</li>':'<li class="no">Customer Feedback</li>'];
+      h += '<div class="tier'+(x.ok?'':' dis')+'" data-k="'+k+'">'+tag+'<div class="nm">'+NM[k]+'</div><div class="pr">'+rp(x.price)+' <small>/bulan</small></div><ul>'+f.join('')+'</ul>'+(x.ok?'':'<div class="note">'+esc(x.note)+'</div>')+'</div>';
+    });
+    $('tiers').innerHTML = h;
+    Array.prototype.forEach.call(document.querySelectorAll('.tier'), function(el){ el.onclick = function(){ var k=el.getAttribute('data-k'); if(!D.tiers[k].ok) return; sel.tier=k; paint(); quote(); }; });
+    $('durs').innerHTML = D.durations.map(function(d){ return '<button type="button" class="dur" data-m="'+d.months+'">'+d.months+' bulan'+(d.disc?'<small>hemat '+d.disc+'%</small>':'<small style="color:var(--muted)">&nbsp;</small>')+'</button>'; }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.dur'), function(el){ el.onclick = function(){ sel.months=+el.getAttribute('data-m'); paint(); quote(); }; });
+    $('btnPay').onclick = pay;
+    show('vBuy'); paint(); quote();
+  }
+  function paint(){
+    Array.prototype.forEach.call(document.querySelectorAll('.tier'), function(el){ el.classList.toggle('sel', el.getAttribute('data-k')===sel.tier); });
+    Array.prototype.forEach.call(document.querySelectorAll('.dur'), function(el){ el.classList.toggle('sel', +el.getAttribute('data-m')===sel.months); });
+  }
+  function quote(){
+    if(!sel.tier){ $('sum').innerHTML = '<p style="color:var(--muted)">Pilih paket.</p>'; return; }
+    var my = ++qSeq; $('btnPay').disabled = true; Q = null;
+    post('billing_quote', {tier:sel.tier, months:sel.months}).then(function(q){
+      if(my!==qSeq) return;
+      if(!q.ok){ $('sum').innerHTML = '<div class="err" style="display:block">'+esc(q.error)+'</div>'; return; }
+      Q = q; $('btnPay').disabled = false;
+      var MODE = {trial:'Trial diubah jadi langganan, mulai hari ini.', new:'Langganan mulai hari ini.', renew:'Diperpanjang dari tanggal berakhir paket sekarang.',
+                  upgrade:'Naik paket mulai hari ini. Sisa '+q.credit_days+' hari paket lama dipotong dari tagihan.', downgrade:'Paket berganti saat pembayaran diterima; masa aktif dilanjutkan dari tanggal berakhir sekarang.'};
+      var r = '<table><tr><td>Paket '+NM[q.tier]+' · '+rp(q.price)+' × '+q.months+' bulan</td><td>'+rp(q.gross)+'</td></tr>';
+      if(q.disc) r += '<tr><td>Hemat '+q.disc_pct+'% ('+q.months+' bulan)</td><td style="color:var(--ok)">−'+rp(q.disc)+'</td></tr>';
+      if(q.credit) r += '<tr><td>Kredit sisa paket lama</td><td style="color:var(--ok)">−'+rp(q.credit)+'</td></tr>';
+      r += '<tr class="tot"><td>Total</td><td>'+rp(q.amount)+'</td></tr></table>';
+      r += '<div class="info"><b>Aktif sampai '+tgl(q.ends)+'</b><br>'+MODE[q.mode]+'</div>';
+      $('sum').innerHTML = r;
+      $('btnPay').textContent = 'Bayar '+rp(q.amount);
+    });
+  }
+  function err(m){ var e=$('err'); e.textContent=m||''; e.style.display=m?'block':'none'; }
+  function pay(){
+    err('');
+    if(!Q) return;
+    var b = {tier:sel.tier, months:sel.months, name:$('fName').value.trim(), email:$('fEmail').value.trim(), phone:$('fPhone').value.trim(), agree:$('fAgree').checked};
+    if(b.name.length<2) return err('Isi nama pemesan.');
+    if(!/^\S+@\S+\.\S+$/.test(b.email)) return err('Email tidak valid.');
+    if(b.phone.replace(/\D/g,'').length<9) return err('Nomor WhatsApp tidak valid.');
+    if(!b.agree) return err('Centang persetujuan kebijakan pembayaran & refund.');
+    var btn=$('btnPay'); btn.disabled=true; btn.textContent='Membuat tagihan…';
+    post('billing_checkout', b).then(function(r){
+      if(r.ok && r.payment_url){ btn.textContent='Membuka halaman pembayaran…'; location.href = r.payment_url; return; }
+      err(r.error||'Gagal membuat tagihan.'); btn.disabled=false; btn.textContent='Bayar '+rp(Q.amount);
+    }).catch(function(){ err('Gagal terhubung. Coba lagi.'); btn.disabled=false; btn.textContent='Bayar '+rp(Q.amount); });
+  }
+
+  function pollOrder(n){
+    if(n===0){ $('vOrder').innerHTML = '<div class="spin"></div><p style="color:var(--muted)">Mengecek pembayaran…</p>'; show('vOrder'); }
+    get('billing_order', '&order='+encodeURIComponent(ORDER)).then(function(r){
+      if(!r.ok){ msg('!', 'bad', 'Pesanan tidak ditemukan', esc(r.error||'')+contact()); return; }
+      var o = r.order, t = r.tenant, dash = t.dashboard_url ? '<a class="btn" href="'+esc(t.dashboard_url)+'">Buka dashboard chatbot</a>' : '';
+      var back = '<a class="btn ghost" href="?t='+encodeURIComponent(TOK)+'">Kembali ke halaman paket</a>';
+      if(o.status==='paid'){
+        $('vOrder').innerHTML = '<div class="tick ok">✓</div><h2>Pembayaran diterima</h2><p style="color:var(--muted)">Paket <b>'+esc(NM[o.tier]||o.tier)+'</b> untuk <b>'+esc(t.name)+'</b> aktif sampai <b>'+tgl(o.ends)+'</b>.<br>Bukti bayar dikirim ke email &amp; WhatsApp Anda. No. pesanan '+esc(o.id)+'.</p><div style="max-width:340px;margin:0 auto">'+dash+'</div>';
+        return;
+      }
+      if(o.status==='failed'){
+        $('vOrder').innerHTML = '<div class="tick bad">!</div><h2>Pembayaran belum berhasil</h2><p style="color:var(--muted)">Tagihan '+esc(o.id)+' dibatalkan atau kedaluwarsa. Silakan buat tagihan baru.</p><div style="max-width:340px;margin:0 auto">'+back+'</div>';
+        return;
+      }
+      $('vOrder').innerHTML = '<div class="tick wait"><div class="spin"></div></div><h2>Menunggu pembayaran</h2><p style="color:var(--muted)">Tagihan '+esc(o.id)+' · '+rp(o.amount)+'. Halaman ini otomatis berubah begitu pembayaran diterima (biasanya kurang dari 1 menit setelah transfer).</p>'
+        +'<div style="max-width:340px;margin:0 auto">'+(o.payment_url?'<a class="btn" href="'+esc(o.payment_url)+'">Lanjutkan pembayaran</a>':'')+back+'</div>';
+      show('vOrder');
+      setTimeout(function(){ pollOrder(n+1); }, n<30 ? 5000 : 20000);
+    }).catch(function(){ setTimeout(function(){ pollOrder(n+1); }, 10000); });
+  }
+})();
+</script>
+</body>
+</html>
