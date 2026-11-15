@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Build paket v1.2.179 (notif-putus-wa): releases/v1.2.179 (update.zip + manifest), master penuh, salinan di master-build."""
+import zipfile, hashlib, json, os, time, shutil, sys
+H=os.path.expanduser(sys.argv[1] if len(sys.argv)>1 else '~/Herd'); T=H+'/dei-tenant'; P=H+'/dei-pusat'; MB=H+'/master-build'
+if len(sys.argv)>3: T,P,MB=sys.argv[1],sys.argv[2],sys.argv[3]
+V='v1.2.179'; TAG='v1.2.179: notif-putus-wa'; now=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time()+7*3600))
+files=['api/index.php','dashboard/chatbot-ai/index.html','dashboard/chatbot-ai/app.js']
+md5=lambda p: hashlib.md5(open(p,'rb').read()).hexdigest()
+assert TAG in open(T+'/api/index.php', encoding='utf-8').read(), 'belum dipatch: api/index.php'
+os.makedirs(P+'/releases/'+V, exist_ok=True); up=P+'/releases/'+V+'/update.zip'
+with zipfile.ZipFile(up,'w',zipfile.ZIP_DEFLATED) as z:
+    for f in files: z.write(T+'/'+f, 'dei-chatbot-ai/'+f)
+man={"version":V,"released_at":now,"zip":"update.zip","size":os.path.getsize(up),"md5":md5(up),
+ "title":"Pemberitahuan WA saat nomor chatbot terputus","type":"fitur",
+ "changelog":"Kalau nomor chatbot WhatsApp terputus (perlu scan QR ulang) atau tidak tersambung lebih dari 10 menit (gagal, berhenti, macet), pemilik akun kini menerima pemberitahuan lewat WhatsApp dari nomor DEI, lengkap dengan cara menyambungkan lagi. Sekali per kejadian; diputus sendiri dari dashboard tidak memicu pemberitahuan. Nomor tujuan bisa diatur di kartu Koneksi WhatsApp (Nomor pemberitahuan bila WA terputus); kosong = nomor pendaftar akun. Maksimal satu pemberitahuan per 6 jam per nomor.",
+ "highlights":["WA pemberitahuan saat nomor terputus / tidak tersambung","Nomor tujuan bisa diatur"]}
+json.dump(man, open(P+'/releases/'+V+'/manifest.json','w'), ensure_ascii=False, indent=2)
+src=P+'/master/dei-master.zip'; tmp=src+'.tmp'
+with zipfile.ZipFile(src) as zi, zipfile.ZipFile(tmp,'w',zipfile.ZIP_DEFLATED) as zo:
+    repl={'dei-chatbot-ai/'+f:f for f in files}
+    for it in zi.infolist():
+        if it.filename in repl: zo.write(T+'/'+repl[it.filename], it.filename)
+        else: zo.writestr(it, zi.read(it.filename))
+os.replace(tmp, src)
+json.dump({"version":V,"released_at":now,"size":os.path.getsize(src),"md5":md5(src),"description":"paket penuh untuk instalasi baru ("+V+")"}, open(P+'/master/master.json','w'), ensure_ascii=False, indent=2)
+if os.path.isdir(MB): shutil.copy2(src, MB+'/dei-master-'+V+'.zip'); shutil.copy2(src, MB+'/dei-master.zip'); shutil.copy2(up, MB+'/dei-update-'+V+'-slim.zip')
+with zipfile.ZipFile(up) as z:
+    for f in files: assert hashlib.md5(z.read('dei-chatbot-ai/'+f)).hexdigest()==md5(T+'/'+f), f
+with zipfile.ZipFile(src) as z:
+    assert TAG.encode() in z.read('dei-chatbot-ai/api/index.php'), 'master: api/index.php'
+print(man['released_at'], man['size'], man['md5'], 'master', os.path.getsize(src), md5(src))
