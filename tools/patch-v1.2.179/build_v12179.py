@@ -12,7 +12,7 @@ with zipfile.ZipFile(up,'w',zipfile.ZIP_DEFLATED) as z:
     for f in files: z.write(T+'/'+f, 'dei-chatbot-ai/'+f)
 man={"version":V,"released_at":now,"zip":"update.zip","size":os.path.getsize(up),"md5":md5(up),
  "title":"Pemberitahuan WA saat nomor chatbot terputus","type":"fitur",
- "changelog":"Kalau nomor chatbot WhatsApp terputus (perlu scan QR ulang) atau tidak tersambung lebih dari 10 menit (gagal, berhenti, macet), pemilik akun kini menerima pemberitahuan lewat WhatsApp dari nomor DEI, lengkap dengan cara menyambungkan lagi. Sekali per kejadian; diputus sendiri dari dashboard tidak memicu pemberitahuan. Nomor tujuan bisa diatur di kartu Koneksi WhatsApp (Nomor pemberitahuan bila WA terputus); kosong = nomor pendaftar akun. Maksimal satu pemberitahuan per 6 jam per nomor.",
+ "changelog":"Kalau nomor chatbot WhatsApp terputus (perlu scan QR ulang) atau tidak tersambung lebih dari 10 menit (gagal, berhenti, macet), pemilik akun kini menerima pemberitahuan lewat WhatsApp dari nomor DEI, lengkap dengan cara menyambungkan lagi. Selama nomor masih belum tersambung, pengingat dikirim sekali sehari (maksimal 7 hari). Diputus sendiri dari dashboard tidak memicu pemberitahuan. Nomor tujuan bisa diatur di kartu Koneksi WhatsApp (Nomor pemberitahuan bila WA terputus); kosong = nomor pendaftar akun. Maksimal satu pemberitahuan per 6 jam per nomor.",
  "highlights":["WA pemberitahuan saat nomor terputus / tidak tersambung","Nomor tujuan bisa diatur"]}
 json.dump(man, open(P+'/releases/'+V+'/manifest.json','w'), ensure_ascii=False, indent=2)
 src=P+'/master/dei-master.zip'; tmp=src+'.tmp'
