@@ -5,3 +5,49 @@ No syntax errors detected in /Users/dias/Herd/dei-pusat/backend/group-lib.php
 2026-11-16 12:02:01 259413 dd9d850d845ef19a1f50002d94ef71b1 master 1897393 3789dcf9d26b0b07d4f70296b57e64b8
 
 == 1/4 Commit, sinkron & push GitHub ==
+master-build commit OK
+dei-pusat commit OK
+From github.com:dialfs/master-build
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+master-build OK 1399fac
+From github.com:dialfs/dei-pusat
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+dei-pusat OK 6b881bc
+
+== 2/4 Cocokkan paket dengan dei-tenant lokal ==
+OK   api/index.php
+
+== 3/4 Deploy LIVE (rsync) ==
+   semua .php OK
+   html & rilis OK
+PREFLIGHT LULUS
+Total file size: 62.34M bytes
+Total transferred file size: 2.32M bytes
+Literal data: 549.92K bytes
+Matched data: 1.77M bytes
+File list size: 0
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 542.82K
+Total bytes received: 9.81K
+
+sent 542.82K bytes  received 9.81K bytes  368.42K bytes/sec
+total size is 62.34M  speedup is 112.81
+Permission OK.
+
+== 4/4 Cek live ==
+{
+  "version": "v1.2.186",
+  "released_at": "2026-11-16 12:02:01",
+  "zip": "update.zip",
+  "size": 259413,
+  "md5": "dd9d850d845ef19a1f50002d94ef71b1",
+
+grup/ HTTP 200  <- harus 200
+{"ok":false,"error":"Sesi berakhir. Silakan login kembali."}  <- harus 'Sesi berakhir' (action grp_inbox aktif)
+data/groups.json HTTP 403  <- harus 403/404
+
+Berikutnya: Admin Pusat › Daftar Tenant › Update tenant anggota grup ke v1.2.186, lalu buka /grup/ › tab Inbox.
+Tekan Enter untuk menutup...
