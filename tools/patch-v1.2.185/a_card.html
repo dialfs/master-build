@@ -1,0 +1,9 @@
+  <!-- v1.2.185: master-grup — Dashboard Grup -->
+  <div class="card" id="grpCard">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Dashboard Grup</h2>
+      <div class="row" style="gap:8px"><button class="ghost" onclick="grpLoad()">Muat ulang</button><button onclick="grpEdit('')">+ Grup baru</button></div>
+    </div>
+    <div class="hint" style="margin:6px 0 10px">Untuk klien grup yang punya beberapa tenant: satu login di <a id="grpUrl" href="../grup/" target="_blank" rel="noopener">/grup/</a> untuk laporan gabungan dan membuka dashboard tiap tenant tanpa login ulang. User grup dihubungkan ke akun yang sudah ada di masing-masing tenant. Laporan butuh tenant <span id="grpMinVer">v1.2.185</span>+.</div>
+    <div id="grpList">memuat…</div>
+  </div>
