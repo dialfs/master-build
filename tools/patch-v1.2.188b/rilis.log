@@ -5,3 +5,30 @@ No syntax errors detected in /Users/dias/Herd/dei-pusat/backend/billing-lib.php
 No syntax errors detected in /Users/dias/Herd/dei-pusat/backend/billing-callback.php
 No syntax errors detected in /Users/dias/Herd/dei-pusat/backend/partner-lib.php
 No syntax errors detected in /Users/dias/Herd/dei-pusat/backend/partner-portal-lib.php
+master-build commit OK
+dei-pusat commit OK
+From github.com:dialfs/master-build
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+master-build OK a7ad64f
+From github.com:dialfs/dei-pusat
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+dei-pusat OK 90144a7
+File list transfer time: 0.000 seconds
+Total bytes sent: 43.24K
+Total bytes received: 2.79K
+
+sent 43.24K bytes  received 2.79K bytes  2.36K bytes/sec
+total size is 62.42M  speedup is 1,356.04
+Permission OK.
+Selesai. Cek: https://chat.deintegra.com/releases/ + panel admin.
+--- cek live ---
+penanda v1.2.188b di admin live (harus >=1): 1
+halaman /mitra/ HTTP 200 (harus 200)
+isian kode mitra di /daftar/ live (harus 1): 1
+partner_check: {"ok":true,"valid":false,"name":""}
+mitra_me tanpa login: {"ok":false,"error":"Sesi berakhir. Silakan login kembali."}
+signup_config: "partner_field":true
+SELESAI Mon Nov 16 20:17:29 WIB 2026
+Tekan Enter untuk menutup...

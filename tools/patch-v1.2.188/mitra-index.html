@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Portal Mitra — DEI Chatbot</title>
-<!-- v1.2.188: mitra-portal -->
+<!-- v1.2.188: mitra-portal --><!-- v1.2.189: mitra-masuk -->
 <style>
   :root{--brand:#140383;--bg:#f5f6fa;--card:#fff;--line:#e2e5ee;--muted:#5d6479;--ok:#16a34a;--warn:#d97706;--err:#c4302b}
   *{box-sizing:border-box} body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1a1a2e;font-size:14px}
@@ -39,6 +39,7 @@
   .prog{height:8px;background:#eceef5;border-radius:5px;overflow:hidden;margin:10px 0 6px} .prog i{display:block;height:100%;background:var(--brand);border-radius:5px}
   .share{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .share input{flex:1;min-width:220px;font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#f7f8fb}
   .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px} .bar select{width:auto;padding:7px 9px;font-size:13px}
+  .abar{background:#fef3c7;color:#854d0e;border-bottom:1px solid #f1d58a;padding:8px 22px;font-size:13px}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1} .toast.err{background:var(--err)}
   .modal-bg{position:fixed;inset:0;background:rgba(20,3,131,.18);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}
@@ -90,6 +91,7 @@
 
 <!-- portal -->
 <div class="hidden" id="vApp">
+  <div class="abar hidden" id="adminBar"></div>
   <header>
     <h1>Portal Mitra</h1>
     <span class="pill" id="pName">…</span>
@@ -154,9 +156,14 @@ const BLN=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','De
 const tgl=d=>{ const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(+m[3])+' '+BLN[+m[2]-1]+' '+m[1]:'–'; };
 const bln=k=>{ const m=String(k||'').match(/^(\d{4})-(\d{2})/); return m?BLN[+m[2]-1]+' '+m[1]:k; };
 const PAKET={trial:'Trial',starter:'Starter',growth:'Growth',business:'Business',pro:'Pro',custom:'Custom',enterprise:'Enterprise'};
-let token=null, D=null;
-try{ token=localStorage.getItem('mitra_token'); }catch(e){}
-function setTok(t){ token=t; try{ t?localStorage.setItem('mitra_token',t):localStorage.removeItem('mitra_token'); }catch(e){} }
+let token=null, D=null, adminView=false;
+// v1.2.189: mitra-masuk — admin pusat datang lewat /mitra/#as=<token>; sesinya hanya di tab ini (sessionStorage),
+// jadi login mitra di browser yang sama (localStorage) tidak tersentuh.
+(function(){ const a=location.hash.match(/^#as=([a-z0-9.]{40,200})$/); if(!a) return;
+  try{ sessionStorage.setItem('mitra_admin_token',a[1]); }catch(e){} history.replaceState(null,'',location.pathname); })();
+try{ const a=sessionStorage.getItem('mitra_admin_token'); if(a){ token=a; adminView=true; } else token=localStorage.getItem('mitra_token'); }catch(e){}
+function setTok(t){ token=t; const st=adminView?sessionStorage:localStorage, k=adminView?'mitra_admin_token':'mitra_token';
+  try{ t?st.setItem(k,t):st.removeItem(k); }catch(e){} if(!t) adminView=false; }
 function toast(msg,err){ const t=$('#toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); setTimeout(()=>t.className='toast',2600); }
 function show(id){ ['vLogin','vForgot','vReset','vApp'].forEach(v=>$('#'+v).classList.toggle('hidden',v!==id)); }
 async function api(action,body){
@@ -200,6 +207,9 @@ function renderLedger(){
 function render(){
   const p=D.partner;
   $('#pName').textContent=p.name;
+  const av=!!D.admin_view;
+  $('#adminBar').classList.toggle('hidden',!av); $('#bPw').classList.toggle('hidden',av); $('#bOut').textContent=av?'Tutup':'Keluar';
+  if(av) $('#adminBar').innerHTML='<b>Mode admin</b> — Anda melihat Portal Mitra milik <b>'+esc(p.name)+'</b> ('+esc(p.code)+') persis seperti yang dilihat mitra. Hanya lihat.';
   $('#kPct').textContent=p.pct+'%';
   $('#kPctS').textContent=p.type==='referral'?'Referral':p.paying+' tenant aktif berbayar';
   $('#kMonth').textContent=rp(p.month); $('#kUnpaid').textContent=rp(p.unpaid); $('#kTotal').textContent=rp(p.total);
@@ -227,7 +237,7 @@ async function load(){
 $('#lMonth').onchange=renderLedger;
 $('#bCopy').onclick=()=>{ const v=$('#sLink').value; (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('Tautan disalin.'),()=>{ $('#sLink').select(); try{ document.execCommand('copy'); toast('Tautan disalin.'); }catch(e){ toast('Salin tautan secara manual.',true); } }); };
 $('#bWa').onclick=()=>{ window.open('https://wa.me/?text='+encodeURIComponent('Coba chatbot AI untuk WhatsApp bisnis Anda, gratis '+(D.trial_days||30)+' hari: '+$('#sLink').value),'_blank','noopener'); };
-$('#bOut').onclick=()=>{ setTok(null); D=null; show('vLogin'); };
+$('#bOut').onclick=()=>{ const av=adminView; setTok(null); D=null; if(av){ window.close(); } show('vLogin'); };
 $('#bPw').onclick=()=>{ $('#pOld').value=''; $('#pNew').value=''; $('#mPw').textContent=''; $('#pwBg').classList.add('show'); };
 $('#pCancel').onclick=()=>$('#pwBg').classList.remove('show');
 $('#pSave').onclick=async()=>{

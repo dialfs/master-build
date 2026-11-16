@@ -8,6 +8,9 @@
  * Akses : hanya baca. Mitra melihat tier, tautan pendaftaran, tenant miliknya (nama, paket, status) dan buku
  *         komisinya. Tidak ada akses ke dashboard atau isi chat tenant.
  *
+ * v1.2.189: mitra-masuk — admin pusat bisa membuka portal mitra mana pun ("Masuk" di kartu Mitra): token jenis 'a',
+ *         sesi pendek (idle 1 jam, maksimal 4 jam), tidak butuh password mitra, tidak bisa mengganti password.
+ *
  * Hanya dimuat backend/index.php: memakai getSecret, readJson/writeJson, publicUrlBase, wibDate,
  * grpMail, grpRlBlocked, grpRlFail, grpRlClear, grpEmail, grpPwOk (group-lib.php) dan fungsi pt (partner-lib.php).
  * Fungsi di file ini berawalan ptp.
@@ -16,6 +19,8 @@
 define('PTP_RESET_FILE', DATA_DIR . '/partner-resets.json');
 define('PTP_TOKEN_IDLE', 12 * 3600);
 define('PTP_TOKEN_MAX',  14 * 86400);
+define('PTP_ADMIN_IDLE', 3600);        // v1.2.189: mitra-masuk
+define('PTP_ADMIN_MAX',  4 * 3600);
 
 function ptpBaseUrl(): string { return publicUrlBase() . '/mitra/'; }
 function ptpSecret(): string { return getSecret() . '|mitra'; }
@@ -26,18 +31,28 @@ function ptpFindByEmail(string $email, ?array $all = null): ?array {
 }
 
 /* ---------- token ---------- */
-function ptpMakeToken(string $pid, ?int $iss = null): string {
+/** $kind: 'm' = mitra login sendiri, 'a' = admin pusat melihat portal mitra (v1.2.189). */
+function ptpMakeToken(string $pid, ?int $iss = null, string $kind = 'm'): string {
+    $kind = $kind === 'a' ? 'a' : 'm';
     $now = time(); $i = dechex($iss ?? $now); $s = dechex($now);
-    return "m.$pid.$i.$s." . hash_hmac('sha256', "m|$pid|$i|$s", ptpSecret());
+    return "$kind.$pid.$i.$s." . hash_hmac('sha256', "$kind|$pid|$i|$s", ptpSecret());
 }
-/** Mengembalikan data mitra yang sedang login, atau mengirim 401. */
+/** Mengembalikan data mitra yang sedang login, atau mengirim 401. Sesi admin: kunci `_admin` = true. */
 function ptpRequire(): array {
     $p = explode('.', (string)($_SERVER['HTTP_X_MITRA_TOKEN'] ?? ''));
     $bad = function () { jsonOut(['ok' => false, 'error' => 'Sesi berakhir. Silakan login kembali.'], 401); };
-    if (count($p) !== 5 || $p[0] !== 'm') $bad();
-    [, $pid, $i, $s, $sig] = $p;
-    if (!hash_equals(hash_hmac('sha256', "m|$pid|$i|$s", ptpSecret()), $sig)) $bad();
+    if (count($p) !== 5 || !in_array($p[0], ['m', 'a'], true)) $bad();
+    [$kind, $pid, $i, $s, $sig] = $p;
+    if (!hash_equals(hash_hmac('sha256', "$kind|$pid|$i|$s", ptpSecret()), $sig)) $bad();
     $iss = (int)@hexdec($i); $seen = (int)@hexdec($s); $now = time();
+    if ($kind === 'a') {   // v1.2.189: mitra-masuk — admin pusat, hanya lihat
+        if ($iss <= 0 || $seen <= 0 || $now - $seen > PTP_ADMIN_IDLE || $now - $iss > PTP_ADMIN_MAX) $bad();
+        $m = ptFind($pid);
+        if (!$m) $bad();
+        if (!headers_sent()) header('X-Mitra-Refresh: ' . ptpMakeToken($pid, $iss, 'a'));
+        $m['_admin'] = true;
+        return $m;
+    }
     if ($iss <= 0 || $seen <= 0 || $now - $seen > PTP_TOKEN_IDLE || $now - $iss > PTP_TOKEN_MAX) $bad();
     $m = ptFind($pid);
     if (!$m || empty($m['password'])) $bad();
