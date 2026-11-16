@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Dashboard Grup — DEI Chatbot</title>
+<!-- v1.2.185: master-grup --><!-- v1.2.186: grup-inbox -->
+<style>
+  :root{--brand:#140383;--bg:#f5f6fa;--card:#fff;--line:#e2e5ee;--muted:#5d6479;--ok:#16a34a;--warn:#d97706;--err:#c4302b}
+  *{box-sizing:border-box} body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1a1a2e;font-size:14px}
+  button{background:var(--brand);color:#fff;border:none;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:13px;font-family:inherit}
+  button:hover{opacity:.9} button.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)} button:disabled{opacity:.5;cursor:default}
+  input,select{padding:9px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;font-family:inherit;width:100%}
+  label{display:block;font-size:12.5px;margin:12px 0 4px;color:#33384c}
+  .hidden{display:none!important}
+  .auth{max-width:380px;margin:9vh auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px}
+  .auth h1{margin:0 0 4px;font-size:20px;color:var(--brand)} .auth p.sub{margin:0 0 10px;color:var(--muted);font-size:13px}
+  .auth button{width:100%;margin-top:16px;padding:10px} .link{color:var(--brand);cursor:pointer;font-size:13px;text-decoration:underline;background:none;border:none;padding:0;width:auto!important;margin:12px 0 0!important}
+  .msg{font-size:13px;margin-top:10px} .msg.err{color:var(--err)} .msg.ok{color:var(--ok)}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:12px 22px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:17px;color:var(--brand)} .grow{flex:1} .pill{background:#eef0fb;color:var(--brand);padding:4px 10px;border-radius:14px;font-size:12px;font-weight:600}
+  .wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;padding:18px 22px;max-width:1300px;margin:0 auto} .wrap>*{min-width:0}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 10px;font-size:15px}
+  .tl{list-style:none;margin:0;padding:0} .tl li{padding:9px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  .tl li:last-child{border-bottom:none} .tl .nm{flex:1;min-width:0;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tl .sub{font-size:11px;color:var(--muted);font-weight:400} .tl button{padding:5px 9px;font-size:12px}
+  .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .bar select,.bar input{width:auto;padding:7px 9px;font-size:13px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px}
+  .kpi .v{font-size:22px;font-weight:700;color:var(--brand)} .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+  .kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left} th{background:#fafbfd;font-weight:600;color:#4a5068;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px}
+  tfoot td{font-weight:700;background:#fafbfd}
+  .err-row td{color:var(--err);text-align:left}
+  .scroll{overflow:auto} .hint{font-size:12px;color:var(--muted)}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;margin-top:6px} .legend span{display:flex;align-items:center;gap:5px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1} .toast.err{background:var(--err)}
+  .modal-bg{position:fixed;inset:0;background:rgba(20,3,131,.18);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}
+  .modal-bg.show{display:flex} .modal{background:#fff;border-radius:12px;max-width:380px;width:100%;padding:20px}
+  .modal h3{margin:0 0 6px;font-size:16px} .modal .act{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+  /* v1.2.186: grup-inbox */
+  .tabs{display:flex;gap:4px;background:#fff;border-bottom:1px solid var(--line);padding:0 22px;position:sticky;top:57px;z-index:4}
+  .tabs button{background:none;color:var(--muted);border-radius:0;border-bottom:2px solid transparent;padding:10px 14px;font-weight:600}
+  .tabs button.on{color:var(--brand);border-bottom-color:var(--brand)} .tabs .cnt{background:var(--err);color:#fff;border-radius:9px;padding:1px 6px;font-size:11px;margin-left:5px}
+  .ibx{display:grid;grid-template-columns:360px minmax(0,1fr);gap:0;max-width:1400px;margin:14px auto;padding:0 22px;height:calc(100vh - 140px)}
+  .ibx .col{background:#fff;border:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
+  .ibx .col:first-child{border-radius:12px 0 0 12px} .ibx .col:last-child{border-radius:0 12px 12px 0;border-left:none}
+  .ibx .lhead{padding:10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+  .ibx .lhead .r{display:flex;gap:6px} .ibx .lhead select,.ibx .lhead input{padding:7px 8px;font-size:13px}
+  .chips{display:flex;gap:6px;overflow-x:auto} .chips button{background:#f1f3f8;color:#33384c;padding:5px 10px;border-radius:14px;font-size:12px;white-space:nowrap}
+  .chips button.on{background:var(--brand);color:#fff}
+  .clist{overflow-y:auto;flex:1} .ci{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:9px}
+  .ci:hover{background:#fafbfd} .ci.on{background:#eef0fb} .ci .m{flex:1;min-width:0}
+  .ci .t{display:flex;gap:6px;align-items:baseline} .ci .n{font-weight:600;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ci .ts{font-size:11px;color:var(--muted);white-space:nowrap} .ci .p{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .tg{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:9px;margin:4px 4px 0 0}
+  .thd{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .thd .nm{font-weight:700;font-size:15px} .thd .sub{font-size:12px;color:var(--muted)}
+  .msgs{flex:1;overflow-y:auto;padding:14px;background:#f7f8fb;display:flex;flex-direction:column;gap:6px}
+  .b{max-width:72%;padding:8px 11px;border-radius:12px;font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+  .b.in{background:#fff;border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:4px}
+  .b.bot{background:#e7ebff;align-self:flex-end;border-bottom-right-radius:4px} .b.man{background:#dcfce7;align-self:flex-end;border-bottom-right-radius:4px}
+  .b .w{font-size:10.5px;color:var(--muted);margin-top:3px;text-align:right} .b img{max-width:240px;max-height:300px;border-radius:8px;display:block;margin-bottom:4px}
+  .dsep{align-self:center;font-size:11px;color:var(--muted);background:#e9ebf2;padding:2px 10px;border-radius:9px;margin:6px 0}
+  .rep{border-top:1px solid var(--line);padding:10px;display:flex;gap:8px;align-items:flex-end}
+  .rep textarea{flex:1;resize:none;min-height:40px;max-height:140px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px}
+  .rep .fbtn{background:#f1f3f8;color:#33384c;padding:9px 11px} .empty{margin:auto;color:var(--muted);text-align:center;padding:30px}
+  .back{display:none}
+  @media(max-width:860px){.tabs{padding:0 8px;top:auto;position:static}.ibx{grid-template-columns:minmax(0,1fr);padding:0;margin:0;height:calc(100vh - 150px)}
+    .ibx .col{border-radius:0!important;border-left:none;border-right:none}.ibx.th .col:first-child{display:none}.ibx:not(.th) .col:last-child{display:none}.back{display:inline-block}.b{max-width:86%}}
+  @media(max-width:860px){.wrap{grid-template-columns:minmax(0,1fr);padding:12px}.kpis{grid-template-columns:repeat(2,1fr)}header{padding:10px 12px;gap:8px}header h1{font-size:15px;flex-basis:100%}header button{padding:6px 10px;font-size:12px}.kpi .v{font-size:19px}}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div class="auth hidden" id="vLogin">
+  <h1>Dashboard Grup</h1>
+  <p class="sub">Satu login untuk semua chatbot grup Anda.</p>
+  <form id="fLogin">
+    <label>Email</label><input type="email" id="lEmail" autocomplete="username" required>
+    <label>Password</label><input type="password" id="lPass" autocomplete="current-password" required>
+    <button type="submit">Masuk</button>
+  </form>
+  <div class="msg err" id="lMsg"></div>
+  <button class="link" onclick="show('vForgot')">Lupa password?</button>
+</div>
+
+<!-- Lupa password -->
+<div class="auth hidden" id="vForgot">
+  <h1>Lupa password</h1>
+  <p class="sub">Masukkan email akun Dashboard Grup. Kami kirim tautan untuk membuat password baru.</p>
+  <form id="fForgot"><label>Email</label><input type="email" id="fEmail" required><button type="submit">Kirim tautan</button></form>
+  <div class="msg" id="fMsg"></div>
+  <button class="link" onclick="show('vLogin')">Kembali ke login</button>
+</div>
+
+<!-- Buat password baru (#reset=) -->
+<div class="auth hidden" id="vReset">
+  <h1>Buat password</h1>
+  <p class="sub" id="rSub">Memeriksa tautan…</p>
+  <form id="fReset" class="hidden">
+    <label>Password baru</label><input type="password" id="rPass" autocomplete="new-password" required>
+    <label>Ulangi password</label><input type="password" id="rPass2" autocomplete="new-password" required>
+    <div class="hint" style="margin-top:6px">Minimal 8 karakter, berisi huruf dan angka.</div>
+    <button type="submit">Simpan password</button>
+  </form>
+  <div class="msg" id="rMsg"></div>
+  <button class="link" onclick="location.hash='';show('vLogin')">Ke halaman login</button>
+</div>
+
+<!-- Aplikasi -->
+<div class="hidden" id="vApp">
+  <header>
+    <h1 id="gName">Dashboard Grup</h1>
+    <span class="pill" id="uPill"></span>
+    <div class="grow"></div>
+    <button class="ghost" onclick="openPw()">Ganti password</button>
+    <button class="ghost" onclick="logout()">Keluar</button>
+  </header>
+  <nav class="tabs"><button id="tbRep" class="on" onclick="tab('rep')">Laporan</button><button id="tbIbx" onclick="tab('ibx')">Inbox<span class="cnt hidden" id="ibxCnt"></span></button></nav>
+  <div class="ibx hidden" id="pIbx">
+    <div class="col">
+      <div class="lhead">
+        <div class="r"><select id="iTenant" onchange="renderList()"><option value="">Semua tenant</option></select><input id="iQ" placeholder="Cari nama / nomor / pesan" oninput="renderList()"></div>
+        <div class="chips" id="iChips"></div>
+      </div>
+      <div class="clist" id="iList"><div class="empty">Memuat…</div></div>
+      <div class="hint" id="iNote" style="padding:8px 12px;border-top:1px solid var(--line)"></div>
+    </div>
+    <div class="col" id="iThread"><div class="empty">Pilih percakapan di sebelah kiri.</div></div>
+  </div>
+  <div class="wrap" id="pRep">
+    <aside>
+      <div class="card">
+        <h2>Tenant</h2>
+        <ul class="tl" id="tList"></ul>
+        <div class="hint" style="margin-top:8px" id="tHint"></div>
+      </div>
+    </aside>
+    <section>
+      <div class="bar">
+        <select id="rRange">
+          <option value="7">7 hari terakhir</option>
+          <option value="30" selected>30 hari terakhir</option>
+          <option value="m0">Bulan ini</option>
+          <option value="m1">Bulan lalu</option>
+          <option value="c">Pilih tanggal…</option>
+        </select>
+        <span id="rCustom" class="hidden"><input type="date" id="rFrom"> – <input type="date" id="rTo"></span>
+        <select id="rTenant"><option value="">Semua tenant</option></select>
+        <button onclick="loadReport()">Tampilkan</button>
+        <span class="hint" id="rInfo"></span>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="card">
+        <h2>Percakapan per hari</h2>
+        <div id="chart" class="scroll"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="card">
+        <h2>Per tenant</h2>
+        <div class="scroll"><table id="tbl"></table></div>
+        <div class="hint" style="margin-top:8px">Respon pertama = rata-rata waktu balasan pertama (bot atau agent) untuk percakapan masuk. Diselesaikan bot = percakapan yang selesai tanpa diteruskan ke agent.</div>
+      </div>
+      <div class="card">
+        <h2>Agent (semua tenant)</h2>
+        <div class="scroll"><table id="tblAg"></table></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="modal-bg" id="mPw"><div class="modal">
+  <h3>Ganti password</h3>
+  <label>Password lama</label><input type="password" id="pOld" autocomplete="current-password">
+  <label>Password baru</label><input type="password" id="pNew" autocomplete="new-password">
+  <div class="hint" style="margin-top:6px">Minimal 8 karakter, berisi huruf dan angka.</div>
+  <div class="act"><button class="ghost" onclick="$('#mPw').classList.remove('show')">Batal</button><button onclick="savePw()">Simpan</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API='../backend/index.php';
+const $=s=>document.querySelector(s);
+const COLORS=['#140383','#0d9488','#d97706','#c4302b','#7c3aed','#0284c7','#65a30d','#db2777','#57534e','#0891b2'];
+let token=null; try{ token=localStorage.getItem('grp_token'); }catch(e){}
+let me=null, rep=null;
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(m,err){ const t=$('#toast'); t.textContent=m; t.className='toast show'+(err?' err':''); setTimeout(()=>t.className='toast',2600); }
+function show(id){ ['vLogin','vForgot','vReset','vApp'].forEach(v=>$('#'+v).classList.toggle('hidden',v!==id)); }
+function setTok(t){ token=t; try{ t?localStorage.setItem('grp_token',t):localStorage.removeItem('grp_token'); }catch(e){} }
+async function api(action,opts){
+  opts=opts||{};
+  const h={}; if(token) h['X-Grp-Token']=token;
+  const conf={method:opts.body?'POST':'GET',headers:h,cache:'no-store'};
+  if(opts.body){ h['Content-Type']='application/json'; conf.body=JSON.stringify(opts.body); }
+  let r;
+  try{ r=await fetch(API+'?action='+action+(opts.qs?'&'+opts.qs:''),conf); }catch(e){ return {ok:false,error:'Tidak bisa terhubung ke server.'}; }
+  const fr=r.headers.get('X-Grp-Refresh'); if(fr) setTok(fr);
+  let j; try{ j=await r.json(); }catch(e){ j={ok:false,error:'Respons tidak valid.'}; }
+  if(r.status===401 && opts.auth!==false){ setTok(null); show('vLogin'); }
+  return j;
+}
+
+/* ---------- auth ---------- */
+$('#fLogin').onsubmit=async e=>{
+  e.preventDefault(); $('#lMsg').textContent='';
+  const r=await api('grp_login',{auth:false,body:{email:$('#lEmail').value,password:$('#lPass').value}});
+  if(!r.ok){ $('#lMsg').textContent=r.error||'Gagal masuk.'; return; }
+  setTok(r.token); $('#lPass').value=''; boot();
+};
+$('#fForgot').onsubmit=async e=>{
+  e.preventDefault();
+  const r=await api('grp_forgot',{auth:false,body:{email:$('#fEmail').value}});
+  $('#fMsg').className='msg '+(r.ok?'ok':'err'); $('#fMsg').textContent=r.message||r.error||'';
+};
+let resetTok='';
+async function resetView(tok){
+  resetTok=tok; show('vReset'); $('#fReset').classList.add('hidden'); $('#rMsg').textContent='';
+  const r=await api('grp_reset_check',{auth:false,body:{token:tok}});
+  if(!r.ok){ $('#rSub').textContent=r.error; return; }
+  $('#rSub').textContent='Untuk akun '+r.email; $('#fReset').classList.remove('hidden');
+}
+$('#fReset').onsubmit=async e=>{
+  e.preventDefault();
+  if($('#rPass').value!==$('#rPass2').value){ $('#rMsg').className='msg err'; $('#rMsg').textContent='Password tidak sama.'; return; }
+  const r=await api('grp_reset',{auth:false,body:{token:resetTok,password:$('#rPass').value}});
+  $('#rMsg').className='msg '+(r.ok?'ok':'err');
+  if(!r.ok){ $('#rMsg').textContent=r.error; return; }
+  $('#rMsg').textContent='Password tersimpan. Silakan login.'; $('#fReset').classList.add('hidden');
+  history.replaceState(null,'',location.pathname); $('#lEmail').value=r.email||''; setTok(null);
+  setTimeout(()=>show('vLogin'),1200);
+};
+function logout(){ setTok(null); me=null; show('vLogin'); }
+function openPw(){ $('#pOld').value=''; $('#pNew').value=''; $('#mPw').classList.add('show'); }
+async function savePw(){
+  const r=await api('grp_password',{body:{old:$('#pOld').value,new:$('#pNew').value}});
+  if(!r.ok){ toast(r.error||'Gagal.',true); return; }
+  setTok(r.token); $('#mPw').classList.remove('show'); toast('Password diganti.');
+}
+
+/* ---------- tenant ---------- */
+async function openTenant(tid,btn){
+  const w=window.open('','_blank');   // dibuka dulu supaya tidak diblokir popup
+  if(btn) btn.disabled=true;
+  const r=await api('grp_sso',{body:{tenant_id:tid}});
+  if(btn) btn.disabled=false;
+  if(!r.ok){ if(w) w.close(); toast(r.error||'Gagal membuka tenant.',true); return; }
+  if(w) w.location=r.url; else location.href=r.url;
+}
+function colorOf(tid){ const i=(me?me.tenants:[]).findIndex(t=>t.tenant_id===tid); return COLORS[(i<0?0:i)%COLORS.length]; }
+function renderTenants(){
+  const ts=me.tenants;
+  $('#tList').innerHTML=ts.length?ts.map(t=>`<li><span class="dot" style="background:${colorOf(t.tenant_id)}"></span>
+    <div class="nm" title="${esc(t.name)}">${esc(t.name)}<div class="sub">${esc(t.tenant_id)}${t.active?'':' · nonaktif'}</div></div>
+    ${t.can_open?`<button class="ghost" onclick="openTenant('${esc(t.tenant_id)}',this)" title="Buka dashboard tenant tanpa login ulang">Buka</button>`:''}</li>`).join('')
+    :'<li class="hint">Belum ada tenant di grup ini.</li>';
+  $('#tHint').textContent=me.user.role==='viewer'?'Akun Anda hanya untuk melihat laporan.':(ts.some(t=>!t.can_open)?'Tenant tanpa tombol Buka: akun Anda belum dihubungkan, hubungi DEI.':'');
+  $('#rTenant').innerHTML='<option value="">Semua tenant</option>'+ts.map(t=>`<option value="${esc(t.tenant_id)}">${esc(t.name)}</option>`).join('');
+}
+
+/* ---------- laporan ---------- */
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+function wibNow(){ const d=new Date(); return new Date(d.getTime()+(d.getTimezoneOffset()+420)*60000); }
+function rangeOf(){
+  const v=$('#rRange').value, n=wibNow();
+  if(v==='c') return [$('#rFrom').value,$('#rTo').value];
+  if(v==='m0') return [ymd(new Date(n.getFullYear(),n.getMonth(),1)),ymd(n)];
+  if(v==='m1') return [ymd(new Date(n.getFullYear(),n.getMonth()-1,1)),ymd(new Date(n.getFullYear(),n.getMonth(),0))];
+  const f=new Date(n); f.setDate(f.getDate()-(+v-1)); return [ymd(f),ymd(n)];
+}
+$('#rRange').onchange=()=>{ $('#rCustom').classList.toggle('hidden',$('#rRange').value!=='c'); if($('#rRange').value!=='c') loadReport(); };
+$('#rTenant').onchange=()=>rep&&renderReport();
+function dur(s){ if(s==null) return '–'; s=Math.round(s); if(s<60) return s+' dtk'; const m=Math.floor(s/60); if(m<60) return m+' mnt'+(s%60&&m<10?' '+(s%60)+' dtk':''); const h=Math.floor(m/60); if(h<24) return h+' jam'+(m%60?' '+(m%60)+' mnt':''); return Math.floor(h/24)+' hr '+(h%24)+' jam'; }
+const fmt=n=>(n==null?'–':Number(n).toLocaleString('id-ID'));
+const pct=(a,b)=>b>0?(Math.round(a*1000/b)/10).toLocaleString('id-ID')+'%':'–';
+let loadSeq=0;
+async function loadReport(){
+  const [f,t]=rangeOf(); if(!f||!t){ toast('Pilih tanggal.',true); return; }
+  const seq=++loadSeq; $('#rInfo').textContent='Memuat data '+(me?me.tenants.length:'')+' tenant…';
+  const r=await api('grp_report',{qs:'from='+f+'&to='+t});
+  if(seq!==loadSeq) return;
+  if(!r.ok){ $('#rInfo').textContent=''; toast(r.error||'Gagal memuat laporan.',true); return; }
+  rep=r; $('#rInfo').textContent=f+' s/d '+t; renderReport();
+}
+function renderReport(){
+  const sel=$('#rTenant').value;
+  const all=rep.tenants.filter(x=>!sel||x.tenant_id===sel), ok=all.filter(x=>x.ok), bad=all.filter(x=>!x.ok);
+  const S={conv:0,inb:0,cust:0,msgs:0,botH:0,botR:0,toAg:0,res:0,unas:0,lnew:0,lopen:0,frtW:0,frtN:0,frtAW:0,frtAN:0};
+  ok.forEach(x=>{ const T=x.conv.totals,A=x.conv.avg;
+    S.conv+=T.total; S.inb+=T.inbound; S.cust+=x.msgs.customers; S.msgs+=x.msgs.total; S.botH+=T.bot_handled; S.botR+=T.bot_resolved; S.toAg+=T.to_agent;
+    S.res+=T.resolved; S.unas+=T.unassigned; S.lnew+=x.leads.new; S.lopen+=x.leads.open;
+    if(A.frt!=null&&T.inbound){ S.frtW+=A.frt*T.inbound; S.frtN+=T.inbound; }
+    if(A.frt_agent!=null&&T.to_agent){ S.frtAW+=A.frt_agent*T.to_agent; S.frtAN+=T.to_agent; } });
+  const K=[['Percakapan',fmt(S.conv),fmt(S.inb)+' masuk'],['Pelanggan unik',fmt(S.cust),fmt(S.msgs)+' pesan dijawab bot'],
+    ['Diselesaikan bot',pct(S.botR,S.botH),fmt(S.botR)+' dari '+fmt(S.botH)],['Diteruskan ke agent',fmt(S.toAg),fmt(S.unas)+' belum diambil agent'],
+    ['Respon pertama',dur(S.frtN?S.frtW/S.frtN:null),'rata-rata, tertimbang'],['Respon agent',dur(S.frtAN?S.frtAW/S.frtAN:null),'setelah diteruskan'],
+    ['Diselesaikan',pct(S.res,S.conv),fmt(S.res)+' percakapan'],['Leads baru',fmt(S.lnew),fmt(S.lopen)+' masih terbuka (semua waktu)']];
+  $('#kpis').innerHTML=K.map(k=>`<div class="kpi"><div class="v">${k[1]}</div><div class="l">${k[0]}</div><div class="s">${k[2]}</div></div>`).join('');
+  // tabel per tenant
+  const rows=ok.map(x=>{ const T=x.conv.totals,A=x.conv.avg; return `<tr><td><span class="dot" style="display:inline-block;background:${colorOf(x.tenant_id)};margin-right:6px"></span>${esc(x.name)}</td>
+    <td>${fmt(T.total)}</td><td>${fmt(x.msgs.customers)}</td><td>${pct(T.bot_resolved,T.bot_handled)}</td><td>${fmt(T.to_agent)}</td><td>${fmt(T.unassigned)}</td>
+    <td>${dur(A.frt)}</td><td>${dur(A.frt_agent)}</td><td>${pct(T.resolved,T.total)}</td><td>${fmt(x.leads.new)}</td></tr>`; }).join('')
+    + bad.map(x=>`<tr class="err-row"><td colspan="10"><b>${esc(x.name)}</b> — ${esc(x.error)}</td></tr>`).join('');
+  $('#tbl').innerHTML=`<thead><tr><th>Tenant</th><th>Percakapan</th><th>Pelanggan</th><th>Selesai oleh bot</th><th>Ke agent</th><th>Belum diambil</th><th>Respon pertama</th><th>Respon agent</th><th>Diselesaikan</th><th>Leads baru</th></tr></thead><tbody>${rows||'<tr><td colspan="10" class="hint">Tidak ada data.</td></tr>'}</tbody>`
+    +(ok.length>1?`<tfoot><tr><td>Total</td><td>${fmt(S.conv)}</td><td>${fmt(S.cust)}</td><td>${pct(S.botR,S.botH)}</td><td>${fmt(S.toAg)}</td><td>${fmt(S.unas)}</td><td>${dur(S.frtN?S.frtW/S.frtN:null)}</td><td>${dur(S.frtAN?S.frtAW/S.frtAN:null)}</td><td>${pct(S.res,S.conv)}</td><td>${fmt(S.lnew)}</td></tr></tfoot>`:'');
+  // agent
+  const ag=[]; ok.forEach(x=>(x.agents||[]).forEach(a=>ag.push(Object.assign({tenant:x.name},a))));
+  ag.sort((a,b)=>b.assigned-a.assigned);
+  $('#tblAg').innerHTML=`<thead><tr><th>Agent</th><th>Tenant</th><th>Ditangani</th><th>Selesai</th><th>Berjalan</th><th>Respon pertama</th><th>Lama penyelesaian</th></tr></thead><tbody>`
+    +(ag.length?ag.slice(0,50).map(a=>`<tr><td>${esc(a.name)}</td><td style="text-align:left">${esc(a.tenant)}</td><td>${fmt(a.assigned)}</td><td>${fmt(a.resolved)}</td><td>${fmt(a.in_progress)}</td><td>${dur(a.frt)}</td><td>${dur(a.resolution)}</td></tr>`).join(''):'<tr><td colspan="7" class="hint">Belum ada chat yang ditangani agent di periode ini.</td></tr>')+'</tbody>';
+  renderChart(ok);
+}
+function renderChart(ok){
+  const days=[]; ok.forEach(x=>x.daily.forEach(d=>{ if(!days.includes(d.date)) days.push(d.date); })); days.sort();
+  if(!days.length){ $('#chart').innerHTML='<div class="hint">Tidak ada data.</div>'; $('#legend').innerHTML=''; return; }
+  const W=Math.max(($('#chart').clientWidth||640)-2,days.length*8), H=220, L=36, B=24, T=10, R=10;
+  const series=ok.map(x=>{ const m={}; x.daily.forEach(d=>m[d.date]=d.conv); return {id:x.tenant_id,name:x.name,v:days.map(d=>m[d]||0)}; });
+  const max=Math.max(1,...series.flatMap(s=>s.v)), nice=Math.ceil(max/4)*4||4;
+  const X=i=>L+(days.length===1?(W-L-R)/2:i*(W-L-R)/(days.length-1)), Y=v=>T+(H-T-B)*(1-v/nice);
+  let g='';
+  for(let k=0;k<=4;k++){ const v=nice*k/4; g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#eef0f5"/><text x="${L-6}" y="${Y(v)+4}" font-size="10" text-anchor="end" fill="#5d6479">${v}</text>`; }
+  const step=Math.ceil(days.length/12);
+  days.forEach((d,i)=>{ if(i%step===0) g+=`<text x="${X(i)}" y="${H-6}" font-size="10" text-anchor="middle" fill="#5d6479">${d.slice(8)}/${d.slice(5,7)}</text>`; });
+  series.forEach(s=>{ const c=colorOf(s.id);
+    g+=`<polyline fill="none" stroke="${c}" stroke-width="2" points="${s.v.map((v,i)=>X(i)+','+Y(v)).join(' ')}"/>`;
+    s.v.forEach((v,i)=>{ g+=`<circle cx="${X(i)}" cy="${Y(v)}" r="2.5" fill="${c}"><title>${esc(s.name)} · ${days[i]}: ${v} percakapan</title></circle>`; }); });
+  $('#chart').innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${g}</svg>`;
+  $('#legend').innerHTML=series.map(s=>`<span><span class="dot" style="background:${colorOf(s.id)}"></span>${esc(s.name)}</span>`).join('');
+}
+
+
+/* ---------- v1.2.186: grup-inbox ---------- */
+const IB={list:[],tenants:[],f:'all',cur:null,th:null,timer:null,thTimer:null,sending:false,lastHtml:''};
+function tab(t){
+  $('#tbRep').classList.toggle('on',t==='rep'); $('#tbIbx').classList.toggle('on',t==='ibx');
+  $('#pRep').classList.toggle('hidden',t!=='rep'); $('#pIbx').classList.toggle('hidden',t!=='ibx');
+  try{ localStorage.setItem('grp_tab',t); }catch(e){}
+  clearInterval(IB.timer); clearInterval(IB.thTimer);
+  if(t==='ibx'){ loadInbox(); IB.timer=setInterval(()=>{ if(!document.hidden) loadInbox(); },20000);
+    IB.thTimer=setInterval(()=>{ if(!document.hidden&&IB.cur) loadThread(true); },10000); }
+}
+const tName=tid=>((me&&me.tenants.find(t=>t.tenant_id===tid))||{}).name||tid;
+const FL={all:'Semua',unreplied:'Belum dibalas',active:'Aktif',done:'Selesai'};
+function relT(ts){ if(!ts) return ''; const d=new Date(ts.replace(' ','T')+'+07:00'); if(isNaN(d)) return ts; const n=wibNow();
+  const s=ts.slice(0,10)===ymd(n)?ts.slice(11,16):ts.slice(8,10)+'/'+ts.slice(5,7); return s; }
+async function loadInbox(){
+  const r=await api('grp_inbox'); if(!r.ok){ $('#iList').innerHTML='<div class="empty">'+esc(r.error||'Gagal memuat.')+'</div>'; return; }
+  IB.list=r.conversations||[]; IB.tenants=r.tenants||[];
+  const bad=IB.tenants.filter(t=>!t.ok);
+  $('#iNote').innerHTML=(r.note?esc(r.note)+'<br>':'')+bad.map(t=>'<b>'+esc(t.name)+'</b>: '+esc(t.error)).join('<br>');
+  const sel=$('#iTenant'), cur=sel.value;
+  sel.innerHTML='<option value="">Semua tenant</option>'+IB.tenants.filter(t=>t.ok).map(t=>`<option value="${esc(t.tenant_id)}">${esc(t.name)}</option>`).join(''); sel.value=cur;
+  const un=IB.list.filter(c=>c.flag==='unreplied').length; $('#ibxCnt').textContent=un; $('#ibxCnt').classList.toggle('hidden',!un);
+  renderList();
+}
+function renderList(){
+  const tf=$('#iTenant').value, q=$('#iQ').value.trim().toLowerCase();
+  const base=IB.list.filter(c=>(!tf||c.tenant_id===tf)&&(!q||(c.name+' '+c.number+' '+c.last_q+' '+c.last_a).toLowerCase().includes(q)));
+  $('#iChips').innerHTML=Object.keys(FL).map(k=>{ const n=k==='all'?base.length:base.filter(c=>c.flag===k).length;
+    return `<button class="${IB.f===k?'on':''}" onclick="IB.f='${k}';renderList()">${FL[k]} ${n}</button>`; }).join('');
+  const rows=base.filter(c=>IB.f==='all'||c.flag===IB.f);
+  const html=rows.length?rows.slice(0,400).map(c=>{ const on=IB.cur&&IB.cur.tenant_id===c.tenant_id&&IB.cur.number===c.number;
+    const fl=c.flag==='unreplied'?'<span class="tg" style="background:#fee2e2;color:#991b1b">Belum dibalas</span>':c.flag==='done'?'<span class="tg" style="background:#dcfce7;color:#166534">Selesai</span>':'';
+    return `<div class="ci${on?' on':''}" onclick="openConv('${esc(c.tenant_id)}','${esc(c.number)}')"><span class="dot" style="margin-top:5px;background:${colorOf(c.tenant_id)}"></span><div class="m">
+      <div class="t"><span class="n">${esc(c.name||('+'+c.number))}</span><span class="ts">${esc(relT(c.last_ts))}</span></div>
+      <div class="p">${esc(c.last_q||c.last_a||'')}</div>
+      <div><span class="tg" style="background:#eef0fb;color:${colorOf(c.tenant_id)}">${esc(tName(c.tenant_id))}</span>${fl}${c.agent?`<span class="tg" style="background:#fef3c7;color:#854d0e">${esc(c.agent)}</span>`:''}${c.mode==='human'&&!c.agent?'<span class="tg" style="background:#f1f3f8;color:#33384c">Manual</span>':''}</div></div></div>`; }).join('')
+    :'<div class="empty">Tidak ada percakapan.</div>';
+  $('#iList').innerHTML=html;
+}
+function openConv(tid,num){ IB.cur={tenant_id:tid,number:num}; IB.lastHtml=''; $('#pIbx').classList.add('th'); renderList();
+  $('#iThread').innerHTML='<div class="empty">Memuat…</div>'; loadThread(false); }
+function backList(){ $('#pIbx').classList.remove('th'); }
+function mTok(){ if(!IB.mt||Date.now()-IB.mtAt>30*60000){ IB.mt=token; IB.mtAt=Date.now(); } return IB.mt; }   // token tetap supaya gambar tidak dimuat ulang tiap polling
+function mediaHtml(md,tid){
+  if(!md||!md.type) return '';
+  const lbl={image:'Gambar',video:'Video',audio:'Pesan suara',document:'Dokumen',sticker:'Stiker'}[md.type]||'Media';
+  if(!md.file) return '<div class="hint">'+lbl+' tidak dapat diunduh — lihat di HP</div>';
+  const u=API+'?action=grp_media&tenant_id='+encodeURIComponent(tid)+'&f='+encodeURIComponent(md.file)+'&t='+encodeURIComponent(mTok());
+  if(md.type==='image'||md.type==='sticker') return `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" loading="lazy" alt="${lbl}" onerror="this.outerHTML='<div class=hint>${lbl} sudah tidak tersedia</div>'"></a>`;
+  if(md.type==='video') return `<video controls preload="metadata" src="${u}" style="max-width:240px;border-radius:8px;display:block;margin-bottom:4px"></video>`;
+  if(md.type==='audio') return `<audio controls preload="none" src="${u}" style="max-width:240px;display:block;margin-bottom:4px"></audio>`;
+  return `<a href="${u}&dl=1" style="display:block;margin-bottom:4px">📄 ${esc(md.name||'Dokumen')}</a>`;
+}
+async function loadThread(quiet){
+  const c=IB.cur; if(!c) return;
+  const r=await api('grp_thread',{qs:'tenant_id='+encodeURIComponent(c.tenant_id)+'&number='+encodeURIComponent(c.number)+'&limit='+(IB.lim||60)});
+  if(!IB.cur||IB.cur.number!==c.number||IB.cur.tenant_id!==c.tenant_id) return;
+  if(!r.ok){ if(!quiet) $('#iThread').innerHTML='<div class="empty">'+esc(r.error||'Gagal memuat.')+'<br><button class="ghost back" style="margin-top:10px" onclick="backList()">Kembali</button></div>'; return; }
+  IB.th=r; renderThread();
+}
+function renderThread(){
+  const r=IB.th, c=IB.cur, meta=IB.list.find(x=>x.tenant_id===c.tenant_id&&x.number===c.number)||{};
+  let last='', h='';
+  if((r.total||0)>(r.messages||[]).length) h+=`<button class="ghost" style="align-self:center;padding:5px 10px;font-size:12px" onclick="IB.lim=(IB.lim||60)+100;loadThread()">Muat pesan sebelumnya</button>`;
+  (r.messages||[]).forEach(m=>{
+    const d=(m.ts||'').slice(0,10); if(d&&d!==last){ h+=`<div class="dsep">${esc(d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4))}</div>`; last=d; }
+    const tm=esc((m.ts||'').slice(11,16));
+    if(m.call_txt) h+=`<div class="dsep">📞 ${esc(m.call_txt)} · ${tm}</div>`;
+    if(m.q) h+=`<div class="b in">${m.g_from?'<b>'+esc(m.g_from)+'</b>\n':''}${mediaHtml(m.media,c.tenant_id)}${esc(m.q)}<div class="w">${tm}</div></div>`;
+    const fotoOnly=m.media_out&&m.media_out.length&&/^\[Foto/.test(m.a||'');
+    if(m.a&&!fotoOnly){ const man=m.dir==='manual'; h+=`<div class="b ${man?'man':'bot'}">${m.q?'':mediaHtml(m.media,c.tenant_id)}${esc(m.a)}<div class="w">${man?'Agent':'Bot'} · ${tm}</div></div>`; }
+    (m.media_out||[]).forEach(md=>{ h+=`<div class="b bot">${mediaHtml(md,c.tenant_id)}<div class="w">Bot · ${tm}</div></div>`; });
+  });
+  if(!h) h='<div class="empty">Belum ada pesan.</div>';
+  const cl=r.claim, canRep=r.reply_ok!==false;
+  const st=r.mode==='human'?'Mode manual'+(cl?' · dipegang '+esc(cl.agent_name||cl.agent_username||''):''):'Bot aktif';
+  const head=`<div class="thd"><button class="ghost back" onclick="backList()">‹</button><span class="dot" style="background:${colorOf(c.tenant_id)}"></span>
+    <div style="flex:1;min-width:0"><div class="nm">${esc(meta.name||('+'+c.number))}</div><div class="sub">+${esc(c.number)} · ${esc(tName(c.tenant_id))}${meta.ch_label?' · via '+esc(meta.ch_label):''} · ${st} · sebagai <b>${esc(r.as)}</b></div></div>
+    <button class="ghost" onclick="resolveConv()" title="Tandai selesai (butuh peran Admin/Supervisor di tenant)">Selesai</button></div>`;
+  const win=r.window_open===false&&r.wa_prov==='meta'?'<div class="hint" style="padding:6px 12px;background:#fef3c7">Jendela 24 jam WhatsApp tertutup — balasan teks bebas ditolak sampai pelanggan mengirim pesan lagi.</div>':'';
+  const rep=canRep?`<div class="rep"><label class="fbtn" style="border-radius:7px;cursor:pointer;margin:0" title="Kirim file">📎<input type="file" id="iFile" style="display:none" onchange="sendFile(this)"></label>
+    <textarea id="iTxt" placeholder="Tulis balasan… (Enter kirim, Shift+Enter baris baru)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendText()}"></textarea><button id="iSend" onclick="sendText()">Kirim</button></div>`
+    :'<div class="hint" style="padding:10px 12px;border-top:1px solid var(--line)">Akun tenant Anda tidak bisa membalas chat ini (dibatasi peran/tahap lead di tenant).</div>';
+  const box=$('#iThread .msgs'), keep=box&&IB.lastHtml===h;
+  if(keep) return;
+  const atBottom=!box||box.scrollHeight-box.scrollTop-box.clientHeight<80, draft=$('#iTxt')?$('#iTxt').value:'';
+  $('#iThread').innerHTML=head+`<div class="msgs">${h}</div>`+win+rep;
+  IB.lastHtml=h; if($('#iTxt')) $('#iTxt').value=draft;
+  const nb=$('#iThread .msgs'); if(atBottom) nb.scrollTop=nb.scrollHeight;
+}
+async function sendText(){
+  const t=$('#iTxt'), txt=(t.value||'').trim(); if(!txt||IB.sending) return;
+  IB.sending=true; $('#iSend').disabled=true;
+  const r=await api('grp_send',{body:{tenant_id:IB.cur.tenant_id,number:IB.cur.number,text:txt}});
+  IB.sending=false; if($('#iSend')) $('#iSend').disabled=false;
+  if(!r.ok){ toast(r.error||'Gagal mengirim.',true); return; }
+  t.value=''; IB.lastHtml=''; loadThread(true); loadInbox();
+}
+async function sendFile(inp){
+  const f=inp.files[0]; if(!f||IB.sending) return;
+  const cap=prompt('Keterangan untuk '+f.name+' (opsional):','');
+  if(cap===null){ inp.value=''; return; }
+  const fd=new FormData(); fd.append('tenant_id',IB.cur.tenant_id); fd.append('number',IB.cur.number); fd.append('caption',cap); fd.append('file',f);
+  IB.sending=true; toast('Mengirim '+f.name+'…');
+  let r; try{ const res=await fetch(API+'?action=grp_send_media',{method:'POST',headers:{'X-Grp-Token':token},body:fd});
+    const fr=res.headers.get('X-Grp-Refresh'); if(fr) setTok(fr); r=await res.json(); }catch(e){ r={ok:false,error:'Gagal mengunggah (file terlalu besar atau koneksi putus).'}; }
+  IB.sending=false; inp.value='';
+  if(!r.ok){ toast(r.error||'Gagal mengirim file.',true); return; }
+  toast('File terkirim.'); IB.lastHtml=''; loadThread(true); loadInbox();
+}
+async function resolveConv(){
+  if(!IB.cur||!confirm('Tandai chat ini selesai? Chat dilepas dan bot aktif lagi untuk pesan berikutnya.')) return;
+  const r=await api('grp_resolve',{body:{tenant_id:IB.cur.tenant_id,number:IB.cur.number}});
+  if(!r.ok){ toast(r.error||'Gagal.',true); return; }
+  toast('Ditandai selesai.'); IB.lastHtml=''; loadThread(true); loadInbox();
+}
+
+/* ---------- mulai ---------- */
+async function boot(){
+  const m=location.hash.match(/reset=([a-f0-9]{48})/);
+  if(m){ resetView(m[1]); return; }
+  if(!token){ show('vLogin'); return; }
+  const r=await api('grp_me');
+  if(!r.ok){ show('vLogin'); return; }
+  me=r; $('#gName').textContent=r.group.name||'Dashboard Grup'; document.title=(r.group.name||'Grup')+' — Dashboard Grup';
+  $('#uPill').textContent=(r.user.name||r.user.email)+(r.user.role==='viewer'?' · lihat saja':'');
+  renderTenants(); show('vApp'); loadReport();
+  const canIbx=r.user.role!=='viewer'&&r.tenants.some(t=>t.can_open);   // v1.2.186: grup-inbox
+  $('#tbIbx').classList.toggle('hidden',!canIbx);
+  let lt='rep'; try{ lt=localStorage.getItem('grp_tab')||'rep'; }catch(e){}
+  tab(canIbx&&lt==='ibx'?'ibx':'rep');
+}
+window.addEventListener('hashchange',boot);
+boot();
+</script>
+</body>
+</html>
