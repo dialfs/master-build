@@ -1,0 +1,468 @@
+{
+ "_catatan": "Isi awal KB Asisten Support. Diubah bersama rilis khusus pusat; isi 'updated' dengan versi rilisnya.",
+ "guide": [
+  {
+   "key": "balas-chat-wa",
+   "title": "Membalas chat WhatsApp pelanggan",
+   "content": "Buka menu Percakapan WA lalu klik chat pelanggan. Klik Claim (atau Claim & Balas) supaya bot berhenti menjawab nomor itu, tulis balasan di kolom bawah, lalu Kirim. Shift+Enter membuat baris baru. Setelah selesai, klik Release untuk mengembalikan chat ke bot (pada Mode Manual: Lepas ke antrean). Di layar lebar tombol Claim, Release, dan Selesai ada di panel kanan; di HP ketuk tombol tiga titik untuk membuka Alat chat.",
+   "menu": "wachat"
+  },
+  {
+   "key": "status-chat-wa",
+   "title": "Status chat: Belum Dibalas, Full Bot, Selesai",
+   "content": "Setiap chat WhatsApp diberi status otomatis. Belum Dibalas: pesan terakhir dari pelanggan dan belum ada balasan; lencananya menunjukkan sudah berapa lama pelanggan menunggu, dan ucapan penutup seperti \"ok makasih\" tidak dihitung. Full Bot: chat yang sejak awal hanya dijawab bot (tidak tampil saat Mode Manual). Selesai: tidak ada aktivitas 24 jam setelah balasan terakhir, atau ditandai Selesai secara manual dari chat. Ringkasan jumlah per status ada di atas daftar chat dan bisa diklik sebagai filter. Tombol Selesai manual tersedia untuk Supervisor ke atas.",
+   "menu": "wachat",
+   "since": "v1.2.58"
+  },
+  {
+   "key": "serahkan-chat",
+   "title": "Menyerahkan chat ke agent lain",
+   "content": "Supervisor, Admin, dan Super Admin bisa menyerahkan atau memindahkan chat ke agent lain. Buka chat di Percakapan WA, lalu pilih agent pada Transfer ke Agent (di panel kanan pada layar lebar, atau di Alat chat pada HP). Supervisor hanya bisa memindahkan chat ke agent di timnya.",
+   "menu": "wachat",
+   "since": "v1.2.58"
+  },
+  {
+   "key": "jendela-24-jam",
+   "title": "Tidak bisa membalas chat (jendela 24 jam)",
+   "content": "Untuk nomor yang memakai WhatsApp API resmi (Meta), balasan teks bebas hanya boleh dikirim dalam 24 jam sejak pesan terakhir pelanggan. Status jendela 24 jam tampil di atas kolom balasan saat chat dibuka. Bila sudah lewat, tunggu pelanggan mengirim pesan lagi atau kirim template resmi lewat menu Blast WA (Supervisor/Admin). Aturan ini tidak berlaku untuk nomor yang tersambung lewat scan QR.",
+   "menu": "wachat"
+  },
+  {
+   "key": "lampiran-wa",
+   "title": "Mengirim file atau gambar ke pelanggan",
+   "content": "Di kotak balas Percakapan WA, klik tombol lampiran (ikon klip). Bisa mengirim gambar JPG/PNG (maksimal 5 MB), video MP4, audio, atau dokumen PDF/Word/Excel/PowerPoint/TXT/CSV/ZIP (maksimal 16 MB), lengkap dengan keterangan. File yang terkirim tampil di percakapan dan mengikuti masa simpan media.",
+   "menu": "wachat",
+   "since": "v1.2.120"
+  },
+  {
+   "key": "kutip-balas",
+   "title": "Membalas pesan tertentu (kutip)",
+   "content": "Seperti di aplikasi WhatsApp: klik Balas di bawah pesan yang ingin dikutip, tulis balasan atau lampirkan file, lalu kirim. Pelanggan menerima balasan berkutip. Bila pelanggan yang mengutip pesan, kutipannya ikut tampil; klik kutipan untuk melompat ke pesan aslinya. Berlaku untuk pesan sejak fitur ini terpasang.",
+   "menu": "wachat",
+   "since": "v1.2.121"
+  },
+  {
+   "key": "template-balasan",
+   "title": "Template balasan cepat",
+   "content": "Simpan balasan yang sering dipakai lalu gunakan dari kotak balas Percakapan WA: klik tombol Template, atau ketik garis miring diikuti pintasannya, misalnya /harga. Template bisa memakai {nama} untuk nama kontak dan {agen} untuk nama pengirim. Template dikelola Super Admin, Admin, dan Supervisor; semua agent bisa memakainya.",
+   "menu": "wachat",
+   "since": "v1.2.122"
+  },
+  {
+   "key": "jadwal-kirim",
+   "title": "Menjadwalkan pesan WhatsApp",
+   "content": "Di Percakapan WA ada tombol jam di samping tombol Kirim. Tulis pesan (boleh dengan lampiran), klik tombol jam, lalu pilih tanggal dan jam atau pintasan +1 jam, Besok 09:00, Senin 09:00. Pesan terjadwal tampil di percakapan dan bisa diedit, dikirim sekarang, atau dibatalkan. Secara bawaan jadwal batal otomatis bila pelanggan membalas lebih dulu. Agent hanya melihat jadwalnya sendiri; Supervisor dan Admin melihat semuanya.",
+   "menu": "wachat",
+   "since": "v1.2.153"
+  },
+  {
+   "key": "cari-simpan-pesan",
+   "title": "Mencari pesan dan menyimpan pesan",
+   "content": "Kotak cari di atas daftar chat mencari nama, nomor, dan isi pesan di semua chat (minimal 3 huruf). Untuk mencari di dalam satu chat, klik ikon kaca pembesar di kepala chat atau tekan Ctrl+F; hasil disorot dan tombol panah melompat antar-hasil. Setiap pesan punya tombol Simpan; pesan tersimpan terkumpul di ikon Tersimpan di sebelah kotak cari dan bersifat pribadi per akun.",
+   "menu": "wachat",
+   "since": "v1.2.164"
+  },
+  {
+   "key": "filter-chat-wa",
+   "title": "Menyaring daftar chat WhatsApp",
+   "content": "Daftar chat bisa disaring dengan filter status (All, Hari Ini, Perlu Perhatian, Punya Saya, Unclaimed, Punya Agent Lain, Belum Dibalas, Full Bot, Selesai), dropdown Lead Rating (termasuk VIP), dan dropdown Nomor bila akun punya beberapa nomor WhatsApp. Filter bisa digabung, misalnya Hot Prospect yang Belum Dibalas.",
+   "menu": "wachat",
+   "since": "v1.2.117"
+  },
+  {
+   "key": "pindah-nomor",
+   "title": "Memindah chat ke nomor WhatsApp lain",
+   "content": "Untuk akun dengan beberapa nomor WhatsApp: Admin atau Supervisor bisa memindah chat ke nomor lain lewat pilihan pindah nomor bisnis di alat chat (panel kanan pada layar lebar, Alat chat pada HP). Balasan agent dan bot berikutnya dikirim dari nomor itu, dan routing otomatis membagikan chat ke tim nomor tersebut.",
+   "menu": "wachat",
+   "min_tier": "growth",
+   "since": "v1.2.116"
+  },
+  {
+   "key": "riwayat-wa",
+   "title": "Riwayat chat sebelum nomor terhubung",
+   "content": "Untuk nomor yang tersambung lewat scan QR, riwayat chat dari sebelum nomor terhubung ikut tampil di Percakapan WA, seperti saat membuka WhatsApp Web. Dashboard menariknya otomatis di belakang layar setelah nomor di-scan dan mengulanginya dalam 1 jam pertama karena riwayat dari HP bisa datang bertahap. Chat riwayat diberi lencana riwayat dan berstatus Selesai.",
+   "menu": "wachat",
+   "since": "v1.2.105"
+  },
+  {
+   "key": "media-wa",
+   "title": "Gambar, video, dan dokumen WhatsApp di dashboard",
+   "content": "Gambar, video, pesan suara, stiker, dan dokumen yang dikirim lewat WhatsApp tampil langsung di percakapan dashboard, termasuk yang dikirim dari HP. Media disimpan di dashboard 7 hari; bisa diubah menjadi 14 atau 30 hari di Widget & API, kartu WhatsApp Bot. Salinan asli tetap ada di HP.",
+   "menu": "widget",
+   "since": "v1.2.94"
+  },
+  {
+   "key": "chat-grup-wa",
+   "title": "Chat grup WhatsApp",
+   "content": "Pesan di grup WhatsApp bisa ikut masuk Percakapan WA untuk nomor yang tersambung lewat scan QR. Nyalakan Tampilkan Chat Grup di kartu WhatsApp Bot. Chat grup tampil dengan nama grup dan nama pengirim. Bot tidak pernah membalas di grup; agent membalas manual dari dashboard. Grup tidak dihitung sebagai chat yang perlu perhatian dan tidak masuk daftar kontak.",
+   "menu": "widget",
+   "since": "v1.2.170"
+  },
+  {
+   "key": "percakapan-web",
+   "title": "Melihat chat dari website (widget)",
+   "content": "Buka menu Percakapan Web untuk melihat tanya-jawab pengunjung website dengan bot. Satu pengunjung bisa punya beberapa percakapan. Bila Form Data Pengunjung aktif, nama pengunjung menjadi judul percakapan dan Lead Rating-nya bisa diubah dari kepala percakapan.",
+   "menu": "webchat",
+   "since": "v1.2.45"
+  },
+  {
+   "key": "kontak-lead-rating",
+   "title": "Kontak dan Lead Rating",
+   "content": "Buka menu Kontak. Tombol filter menampilkan jumlah kontak per Lead Rating: All, Unrated, Cold, Warm, Hot Prospect, Unqualified, Active Customer, Churned, dan Ulang Tahun VIP Hari Ini. Klik satu kontak untuk mengubah Lead Rating atau melihat detailnya. Lead Rating yang diubah dari Percakapan WA ikut berubah di Kontak.",
+   "menu": "kontak"
+  },
+  {
+   "key": "impor-kontak",
+   "title": "Impor kontak dari Excel atau CSV",
+   "content": "Super Admin dan Admin bisa klik Impor Kontak di menu Kontak. Unggah file Excel (.xls/.xlsx) atau CSV, pilih kolom nomor WA, nama, dan status, lalu petakan tiap nilai status ke Lead Rating. Nomor dirapikan otomatis ke format WhatsApp (misalnya 0812 menjadi 62812) dan nomor ganda digabung.",
+   "menu": "kontak",
+   "since": "v1.2.113"
+  },
+  {
+   "key": "ekspor-kontak",
+   "title": "Ekspor kontak dan simpan nomor ke HP",
+   "content": "Di menu Kontak, pilih filter bila perlu lalu klik Ekspor CSV; hanya kontak sesuai filter yang diunduh (Supervisor ke atas). Untuk menyimpan satu nomor ke HP, klik kontaknya lalu Simpan ke HP; file .vcf terunduh dan bisa dibuka di HP.",
+   "menu": "kontak",
+   "since": "v1.2.70"
+  },
+  {
+   "key": "leads",
+   "title": "Leads (calon pelanggan)",
+   "content": "Menu Leads berisi kartu ringkasan calon pelanggan yang dibuat otomatis oleh AI saat percakapan WhatsApp mencapai 8 pesan. Status lead: Baru, Qualified, Follow-up, Close Deal, dan Close Lose. Tampilan bisa Daftar atau Kanban; di Kanban, seret kartu ke kolom lain untuk mengganti status (di HP pakai dropdown di kartu).",
+   "menu": "leads"
+  },
+  {
+   "key": "blast-wa",
+   "title": "Mengirim pesan massal (Blast WA)",
+   "content": "Blast WA mengirim template resmi yang sudah disetujui Meta ke banyak kontak, jadi hanya bisa dikirim dari nomor yang memakai WhatsApp API resmi (Meta). Buka menu Blast WA, pilih template dan isi variabelnya, pilih penerima (hanya kontak opt-in, dari Kontak atau CSV), lalu kirim. Hasilnya ada di Riwayat Blast. Tersedia untuk Supervisor ke atas. Template selalu berbayar di sisi Meta.",
+   "menu": "blast",
+   "since": "v1.2.47"
+  },
+  {
+   "key": "laporan-ringkasan",
+   "title": "Laporan dan statistik",
+   "content": "Buka menu Laporan & Log, sub-tab Ringkasan (Supervisor ke atas). Atur tanggal dan channel lalu Terapkan Filter; Unduh CSV untuk data mentahnya. Kartu Kontak WhatsApp menampilkan Kontak Baru, Kontak Aktif, Percakapan, dan Kontak Unik untuk hari ini, minggu ini, atau bulan ini. Kartu Total Pesan dan Pesan Hari Ini menghitung jumlah pesan (satu tanya-jawab dihitung satu pesan).",
+   "menu": "reports"
+  },
+  {
+   "key": "log-percakapan",
+   "title": "Log percakapan",
+   "content": "Di Laporan & Log, sub-tab Log Percakapan menampilkan tabel berhalaman dengan filter tanggal, channel, source, medium, campaign, status (Dijawab AI, Menunggu balasan, Balasan agent, Closing, Gagal), dan pencarian teks, nama, atau nomor. Klik baris untuk isi lengkap dan detail UTM. Unduh CSV mengikuti filter yang aktif.",
+   "menu": "reports",
+   "since": "v1.2.66"
+  },
+  {
+   "key": "scan-topik",
+   "title": "Scan Topik percakapan",
+   "content": "Di Laporan & Log, sub-tab Topik: AI membaca percakapan pelanggan dalam periode yang dipilih (7 hari sampai 1 tahun, bisa per channel) lalu mengelompokkannya menjadi topik utama dengan persentase, sentimen, ringkasan, saran tindakan, dan contoh pesan. Scan memakai kuota bulanan sesuai paket (bawaan 10 scan per bulan); sisa kuota tampil di sebelah tombol Scan. Hasil yang sudah tersimpan bisa dibuka lagi tanpa memakai kuota.",
+   "menu": "reports",
+   "since": "v1.2.67"
+  },
+  {
+   "key": "kinerja-layanan",
+   "title": "Laporan Kinerja Layanan",
+   "content": "Di Laporan & Log, tab Kinerja Layanan menampilkan jumlah percakapan belum di-assign, di-assign, dan selesai; Respon Pertama Bot dan Respon Pertama Agent (angka utama adalah waktu balas yang umum, di bawahnya waktu paling lama); waktu antre, waktu respon agent, dan waktu penyelesaian; berapa yang diselesaikan bot dibanding diserahkan ke agent; jam dan hari tersibuk; kinerja per agent dan per nomor; serta daftar percakapan yang bisa diunduh sebagai CSV.",
+   "menu": "reports",
+   "since": "v1.2.101"
+  },
+  {
+   "key": "kuota-pemakaian",
+   "title": "Sisa kuota dan pemakaian bulan ini",
+   "content": "Buka Laporan & Log, sub-tab Ringkasan. Kartu Penggunaan Bulan Ini menunjukkan chat terpakai dibanding kuota paket dan kapan kuota di-reset. Kartu Pesan WA Keluar (Meta) menunjukkan jumlah service message WhatsApp yang sudah dikirim bulan ini dibanding 1.000 service message gratis per nomor dari Meta; template dihitung terpisah karena selalu berbayar.",
+   "menu": "reports"
+  },
+  {
+   "key": "sumber-iklan-wa",
+   "title": "Sumber iklan untuk chat WhatsApp",
+   "content": "Klik tombol atau link WhatsApp di website diberi kode ref singkat, sehingga laporan Source / Medium menampilkan sumber aslinya (misalnya google / cpc), bukan whatsapp / chat. Iklan Click-to-WhatsApp di Facebook/Instagram juga terbaca otomatis. Bisa dimatikan lewat Lacak Sumber Iklan ke WhatsApp di pengaturan widget. Supaya chat dari iklan tercatat dengan nama campaign aslinya, Super Admin menempelkan akses Meta Ads (izin ads_read) di bagian Meta Ads; tanpa itu campaign tercatat sebagai iklan beserta ID atau judul iklannya.",
+   "menu": "widget",
+   "since": "v1.2.175"
+  },
+  {
+   "key": "topik-divisi",
+   "title": "Filter Topik & Divisi chat WhatsApp",
+   "content": "Di menu Topik & Divisi, AI membaca pesan terakhir tiap chat WhatsApp lalu memberi label topik (misalnya tanya harga, cicilan, sparepart) dan divisi. Percakapan WA lalu bisa disaring per divisi dan per topik. Tersedia preset untuk berbagai jenis bisnis, dan label bisa dikoreksi agent dari chat. Klasifikasi berjalan otomatis saat chat diam beberapa menit, tiap beberapa pesan baru, dan saat chat ditandai Selesai. Tombol Scan chat lama melabeli chat 7, 30, 90 hari, atau semuanya, dengan perkiraan jumlah chat dan kuota sebelum mulai. Fitur ini memakai kuota klasifikasi bulanan sesuai paket.",
+   "menu": "topik",
+   "min_tier": "growth",
+   "since": "v1.2.138"
+  },
+  {
+   "key": "customer-feedback",
+   "title": "Customer Feedback (survei kepuasan)",
+   "content": "Menu Customer Feedback mengumpulkan penilaian 1 sampai 5 per aspek plus komentar. Pelanggan mengisi lewat chat WhatsApp (mengetik kata kunci seperti \"customer feedback\", \"feedback\", atau \"survei\", atau scan QR; bot memandu langkah demi langkah tanpa memakai kuota AI) atau lewat form web untuk QR. Aspek penilaian dan label nomor referensi (nomor kamar, meja, pesanan, atau kode booking) bisa diatur, dengan preset untuk Umum, Hotel, Restoran, Bus/travel, Klinik, Toko, dan Jasa. Rating rendah langsung dikirim sebagai notifikasi ke Admin/Supervisor. Dashboard menampilkan rata-rata per aspek dan daftar komentar dengan status tindak lanjut.",
+   "menu": "gc",
+   "min_tier": "growth",
+   "since": "v1.2.109"
+  },
+  {
+   "key": "mode-balasan",
+   "title": "Mode balasan WhatsApp: AI + Agent atau Manual",
+   "content": "Super Admin mengatur siapa yang membalas WhatsApp di menu Tim & Agent: pilih AI + Agent atau Manual lalu Simpan. AI + Agent (bawaan): bot menjawab otomatis dan agent bisa mengambil alih lewat Claim. Manual: AI nonaktif, tidak ada balasan otomatis, semua chat dibalas agent, dan dashboard tetap dipakai untuk antrean dan laporan.",
+   "menu": "tim",
+   "since": "v1.2.58"
+  },
+  {
+   "key": "routing-otomatis",
+   "title": "Routing chat otomatis ke agent",
+   "content": "Di Tim & Agent, bagian Routing Chat Otomatis: chat yang butuh agent dibagikan otomatis dengan cara Beban teringan atau Bergiliran. Bisa dibatasi hanya ke agent yang online, diberi batas maksimal chat per agent, dan nomor WhatsApp cabang bisa diarahkan ke timnya sendiri. Agent punya tombol status Tersedia/Istirahat di sidebar; chat yang menunggu dibagikan begitu ada agent tersedia.",
+   "menu": "tim",
+   "since": "v1.2.100"
+  },
+  {
+   "key": "laporan-per-agent",
+   "title": "Laporan per agent",
+   "content": "Buka menu Tim & Agent, bagian Laporan per Agent. Atur tanggal Dari dan Sampai lalu klik Tampilkan. Laporan menunjukkan chat yang ditangani, jumlah balasan, waktu respon pertama, waktu respon rata-rata, dan chat yang belum dibalas per agent. Supervisor hanya melihat agent di timnya.",
+   "menu": "tim",
+   "since": "v1.2.58"
+  },
+  {
+   "key": "peran-pengguna",
+   "title": "Menambah pengguna dan hak tiap peran",
+   "content": "Buka menu Pengguna, isi username, nama, kata sandi, dan pilih peran, lalu simpan. Jumlah akun dibatasi kursi paket; bila kursi penuh tombol Simpan terkunci. Hak peran: Super Admin dan Admin melihat semua chat dan semua tim; Admin bisa membuat Supervisor dan WA Agent, sedangkan Admin dan Super Admin hanya bisa dibuat Super Admin. Supervisor melihat chat yang belum diklaim, chat miliknya, dan chat agent di timnya, serta mengelola agent timnya. WA Agent membalas chat. Tiap WA Agent bisa ditetapkan Supervisor atasannya, dan bisa dibatasi hanya membalas kontak dengan Lead Rating tertentu (v1.2.119).",
+   "menu": "users"
+  },
+  {
+   "key": "riwayat-login",
+   "title": "Riwayat login",
+   "content": "Setiap percobaan masuk dashboard tercatat, berhasil maupun gagal, dengan waktu, alamat IP, perangkat, dan alasan gagal. Super Admin dan Admin melihatnya di menu Pengguna, bagian Riwayat Login, dengan filter per pengguna, status, dan rentang waktu, serta unduh CSV. Setiap pengguna bisa melihat 10 login terakhir akunnya di Profil Saya.",
+   "menu": "users",
+   "since": "v1.2.112"
+  },
+  {
+   "key": "kb-entri",
+   "title": "Menambah atau mengubah jawaban bot (Knowledge Base)",
+   "content": "Buka menu Knowledge Base (Super Admin dan Admin). Klik + Tambah Entri atau pilih entri di daftar kiri lalu ubah di editor kanan. Klik Simpan Perubahan (atau Ctrl/Cmd+S), lalu coba di Tes Chatbot. Perubahan belum berlaku sebelum disimpan; bila KB sudah diubah dari tab atau perangkat lain, dashboard meminta memuat ulang dulu supaya perubahan itu tidak tertimpa. Kolom cari ada di atas daftar entri, dan entri bisa disaring per kategori.",
+   "menu": "kb"
+  },
+  {
+   "key": "kb-impor",
+   "title": "Impor Knowledge Base dari CSV, PDF, atau URL website",
+   "content": "Di menu Knowledge Base tersedia Impor CSV (format kolom: category, question, answer), Impor PDF, dan Impor URL (tersedia sejak v1.2.132). Pada Impor URL, tempel satu atau beberapa link halaman (maksimal 10 sekali impor); AI menyusun isinya menjadi entri, lalu halaman lain di situs yang sama bisa dicentang untuk ikut diimpor. Entri hasil impor belum tersimpan sampai diperiksa dan diklik Simpan Perubahan. Halaman yang isinya dimuat lewat JavaScript atau dilindungi login mungkin tidak terbaca.",
+   "menu": "kb",
+   "since": "v1.2.62"
+  },
+  {
+   "key": "kb-foto",
+   "title": "Bot WhatsApp mengirim foto dari Knowledge Base",
+   "content": "Entri Knowledge Base bisa diberi foto (maksimal 6 per entri), misalnya foto kamar, menu, katalog, atau QR pembayaran: buka entri, tambah foto di bagian Foto untuk WhatsApp, lalu Simpan. Bot WhatsApp mengirim fotonya saat pelanggan meminta melihat foto. Bila Kirim otomatis tanpa diminta dicentang (tersedia sejak v1.2.178), foto ikut terkirim setiap kali bot menjawab memakai entri itu, sekali per percakapan. Foto hanya dikirim di WhatsApp, tidak di widget website.",
+   "menu": "kb",
+   "since": "v1.2.95"
+  },
+  {
+   "key": "kb-belum-terjawab",
+   "title": "Pertanyaan yang belum bisa dijawab bot",
+   "content": "Di menu Knowledge Base klik Belum Terjawab untuk melihat pertanyaan pelanggan yang belum ada jawabannya di KB, lalu tambahkan jawabannya sebagai entri baru dan simpan.",
+   "menu": "kb"
+  },
+  {
+   "key": "produk-harga",
+   "title": "Mengatur produk dan harga",
+   "content": "Buka Knowledge Base, tab Produk (dulu bernama Daftar Harga). Klik + Tambah Produk, isi nama dan harga, atau klik + Tambah varian untuk beberapa pilihan harga, serta Detail produk (isi, manfaat, spesifikasi), lalu simpan. Bot memakai nama dan harga semua produk; bila katalog besar, detail hanya dipakai untuk produk yang cocok dengan pertanyaan pelanggan.",
+   "menu": "kb",
+   "since": "v1.2.171"
+  },
+  {
+   "key": "unit-bisnis",
+   "title": "Unit Bisnis: satu akun untuk beberapa usaha",
+   "content": "Bila punya lebih dari satu usaha, buka Knowledge Base lalu Unit Bisnis. Tiap unit dipasangkan ke nomor WhatsApp atau widget website, memakai kategori KB miliknya sendiri, dan boleh punya instruksi khusus, sehingga bot di nomor satu usaha tidak menjawab soal usaha lain. Kategori yang tidak dipilih unit mana pun (misalnya Lokasi, Kontak) tetap dipakai semua unit. Produk juga bisa ditandai per unit, dan Tes Chatbot bisa mencoba jawaban per unit. Jumlah unit mengikuti paket.",
+   "menu": "kb",
+   "min_tier": "growth",
+   "since": "v1.2.167"
+  },
+  {
+   "key": "tes-chatbot",
+   "title": "Mencoba jawaban bot",
+   "content": "Buka menu Tes Chatbot (Super Admin dan Admin), ketik pertanyaan seperti pelanggan, lalu Kirim. Gunakan setiap selesai mengubah Knowledge Base, produk, atau gaya bahasa bot.",
+   "menu": "test"
+  },
+  {
+   "key": "sapaan-gaya-bahasa",
+   "title": "Sapaan, gaya bahasa, dan teks balasan bot",
+   "content": "Buka menu Balasan & Tampilan. Konfigurasi Terstruktur mengatur sapaan, bahasa, dan aturan respon. Teks Balasan mengatur pesan pembuka dan balasan bawaan. Simpan setelah mengubah. Bot membalas dalam bahasa yang sama dengan pesan pelanggan untuk bahasa yang diaktifkan.",
+   "menu": "content"
+  },
+  {
+   "key": "tampilan-widget",
+   "title": "Warna dan tampilan widget",
+   "content": "Buka menu Balasan & Tampilan, kartu Tampilan Widget, untuk mengubah warna, posisi, dan tampilan widget di website, lalu simpan. Nama bot juga diatur di menu ini.",
+   "menu": "content"
+  },
+  {
+   "key": "status-widget",
+   "title": "Menyalakan atau mematikan widget dan tombol WhatsApp",
+   "content": "Buka menu Widget & API. Di kartu Status Widget, geser saklar AI Chatbot Bubble untuk bubble chat AI di website, atau WhatsApp Floating Button untuk tombol WhatsApp.",
+   "menu": "widget"
+  },
+  {
+   "key": "form-data-pengunjung",
+   "title": "Form Data Pengunjung (nama dan nomor sebelum chat)",
+   "content": "Buka menu Widget & API dan aktifkan Form Data Pengunjung. Pengunjung website diminta nama dan nomor HP/WA sebelum mulai chat; form bisa dibuat opsional sehingga boleh dilewati. Datanya otomatis masuk ke menu Kontak dan menjadi judul percakapan di Percakapan Web.",
+   "menu": "widget",
+   "since": "v1.2.53"
+  },
+  {
+   "key": "white-label",
+   "title": "White-label widget",
+   "content": "Super Admin membuka menu Widget & API, bagian White-label Widget. Teks status kepala widget bisa diganti (contoh: Online • Tim Reservasi), logo kepala widget bisa memakai logo sendiri (URL gambar persegi minimal 64×64 px), dan tulisan \"Powered by AI\" bisa disembunyikan. Pratinjau tampil di bawah form. Fitur ini hanya aktif untuk paket yang mendukung white-label, dan berlaku untuk widget di website, bukan tampilan dashboard.",
+   "menu": "widget",
+   "since": "v1.2.58"
+  },
+  {
+   "key": "hubungkan-wa-qr",
+   "title": "Menghubungkan nomor WhatsApp dengan scan QR",
+   "content": "Buka menu Widget & API, kartu Koneksi WhatsApp, klik Hubungkan, lalu scan QR dari HP lewat WhatsApp, Perangkat Tertaut. Status sambungan terlihat di kartu yang sama dan nomor bisa diputuskan kapan saja. Balasan yang diketik langsung dari HP ikut tercatat di dashboard dan bot otomatis berhenti di chat itu, sehingga pelanggan tidak menerima balasan ganda.",
+   "menu": "widget",
+   "since": "v1.2.76"
+  },
+  {
+   "key": "wa-api-resmi",
+   "title": "WhatsApp API resmi (Meta) dan Coexistence",
+   "content": "Selain scan QR, nomor bisa dihubungkan lewat WhatsApp API resmi (Meta Cloud API) di menu Widget & API, kartu WhatsApp Bot (Super Admin). Dengan Coexistence, nomor WhatsApp Business yang sudah dipakai di HP dihubungkan tanpa ganti nomor: nomor tetap aktif di aplikasi WhatsApp Business sekaligus dijawab bot, dan bot mundur otomatis saat agen membalas dari HP. Coexistence memerlukan Meta Business portfolio terverifikasi, Meta App dengan produk WhatsApp, dan aplikasi WhatsApp Business versi 2.24.17 atau lebih baru. Akun trial bisa meminta bantuan tim DEI lewat kartu WhatsApp API resmi (Meta).",
+   "menu": "widget"
+  },
+  {
+   "key": "nomor-wa-tambahan",
+   "title": "Beberapa nomor WhatsApp dalam satu akun",
+   "content": "Satu akun bisa memakai beberapa nomor WhatsApp, misalnya per cabang atau divisi. Tambah nomor di Widget & API, kartu Nomor WhatsApp (Admin dan Super Admin); kredensial nomor utama tetap khusus Super Admin. Tiap nomor boleh memakai penyedia sendiri, WhatsApp API resmi (Meta) atau scan QR. Semua chat masuk ke satu dashboard dengan label nomor dan bisa disaring per nomor; balasan bot dan agent selalu keluar dari nomor yang dihubungi pelanggan. Jumlah nomor tambahan mengikuti paket; bila paket diturunkan, nomor yang terakhir ditambahkan terkunci.",
+   "menu": "widget",
+   "min_tier": "growth",
+   "since": "v1.2.98"
+  },
+  {
+   "key": "kesehatan-nomor",
+   "title": "Skor kesehatan nomor WhatsApp",
+   "content": "Untuk nomor yang tersambung lewat scan QR, kartu Nomor WhatsApp menampilkan skor kesehatan 0 sampai 100 per nomor: perkiraan risiko nomor dibatasi atau diblokir WhatsApp, dihitung dari pola pemakaian seperti chat duluan ke nomor yang belum menghubungi, tingkat balasan, volume, teks yang sama ke banyak nomor, gagal kirim, dan sesi putus. Klik skor untuk melihat faktor penyebab, grafik 7 hari, dan saran.",
+   "menu": "widget",
+   "since": "v1.2.104"
+  },
+  {
+   "key": "tolak-telepon",
+   "title": "Menolak telepon WhatsApp otomatis",
+   "content": "Untuk nomor yang tersambung lewat scan QR: telepon suara atau video yang masuk bisa ditolak otomatis per nomor, selalu atau hanya di luar jam operasional, lalu penelepon dikirimi pesan balasan yang bisa diedit. Atur di Widget & API, kartu Nomor WhatsApp, tombol Telepon. Semua telepon masuk tercatat di Percakapan WA dan Log dengan status Telepon masuk.",
+   "menu": "widget",
+   "since": "v1.2.108"
+  },
+  {
+   "key": "wa-terputus",
+   "title": "Nomor WhatsApp terputus",
+   "content": "Bila nomor chatbot terputus (perlu scan QR ulang) atau tidak tersambung lebih dari 10 menit, pemilik akun menerima pemberitahuan lewat WhatsApp dari nomor DEI beserta cara menyambungkan lagi, dengan pengingat sekali sehari selama nomor belum tersambung (maksimal 7 hari). Untuk menyambungkan lagi, buka Widget & API, kartu Koneksi WhatsApp, lalu scan QR ulang. Nomor tujuan pemberitahuan diatur di kartu yang sama (Nomor pemberitahuan bila WA terputus); bila kosong, dipakai nomor pendaftar akun.",
+   "menu": "widget",
+   "since": "v1.2.179"
+  },
+  {
+   "key": "bot-wa-mati",
+   "title": "Mematikan bot WhatsApp tanpa kehilangan chat",
+   "content": "Saat Aktifkan Bot WhatsApp dimatikan, hanya balasan AI otomatis yang berhenti. Pesan WhatsApp yang masuk dan balasan dari HP tetap masuk ke dashboard, dan agent tetap bisa membalas dari dashboard.",
+   "menu": "widget",
+   "since": "v1.2.93"
+  },
+  {
+   "key": "model-ai",
+   "title": "Penyedia dan model AI",
+   "content": "Super Admin mengatur penyedia AI (Anthropic langsung atau OpenRouter) dan modelnya di menu Widget & API, kartu Konfigurasi API AI. Model Cadangan (tersedia sejak v1.2.80) dipakai otomatis bila model utama gagal menjawab.",
+   "menu": "widget"
+  },
+  {
+   "key": "pasang-widget",
+   "title": "Memasang widget di website",
+   "content": "Buka menu Pemasangan (GTM) (Super Admin dan Admin). Ikuti Langkah Pemasangan: salin kode Custom HTML ke Google Tag Manager, atau pakai kode pasang langsung di website.",
+   "menu": "install"
+  },
+  {
+   "key": "auto-closing",
+   "title": "Auto-Closing (pesan penutup otomatis)",
+   "content": "Bila balasan terakhir dari bot dan pelanggan tidak merespons beberapa menit, bot mengirim satu pesan penutup yang sopan. Berlaku untuk WhatsApp dan widget website. Atur di menu Respon & Eskalasi (Super Admin atau Admin): nyalakan Aktifkan Auto-Closing, isi Jeda dalam menit (bawaan 10), Telepon Call Center yang menggantikan {telepon} di teks, teks Bahasa Indonesia dan Inggris, dan jam berlaku (opsional), lalu Simpan. Pesan penutup tidak dikirim bila chat sedang dipegang agent, pelanggan sudah pamit, di luar jam berlaku, atau Mode Manual aktif.",
+   "menu": "eskalasi",
+   "since": "v1.2.57"
+  },
+  {
+   "key": "eskalasi-darurat",
+   "title": "Eskalasi Darurat (alarm chat belum dibalas)",
+   "content": "Bila pesan pelanggan di WhatsApp belum dibalas siapa pun, alarm bertingkat dikirim: Level 1 ke kontak Supervisor (bawaan setelah 5 menit) dan Level 2 ke kontak Manager (bawaan setelah 10 menit). Eskalasi berhenti saat chat dibalas atau saat penerima menekan link Saya tangani. Atur di menu Respon & Eskalasi, bagian Eskalasi Darurat: nyalakan, isi menit tiap level, tambahkan kontak (nomor WA, Pushover, atau ntfy), isi jam berlaku bila perlu, coba dengan Kirim tes alarm, lalu Simpan.",
+   "menu": "eskalasi",
+   "since": "v1.2.57"
+  },
+  {
+   "key": "hemat-pesan",
+   "title": "Hemat pesan WhatsApp",
+   "content": "Karena Meta menagih pesan WhatsApp yang dikirim, bot bisa menggabungkan pesan beruntun dari pelanggan dan menjawabnya sekali, tidak membalas ucapan penutup seperti \"ok makasih\", dan menjawab tuntas dalam satu pesan. Pengaturannya ada di menu Respon & Eskalasi, dan jumlah pesan yang dihemat tampil di kartu Pesan WA Keluar.",
+   "menu": "eskalasi",
+   "since": "v1.2.89"
+  },
+  {
+   "key": "jeda-balasan",
+   "title": "Jeda balasan AI dan status sedang mengetik",
+   "content": "Balasan bot WhatsApp bisa ditahan sesuai panjang teks supaya terasa seperti diketik manusia, dan pelanggan melihat status sedang mengetik. Atur di Respon & Eskalasi, bagian Jeda Balasan AI, misalnya 1 sampai 50 karakter 3 detik, 51 sampai 200 karakter 5 detik, lebih panjang 8 detik.",
+   "menu": "eskalasi",
+   "since": "v1.2.96"
+  },
+  {
+   "key": "batas-balasan-ai",
+   "title": "Batas balasan AI sebelum diserahkan ke agent",
+   "content": "Di Respon & Eskalasi, bagian Batas Balasan AI, atur berapa kali AI boleh membalas dalam satu percakapan WhatsApp. Setelah batas tercapai, percakapan diserahkan ke agent dengan notifikasi, dan pelanggan bisa dikirimi pesan serah terima. Bila 1 jam tidak ada agent membalas, bot kembali menjawab.",
+   "menu": "eskalasi",
+   "since": "v1.2.97"
+  },
+  {
+   "key": "kembali-ke-bot",
+   "title": "Kembali ke bot otomatis",
+   "content": "Di Respon & Eskalasi, kartu Kembali ke Bot Otomatis: claim dilepas bila agent tidak membalas (bawaan 30 menit), dan nomor tanpa claim dikembalikan ke bot (bawaan 1 jam). Keduanya bisa dimatikan atau diubah menitnya. Balasan agent dari dashboard, lampiran, atau HP memperpanjang claim.",
+   "menu": "eskalasi",
+   "since": "v1.2.137"
+  },
+  {
+   "key": "ganti-password",
+   "title": "Mengganti kata sandi dan lupa kata sandi",
+   "content": "Untuk mengganti: buka Profil Saya, isi kata sandi lama, kata sandi baru (minimal 8 karakter dengan huruf besar, huruf kecil, dan angka), dan konfirmasinya, lalu simpan; Anda akan diminta login ulang. Bila lupa (tersedia sejak v1.2.184): klik Lupa password di halaman login, masukkan username atau email, lalu buka tautan yang dikirim ke email akun (berlaku 30 menit, sekali pakai). Isi email pemulihan di Profil Saya, atau minta Admin mengisinya di menu Pengguna. Setelah 3 kali salah, username dikunci 15 menit.",
+   "menu": "profile"
+  },
+  {
+   "key": "notifikasi",
+   "title": "Notifikasi pesan baru",
+   "content": "Klik tombol Notifikasi di bawah menu samping, lalu pilih Izinkan pada pertanyaan browser. Di HP, pasang dashboard ke layar utama (Add to Home Screen) supaya notifikasi lebih andal."
+  },
+  {
+   "key": "tema-warna",
+   "title": "Tema warna dashboard",
+   "content": "Klik tombol Tema di bawah menu samping lalu pilih salah satu dari 8 tema. Pilihan tersimpan di browser masing-masing dan tidak mengubah warna widget chat di website.",
+   "since": "v1.2.169"
+  },
+  {
+   "key": "pembaruan",
+   "title": "Memasang pembaruan dan melihat fitur baru",
+   "content": "Menu Pembaruan (Super Admin dan Admin) menampilkan catatan semua rilis dengan filter Fitur baru, Peningkatan, dan Perbaikan, serta perbandingan versi Anda dengan rilis terbaru. Bila ada versi baru, klik Pasang pembaruan (Super Admin). Setelah memasang, muat ulang halaman dengan Ctrl+Shift+R (Cmd+Shift+R di Mac). Tim DEI juga bisa memasang pembaruan langsung dari pusat.",
+   "menu": "pembaruan",
+   "since": "v1.2.65"
+  },
+  {
+   "key": "pusat-bantuan",
+   "title": "Tur panduan dan Pusat Bantuan",
+   "content": "Tur panduan singkat muncul sekali saat pertama login dan menyorot menu sesuai peran. Tombol Panduan membuka Pusat Bantuan: ketik pertanyaan seperti \"cara lihat kontak leads\", baca langkahnya, lalu klik Tunjukkan di layar untuk diantar ke tempatnya. Tur lengkap bisa diulang lewat Mulai tur lengkap di bagian bawah jendela Pusat Bantuan.",
+   "since": "v1.2.74"
+  },
+  {
+   "key": "bayar-perpanjang",
+   "title": "Bayar dan perpanjang langganan online",
+   "content": "Langganan bisa dibayar sendiri secara online lewat transfer bank/VA, e-wallet, QRIS, atau kartu. Banner masa aktif dan kartu paket di dashboard menampilkan tombol Perpanjang online atau Naik ke Growth. Begitu pembayaran diterima, paket dan masa aktif diperbarui otomatis.",
+   "since": "v1.2.173"
+  },
+  {
+   "key": "trial-dan-paket",
+   "title": "Trial dan beda paket Starter dan Growth",
+   "content": "Selama trial, banner menampilkan sisa hari dan kuota. Trial bisa berjalan dengan fitur paket Starter atau Growth; pada trial Growth, Filter Topik & Divisi, Customer Feedback, nomor WA tambahan, dan Unit Bisnis aktif dengan batasan paket Growth. Beda paket tampil lewat label Growth di menu, tabel perbandingan paket di menu Laporan, dan tombol Lihat beda Starter & Growth pada fitur yang terkunci.",
+   "menu": "reports",
+   "since": "v1.2.172"
+  },
+  {
+   "key": "program-mitra",
+   "title": "Program Mitra / reseller",
+   "content": "DEI Chatbot punya Program Mitra untuk reseller dan pemberi referensi. Untuk informasi pendaftaran mitra, kode mitra, dan komisi, silakan hubungi tim DEI; asisten ini tidak memberikan rincian komisi."
+  },
+  {
+   "key": "dashboard-grup",
+   "title": "Dashboard Grup (beberapa chatbot dalam satu grup usaha)",
+   "content": "Pemilik grup usaha dengan beberapa chatbot bisa memakai Dashboard Grup DEI: laporan gabungan (percakapan, penyelesaian bot, respon pertama, leads, kinerja agent), membuka dashboard tiap tenant tanpa login ulang, dan tab Inbox berisi chat WhatsApp semua tenant grup yang bisa dibaca, dibalas, dan ditandai Selesai. Balasan dikirim dari nomor WA tenant atas nama akun tenant yang dihubungkan, dan aturan peran tenant tetap berlaku. Pusat hanya menarik angka ringkas, bukan isi chat. Untuk mengaktifkannya, hubungi tim DEI.",
+   "since": "v1.2.185"
+  }
+ ]
+}
