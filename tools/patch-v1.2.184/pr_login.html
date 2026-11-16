@@ -1,0 +1,31 @@
+    <button type="submit" id="btn">Masuk</button>
+    <div class="hint"><a href="#" id="fpLink" class="lnk">Lupa password?</a></div>
+    </form>
+    <!-- v1.2.184: lupa-password -->
+    <form id="fpForm" style="display:none" novalidate>
+      <h2 class="fp-h">Lupa password</h2>
+      <p class="fp-p">Masukkan username atau email akun Anda. Kami kirim tautan untuk membuat password baru ke email akun tersebut.</p>
+      <div class="field">
+        <label for="fpQ">Username atau email</label>
+        <input id="fpQ" type="text" autocomplete="username" autocapitalize="none" spellcheck="false">
+      </div>
+      <button type="submit" id="fpBtn">Kirim tautan reset</button>
+      <div class="hint"><a href="#" class="lnk" data-back-login>&larr; Kembali ke halaman masuk</a></div>
+    </form>
+    <form id="rpForm" style="display:none" novalidate>
+      <h2 class="fp-h">Buat password baru</h2>
+      <p class="fp-p" id="rpWhoRow" style="display:none">Akun: <b id="rpWho"></b></p>
+      <div class="field">
+        <label for="rpPw">Password baru</label>
+        <input id="rpPw" type="password" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="rpPw2">Ulangi password baru</label>
+        <input id="rpPw2" type="password" autocomplete="new-password">
+      </div>
+      <label class="fp-chk"><input type="checkbox" id="rpShow"> Tampilkan password</label>
+      <p class="fp-p" style="font-size:12px">Minimal 8 karakter, berisi huruf besar, huruf kecil, dan angka. Setelah disimpan, semua sesi login lama dikeluarkan.</p>
+      <button type="submit" id="rpBtn">Simpan password baru</button>
+      <div class="hint"><a href="#" class="lnk" data-back-login>&larr; Kembali ke halaman masuk</a></div>
+    </form>
+  </div>
