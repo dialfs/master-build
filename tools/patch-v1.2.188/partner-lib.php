@@ -12,6 +12,8 @@
  *   bawaan 1–9 tenant 20%, 10–24 tenant 30%, 25+ tenant 35% (admin-config.json › partner › tiers).
  * Mitra tipe "referral": persentase tetap, hanya untuk pembayaran dalam N bulan sejak pembayaran pertama.
  *
+ * v1.2.191: mitra-skema — skema komisi per mitra: default (tier umum), fixed (persentase tetap), tiers (tier khusus mitra).
+ *   Kolom mitra: scheme, scheme_pct, scheme_tiers, scheme_at, scheme_by. Berlaku untuk pembayaran berikutnya saja.
  * Data: data/partners.json (daftar mitra), data/partner-ledger.json (buku komisi).
  * Butuh signup-lib.php (su*) dan classify-lib.php (isTrialTenant). Fungsi berawalan pt*.
  * v1.2.188: mitra-portal — mitra bisa login di /mitra/ (lihat partner-portal-lib.php): email unik, password tidak pernah dikirim ke panel.
@@ -126,9 +128,28 @@ function ptSave($in) {
     if (!ptCodeValid($code)) { ptUnlock($lk); return [false, 'Kode mitra 4–16 karakter, hanya huruf dan angka.']; }
     if (ptCodeTaken($code, $all, $id)) { ptUnlock($lk); return [false, 'Kode ' . $code . ' sudah dipakai mitra lain.']; }
     if ($email !== '') foreach ($all as $p) if (($p['id'] ?? '') !== $id && strtolower((string)($p['email'] ?? '')) === $email) { ptUnlock($lk); return [false, 'Email ini sudah dipakai mitra lain (email dipakai untuk login portal mitra).']; }   // v1.2.188: mitra-portal
+    // v1.2.191: mitra-skema — skema komisi khusus mitra ini (tidak dikirim = pertahankan yang lama)
+    $old = $idx >= 0 ? $all[$idx] : [];
+    $sch = ['scheme' => (string)($old['scheme'] ?? 'default'), 'scheme_pct' => (int)($old['scheme_pct'] ?? 0), 'scheme_tiers' => (array)($old['scheme_tiers'] ?? [])];
+    if (array_key_exists('scheme', $in)) {
+        $sc = in_array($in['scheme'], ['fixed', 'tiers'], true) ? (string)$in['scheme'] : 'default';
+        if ($sc === 'fixed') {
+            $sp = $in['scheme_pct'] ?? null;
+            if (!is_numeric($sp) || (int)$sp < 0 || (int)$sp > 90) { ptUnlock($lk); return [false, 'Komisi tetap harus angka 0–90%.']; }
+            $sch = ['scheme' => 'fixed', 'scheme_pct' => (int)$sp, 'scheme_tiers' => []];
+        } elseif ($sc === 'tiers') {
+            if ($type === 'referral') { ptUnlock($lk); return [false, 'Tier khusus hanya untuk tipe Reseller. Untuk Referral pakai Persentase tetap.']; }
+            $valid = array_filter((array)($in['scheme_tiers'] ?? []), function ($r) { return is_array($r) && count($r) >= 2 && (int)array_values($r)[0] >= 1; });
+            if (!$valid) { ptUnlock($lk); return [false, 'Isi minimal satu baris tier khusus.']; }
+            $sch = ['scheme' => 'tiers', 'scheme_pct' => 0, 'scheme_tiers' => ptTiersNorm($valid)];
+        } else $sch = ['scheme' => 'default', 'scheme_pct' => 0, 'scheme_tiers' => []];
+    }
+    if ($sch['scheme'] === 'tiers' && $type === 'referral') $sch = ['scheme' => 'default', 'scheme_pct' => 0, 'scheme_tiers' => []];
+    $schChanged = [$sch['scheme'], $sch['scheme_pct'], $sch['scheme_tiers']] != [(string)($old['scheme'] ?? 'default'), (int)($old['scheme_pct'] ?? 0), (array)($old['scheme_tiers'] ?? [])];
     $rec = ['name' => $name, 'code' => $code, 'type' => $type, 'contact' => mb_substr(trim((string)($in['contact'] ?? '')), 0, 80),
             'phone' => $phone, 'email' => $email, 'notes' => mb_substr(trim((string)($in['notes'] ?? '')), 0, 500),
-            'active' => !array_key_exists('active', $in) || !empty($in['active'])];
+            'active' => !array_key_exists('active', $in) || !empty($in['active'])] + $sch;
+    if ($schChanged) { $rec['scheme_at'] = gmdate('Y-m-d H:i:s'); $rec['scheme_by'] = mb_substr((string)($in['_by'] ?? ''), 0, 60); }
     if ($idx >= 0) $all[$idx] = array_merge($all[$idx], $rec, ['updated' => gmdate('Y-m-d H:i:s')]);
     else { $rec = array_merge(['id' => 'm' . bin2hex(random_bytes(5))], $rec, ['created' => gmdate('Y-m-d H:i:s')]); $all[] = $rec; $idx = count($all) - 1; }
     $ok = ptSaveAll($all);
@@ -167,10 +188,14 @@ function ptPctFor($n, $cfg) {
 function ptRate($partner, $tenants, $cfg = null) {
     $cfg = $cfg ?: ptCfg();
     $n = ptCount((string)($partner['id'] ?? ''), $tenants);
-    if (($partner['type'] ?? 'reseller') === 'referral') return ['pct' => (int)$cfg['referral_pct'], 'n' => $n, 'next' => null];
+    $scheme = (string)($partner['scheme'] ?? 'default');   // v1.2.191: mitra-skema
+    if ($scheme === 'fixed') return ['pct' => max(0, min(90, (int)($partner['scheme_pct'] ?? 0))), 'n' => $n, 'next' => null, 'scheme' => 'fixed', 'tiers' => []];
+    if (($partner['type'] ?? 'reseller') === 'referral') return ['pct' => (int)$cfg['referral_pct'], 'n' => $n, 'next' => null, 'scheme' => 'default', 'tiers' => []];
+    $tiers = $cfg['tiers'];
+    if ($scheme === 'tiers' && !empty($partner['scheme_tiers'])) $tiers = ptTiersNorm($partner['scheme_tiers']); else $scheme = 'default';
     $next = null;
-    foreach ($cfg['tiers'] as $r) if ($r[0] > max($n, 1)) { $next = $r; break; }   // 0 tenant sudah di tier pertama
-    return ['pct' => ptPctFor($n, $cfg), 'n' => $n, 'next' => $next];
+    foreach ($tiers as $r) if ($r[0] > max($n, 1)) { $next = $r; break; }   // 0 tenant sudah di tier pertama
+    return ['pct' => ptPctFor($n, ['tiers' => $tiers]), 'n' => $n, 'next' => $next, 'scheme' => $scheme, 'tiers' => $tiers];
 }
 
 /* ---------- buku komisi ---------- */
@@ -303,7 +328,7 @@ function ptSummary($tenants) {
     foreach (ptAll() as $p) {
         $r = ptRate($p, $tenants, $cfg);
         $out[] = array_merge(ptPublic($p), ptTotals((string)$p['id'], $led),
-            ['tenants' => count(ptTenantsOf((string)$p['id'], $tenants)), 'paying' => $r['n'], 'pct' => $r['pct'], 'next' => $r['next'],
+            ['tenants' => count(ptTenantsOf((string)$p['id'], $tenants)), 'paying' => $r['n'], 'pct' => $r['pct'], 'next' => $r['next'], 'scheme' => $r['scheme'], 'tiers_eff' => $r['tiers'],
              'link' => ptSignupBase() . '?ref=' . $p['code']]);
     }
     usort($out, function ($a, $b) { return [$b['paying'], $b['total']] <=> [$a['paying'], $a['total']] ?: strcasecmp((string)$a['name'], (string)$b['name']); });
@@ -323,6 +348,6 @@ function ptDetail($pid, $tenants) {
     $led = array_values(array_filter(ptLedger(), function ($e) use ($pid) { return ($e['partner_id'] ?? '') === $pid; }));
     usort($led, function ($a, $b) { return strcmp((string)($b['date'] ?? '') . ($b['created'] ?? ''), (string)($a['date'] ?? '') . ($a['created'] ?? '')); });
     $r = ptRate($p, $tenants);
-    return ['partner' => array_merge(ptPublic($p), ptTotals($pid, $led), ['paying' => $r['n'], 'pct' => $r['pct'], 'next' => $r['next'], 'link' => ptSignupBase() . '?ref=' . $p['code']]),
+    return ['partner' => array_merge(ptPublic($p), ptTotals($pid, $led), ['paying' => $r['n'], 'pct' => $r['pct'], 'next' => $r['next'], 'scheme' => $r['scheme'], 'tiers_eff' => $r['tiers'], 'link' => ptSignupBase() . '?ref=' . $p['code']]),
             'tenants' => array_map('ptTenantRow', ptTenantsOf($pid, $tenants)), 'ledger' => $led];
 }

@@ -131,8 +131,8 @@ function ptpView(array $m, array $tenants): array {
                 'paid_at' => substr((string)($e['paid_out']['at'] ?? ''), 0, 10), 'paid_note' => (string)($e['paid_out']['note'] ?? '')];
     }, $led);
     return ['partner' => array_merge(['name' => (string)$m['name'], 'code' => (string)$m['code'], 'type' => (string)($m['type'] ?? 'reseller'),
-                'contact' => (string)($m['contact'] ?? ''), 'email' => (string)($m['email'] ?? ''), 'pct' => $r['pct'], 'paying' => $r['n'], 'next' => $r['next'],
+                'contact' => (string)($m['contact'] ?? ''), 'email' => (string)($m['email'] ?? ''), 'pct' => $r['pct'], 'paying' => $r['n'], 'next' => $r['next'], 'scheme' => $r['scheme'],   // v1.2.191: mitra-skema
                 'link' => ptSignupBase() . '?ref=' . $m['code']], ptTotals($pid, $led)),
-            'tiers' => $cfg['tiers'], 'referral_pct' => $cfg['referral_pct'], 'referral_months' => $cfg['referral_months'], 'min_payout' => $cfg['min_payout'],
+            'tiers' => $r['tiers'] ?: $cfg['tiers'], 'referral_pct' => $cfg['referral_pct'], 'referral_months' => $cfg['referral_months'], 'min_payout' => $cfg['min_payout'],
             'trial_days' => (int)(suCfg()['trial_days'] ?? 30), 'month' => ptMonth(), 'tenants' => $tn, 'ledger' => $rows];
 }

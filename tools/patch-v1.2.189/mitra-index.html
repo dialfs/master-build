@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Portal Mitra — DEI Chatbot</title>
-<!-- v1.2.188: mitra-portal --><!-- v1.2.189: mitra-masuk -->
+<!-- v1.2.188: mitra-portal --><!-- v1.2.189: mitra-masuk --><!-- v1.2.191: mitra-skema -->
 <style>
   :root{--brand:#140383;--bg:#f5f6fa;--card:#fff;--line:#e2e5ee;--muted:#5d6479;--ok:#16a34a;--warn:#d97706;--err:#c4302b}
   *{box-sizing:border-box} body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1a1a2e;font-size:14px}
@@ -181,6 +181,7 @@ async function api(action,body){
 /* ---------- tampilan portal ---------- */
 function tierHtml(){
   const p=D.partner;
+  if(p.scheme==='fixed') return `<div>Anda mendapat <b>${p.pct}%</b> dari setiap pembayaran tenant Anda${p.type==='referral'?`, selama <b>${D.referral_months} bulan</b> sejak pembayaran pertama tenant tersebut`:''}. Persentase ini tetap, berapa pun jumlah tenant Anda.</div>`;
   if(p.type==='referral') return `<div>Anda mendapat <b>${p.pct}%</b> dari setiap pembayaran tenant Anda, selama <b>${D.referral_months} bulan</b> sejak pembayaran pertama tenant tersebut.</div>`;
   const T=D.tiers||[], n=p.paying;
   let head='';
@@ -211,7 +212,7 @@ function render(){
   $('#adminBar').classList.toggle('hidden',!av); $('#bPw').classList.toggle('hidden',av); $('#bOut').textContent=av?'Tutup':'Keluar';
   if(av) $('#adminBar').innerHTML='<b>Mode admin</b> — Anda melihat Portal Mitra milik <b>'+esc(p.name)+'</b> ('+esc(p.code)+') persis seperti yang dilihat mitra. Hanya lihat.';
   $('#kPct').textContent=p.pct+'%';
-  $('#kPctS').textContent=p.type==='referral'?'Referral':p.paying+' tenant aktif berbayar';
+  $('#kPctS').textContent=(p.scheme==='fixed'?'Persentase tetap · ':'')+(p.type==='referral'?'Referral':p.paying+' tenant aktif berbayar');
   $('#kMonth').textContent=rp(p.month); $('#kUnpaid').textContent=rp(p.unpaid); $('#kTotal').textContent=rp(p.total);
   $('#kUnpaidS').textContent=D.min_payout?'Dicairkan bulanan, minimal '+rp(D.min_payout):'';
   $('#tierInfo').innerHTML=tierHtml();

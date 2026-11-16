@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Portal Mitra — DEI Chatbot</title>
+<!-- v1.2.188: mitra-portal --><!-- v1.2.189: mitra-masuk --><!-- v1.2.191: mitra-skema -->
+<style>
+  :root{--brand:#140383;--bg:#f5f6fa;--card:#fff;--line:#e2e5ee;--muted:#5d6479;--ok:#16a34a;--warn:#d97706;--err:#c4302b}
+  *{box-sizing:border-box} body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1a1a2e;font-size:14px}
+  button{background:var(--brand);color:#fff;border:none;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:13px;font-family:inherit}
+  button:hover{opacity:.9} button.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)} button:disabled{opacity:.5;cursor:default}
+  input,select{padding:9px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;font-family:inherit;width:100%}
+  label{display:block;font-size:12.5px;margin:12px 0 4px;color:#33384c}
+  .hidden{display:none!important}
+  .auth{max-width:380px;margin:9vh auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px}
+  .auth h1{margin:0 0 4px;font-size:20px;color:var(--brand)} .auth p.sub{margin:0 0 10px;color:var(--muted);font-size:13px}
+  .auth button{width:100%;margin-top:16px;padding:10px} .link{color:var(--brand);cursor:pointer;font-size:13px;text-decoration:underline;background:none;border:none;padding:0;width:auto!important;margin:12px 0 0!important}
+  .msg{font-size:13px;margin-top:10px} .msg.err{color:var(--err)} .msg.ok{color:var(--ok)}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:12px 22px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{margin:0;font-size:17px;color:var(--brand)} .grow{flex:1} .pill{background:#eef0fb;color:var(--brand);padding:4px 10px;border-radius:14px;font-size:12px;font-weight:600}
+  main{max-width:1040px;margin:0 auto;padding:18px 22px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 10px;font-size:15px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px}
+  .kpi .v{font-size:22px;font-weight:700;color:var(--brand)} .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+  .kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:#fafbfd;font-weight:600;color:#4a5068;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+  td.num,th.num{text-align:right;white-space:nowrap} tfoot td{font-weight:700;background:#fafbfd}
+  .scroll{overflow:auto} .scroll table{min-width:600px} .hint{font-size:12px;color:var(--muted)}
+  .badge{padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;display:inline-block;white-space:nowrap}
+  .badge.ok{background:#dcfce7;color:#166534} .badge.off{background:#fee2e2;color:#991b1b} .badge.idle{background:#fef3c7;color:#854d0e}
+  .tiers{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .tier{flex:1;min-width:120px;border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+  .tier.on{border-color:var(--brand);background:#eef0fb} .tier b{font-size:18px;color:var(--brand)} .tier span{display:block;font-size:12px;color:var(--muted)}
+  .prog{height:8px;background:#eceef5;border-radius:5px;overflow:hidden;margin:10px 0 6px} .prog i{display:block;height:100%;background:var(--brand);border-radius:5px}
+  .share{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .share input{flex:1;min-width:220px;font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#f7f8fb}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px} .bar select{width:auto;padding:7px 9px;font-size:13px}
+  .abar{background:#fef3c7;color:#854d0e;border-bottom:1px solid #f1d58a;padding:8px 22px;font-size:13px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1} .toast.err{background:var(--err)}
+  .modal-bg{position:fixed;inset:0;background:rgba(20,3,131,.18);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}
+  .modal-bg.show{display:flex} .modal{background:#fff;border-radius:12px;max-width:380px;width:100%;padding:20px}
+  .modal h3{margin:0 0 6px;font-size:16px} .modal .act{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+  @media(max-width:760px){ .kpis{grid-template-columns:repeat(2,1fr)} main{padding:14px} header{padding:10px 14px} .kpi .v{font-size:19px} }
+</style>
+</head>
+<body>
+
+<!-- login -->
+<div class="auth hidden" id="vLogin">
+  <h1>Portal Mitra</h1>
+  <p class="sub">DEI Chatbot · pantau tenant dan komisi Anda.</p>
+  <form id="fLogin">
+    <label for="lEmail">Email</label><input type="email" id="lEmail" autocomplete="username" required>
+    <label for="lPass">Password</label><input type="password" id="lPass" autocomplete="current-password" required>
+    <button type="submit" id="bLogin">Masuk</button>
+  </form>
+  <div class="msg err" id="mLogin"></div>
+  <button class="link" id="toForgot">Lupa password?</button>
+</div>
+
+<!-- lupa password -->
+<div class="auth hidden" id="vForgot">
+  <h1>Lupa password</h1>
+  <p class="sub">Masukkan email mitra Anda. Kami kirim tautan untuk membuat password baru.</p>
+  <form id="fForgot">
+    <label for="fEmail">Email</label><input type="email" id="fEmail" autocomplete="username" required>
+    <button type="submit" id="bForgot">Kirim tautan</button>
+  </form>
+  <div class="msg" id="mForgot"></div>
+  <button class="link" id="toLogin">&larr; Kembali ke login</button>
+</div>
+
+<!-- buat password (dari tautan) -->
+<div class="auth hidden" id="vReset">
+  <h1>Buat password</h1>
+  <p class="sub" id="rSub">Memeriksa tautan…</p>
+  <form id="fReset" class="hidden">
+    <label for="rPass">Password baru</label><input type="password" id="rPass" autocomplete="new-password" required>
+    <div class="hint" style="margin-top:5px">Minimal 8 karakter, berisi huruf dan angka.</div>
+    <label for="rPass2">Ulangi password</label><input type="password" id="rPass2" autocomplete="new-password" required>
+    <button type="submit" id="bReset">Simpan &amp; masuk</button>
+  </form>
+  <div class="msg err" id="mReset"></div>
+  <button class="link" id="toLogin2">Ke halaman login</button>
+</div>
+
+<!-- portal -->
+<div class="hidden" id="vApp">
+  <div class="abar hidden" id="adminBar"></div>
+  <header>
+    <h1>Portal Mitra</h1>
+    <span class="pill" id="pName">…</span>
+    <div class="grow"></div>
+    <button class="ghost" id="bPw">Ganti password</button>
+    <button class="ghost" id="bOut">Keluar</button>
+  </header>
+  <main>
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="kPct">–</div><div class="l">Komisi Anda</div><div class="s" id="kPctS"></div></div>
+      <div class="kpi"><div class="v" id="kMonth">–</div><div class="l">Komisi bulan ini</div></div>
+      <div class="kpi"><div class="v" id="kUnpaid">–</div><div class="l">Belum dibayar</div><div class="s" id="kUnpaidS"></div></div>
+      <div class="kpi"><div class="v" id="kTotal">–</div><div class="l">Total komisi</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Tier komisi</h2>
+      <div id="tierInfo"></div>
+    </div>
+
+    <div class="card">
+      <h2>Tautan pendaftaran Anda</h2>
+      <div class="share">
+        <input id="sLink" readonly>
+        <button id="bCopy">Salin tautan</button>
+        <button class="ghost" id="bWa">Bagikan lewat WhatsApp</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Calon pelanggan yang mendaftar trial lewat tautan ini, atau mengisi kode <b id="sCode"></b> di formulir pendaftaran, otomatis tercatat sebagai tenant Anda.</div>
+    </div>
+
+    <div class="card">
+      <h2>Tenant Anda <span class="hint" id="tCount"></span></h2>
+      <div class="scroll" id="tList"></div>
+    </div>
+
+    <div class="card">
+      <div class="bar"><h2 style="margin:0">Komisi</h2><select id="lMonth"></select></div>
+      <div class="scroll" id="lList"></div>
+      <div class="hint" style="margin-top:8px">Komisi dihitung dari pembayaran pelanggan yang sudah kami terima, dengan persentase tier Anda pada hari pembayaran.</div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-bg" id="pwBg"><div class="modal">
+  <h3>Ganti password</h3>
+  <label for="pOld">Password lama</label><input type="password" id="pOld" autocomplete="current-password">
+  <label for="pNew">Password baru</label><input type="password" id="pNew" autocomplete="new-password">
+  <div class="hint" style="margin-top:5px">Minimal 8 karakter, berisi huruf dan angka.</div>
+  <div class="msg err" id="mPw"></div>
+  <div class="act"><button class="ghost" id="pCancel">Batal</button><button id="pSave">Simpan</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+const API='../backend/index.php';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const rp=n=>'Rp'+Number(n||0).toLocaleString('id-ID');
+const BLN=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+const tgl=d=>{ const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(+m[3])+' '+BLN[+m[2]-1]+' '+m[1]:'–'; };
+const bln=k=>{ const m=String(k||'').match(/^(\d{4})-(\d{2})/); return m?BLN[+m[2]-1]+' '+m[1]:k; };
+const PAKET={trial:'Trial',starter:'Starter',growth:'Growth',business:'Business',pro:'Pro',custom:'Custom',enterprise:'Enterprise'};
+let token=null, D=null, adminView=false;
+// v1.2.189: mitra-masuk — admin pusat datang lewat /mitra/#as=<token>; sesinya hanya di tab ini (sessionStorage),
+// jadi login mitra di browser yang sama (localStorage) tidak tersentuh.
+(function(){ const a=location.hash.match(/^#as=([a-z0-9.]{40,200})$/); if(!a) return;
+  try{ sessionStorage.setItem('mitra_admin_token',a[1]); }catch(e){} history.replaceState(null,'',location.pathname); })();
+try{ const a=sessionStorage.getItem('mitra_admin_token'); if(a){ token=a; adminView=true; } else token=localStorage.getItem('mitra_token'); }catch(e){}
+function setTok(t){ token=t; const st=adminView?sessionStorage:localStorage, k=adminView?'mitra_admin_token':'mitra_token';
+  try{ t?st.setItem(k,t):st.removeItem(k); }catch(e){} if(!t) adminView=false; }
+function toast(msg,err){ const t=$('#toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); setTimeout(()=>t.className='toast',2600); }
+function show(id){ ['vLogin','vForgot','vReset','vApp'].forEach(v=>$('#'+v).classList.toggle('hidden',v!==id)); }
+async function api(action,body){
+  const h={}; if(token) h['X-Mitra-Token']=token;
+  const conf={method:body?'POST':'GET',headers:h,cache:'no-store'};
+  if(body){ h['Content-Type']='application/json'; conf.body=JSON.stringify(body); }
+  let r;
+  try{ r=await fetch(API+'?action='+action+'&_='+Date.now(),conf); }catch(e){ return {ok:false,error:'Tidak dapat terhubung. Periksa koneksi internet Anda.'}; }
+  const fr=r.headers.get('X-Mitra-Refresh'); if(fr) setTok(fr);
+  let j; try{ j=await r.json(); }catch(e){ j={ok:false,error:'Respons server tidak valid.'}; }
+  if(r.status===401&&token&&action!=='mitra_login'){ setTok(null); show('vLogin'); $('#mLogin').textContent=j.error||''; }
+  return j;
+}
+
+/* ---------- tampilan portal ---------- */
+function tierHtml(){
+  const p=D.partner;
+  if(p.scheme==='fixed') return `<div>Anda mendapat <b>${p.pct}%</b> dari setiap pembayaran tenant Anda${p.type==='referral'?`, selama <b>${D.referral_months} bulan</b> sejak pembayaran pertama tenant tersebut`:''}. Persentase ini tetap, berapa pun jumlah tenant Anda.</div>`;
+  if(p.type==='referral') return `<div>Anda mendapat <b>${p.pct}%</b> dari setiap pembayaran tenant Anda, selama <b>${D.referral_months} bulan</b> sejak pembayaran pertama tenant tersebut.</div>`;
+  const T=D.tiers||[], n=p.paying;
+  let head='';
+  if(p.next){
+    const cur=T.filter(t=>t[0]<=Math.max(n,1)).pop()||T[0], base=cur[0]===1?0:cur[0], done=Math.max(0,Math.min(100,Math.round((n-base)/(p.next[0]-base)*100)));
+    head=`<div><b>${n}</b> tenant aktif berbayar. Butuh <b>${p.next[0]-n}</b> tenant lagi untuk naik ke <b>${p.next[1]}%</b>.</div><div class="prog"><i style="width:${n?Math.max(done,4):0}%"></i></div>`;
+  } else head=`<div><b>${n}</b> tenant aktif berbayar. Anda sudah di tier tertinggi.</div>`;
+  const cards=T.map((t,i)=>{ const hi=T[i+1]?T[i+1][0]-1:0, on=n>=t[0]&&(!hi||n<=hi)||(n===0&&i===0);
+    return `<div class="tier${on?' on':''}"><b>${t[1]}%</b><span>${hi?(hi===t[0]?t[0]:t[0]+'–'+hi):t[0]+'+'} tenant aktif</span></div>`; }).join('');
+  return head+`<div class="tiers">${cards}</div><div class="hint" style="margin-top:8px">Tier dihitung dari jumlah tenant aktif berbayar dan berlaku untuk pembayaran semua tenant Anda.</div>`;
+}
+function renderLedger(){
+  const m=$('#lMonth').value, L=(D.ledger||[]).filter(e=>!m||e.month===m);
+  if(!L.length){ $('#lList').innerHTML='<div class="hint">Belum ada komisi'+(m?' di bulan ini':'')+'. Komisi tercatat saat tenant Anda membayar langganan.</div>'; return; }
+  const ST={unpaid:['belum dibayar','idle'],paid:['dibayar','ok'],void:['dibatalkan','off']};
+  const sum=L.filter(e=>e.status!=='void').reduce((s,e)=>s+e.amount,0);
+  $('#lList').innerHTML='<table><thead><tr><th>Tanggal</th><th>Tenant</th><th class="num">Dibayar pelanggan</th><th class="num">%</th><th class="num">Komisi</th><th>Status</th></tr></thead><tbody>'+L.map(e=>{
+    const s=ST[e.status]||ST.unpaid;
+    return `<tr${e.status==='void'?' style="opacity:.55"':''}><td style="white-space:nowrap">${tgl(e.date)}</td><td><b>${esc(e.tenant)}</b>${e.note?`<br><span class="hint">${esc(e.note)}</span>`:''}</td>
+      <td class="num">${rp(e.base)}</td><td class="num">${e.pct}%</td><td class="num"><b>${rp(e.amount)}</b></td>
+      <td><span class="badge ${s[1]}">${s[0]}</span>${e.status==='paid'&&e.paid_at?`<br><span class="hint">${tgl(e.paid_at)}${e.paid_note?' · '+esc(e.paid_note):''}</span>`:''}</td></tr>`; }).join('')
+    +`</tbody><tfoot><tr><td colspan="4">Total${m?' '+bln(m):''}</td><td class="num">${rp(sum)}</td><td></td></tr></tfoot></table>`;
+}
+function render(){
+  const p=D.partner;
+  $('#pName').textContent=p.name;
+  const av=!!D.admin_view;
+  $('#adminBar').classList.toggle('hidden',!av); $('#bPw').classList.toggle('hidden',av); $('#bOut').textContent=av?'Tutup':'Keluar';
+  if(av) $('#adminBar').innerHTML='<b>Mode admin</b> — Anda melihat Portal Mitra milik <b>'+esc(p.name)+'</b> ('+esc(p.code)+') persis seperti yang dilihat mitra. Hanya lihat.';
+  $('#kPct').textContent=p.pct+'%';
+  $('#kPctS').textContent=(p.scheme==='fixed'?'Persentase tetap · ':'')+(p.type==='referral'?'Referral':p.paying+' tenant aktif berbayar');
+  $('#kMonth').textContent=rp(p.month); $('#kUnpaid').textContent=rp(p.unpaid); $('#kTotal').textContent=rp(p.total);
+  $('#kUnpaidS').textContent=D.min_payout?'Dicairkan bulanan, minimal '+rp(D.min_payout):'';
+  $('#tierInfo').innerHTML=tierHtml();
+  $('#sLink').value=p.link; $('#sCode').textContent=p.code;
+  const T=D.tenants||[];
+  $('#tCount').textContent=T.length?'('+T.length+')':'';
+  $('#tList').innerHTML=T.length?'<table><thead><tr><th>Tenant</th><th>Paket</th><th>Status</th><th>Aktif s/d</th><th>Terdaftar</th></tr></thead><tbody>'+T.map(t=>{
+    const st=t.status==='paying'?'<span class="badge ok">aktif berbayar</span>':(t.status==='trial'?`<span class="badge idle">trial${t.trial_days?' · '+t.trial_days+' hari lagi':''}</span>`:'<span class="badge off">tidak aktif</span>');
+    return `<tr><td><b>${esc(t.name)}</b></td><td>${esc(PAKET[t.tier]||t.tier||'–')}</td><td>${st}</td><td>${t.expires_at?tgl(t.expires_at):'–'}</td><td>${tgl(t.since)}</td></tr>`; }).join('')+'</tbody></table>'
+    :'<div class="hint">Belum ada tenant. Bagikan tautan pendaftaran Anda di atas.</div>';
+  const months=[...new Set((D.ledger||[]).map(e=>e.month))].sort().reverse(), sel=$('#lMonth'), keep=sel.value;
+  sel.innerHTML='<option value="">Semua bulan</option>'+months.map(m=>`<option value="${esc(m)}">${esc(bln(m))}</option>`).join('');
+  if(months.includes(keep)) sel.value=keep;
+  renderLedger();
+}
+async function load(){
+  const r=await api('mitra_me');
+  if(!r.ok){ if(token) toast(r.error||'Gagal memuat.',true); return; }
+  D=r; render(); show('vApp');
+}
+
+/* ---------- aksi ---------- */
+$('#lMonth').onchange=renderLedger;
+$('#bCopy').onclick=()=>{ const v=$('#sLink').value; (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('Tautan disalin.'),()=>{ $('#sLink').select(); try{ document.execCommand('copy'); toast('Tautan disalin.'); }catch(e){ toast('Salin tautan secara manual.',true); } }); };
+$('#bWa').onclick=()=>{ window.open('https://wa.me/?text='+encodeURIComponent('Coba chatbot AI untuk WhatsApp bisnis Anda, gratis '+(D.trial_days||30)+' hari: '+$('#sLink').value),'_blank','noopener'); };
+$('#bOut').onclick=()=>{ const av=adminView; setTok(null); D=null; if(av){ window.close(); } show('vLogin'); };
+$('#bPw').onclick=()=>{ $('#pOld').value=''; $('#pNew').value=''; $('#mPw').textContent=''; $('#pwBg').classList.add('show'); };
+$('#pCancel').onclick=()=>$('#pwBg').classList.remove('show');
+$('#pSave').onclick=async()=>{
+  const b=$('#pSave'); b.disabled=true;
+  const r=await api('mitra_password',{old:$('#pOld').value,new:$('#pNew').value}); b.disabled=false;
+  if(!r.ok){ $('#mPw').textContent=r.error||'Gagal.'; return; }
+  setTok(r.token); $('#pwBg').classList.remove('show'); toast('Password diganti.');
+};
+$('#fLogin').onsubmit=async e=>{
+  e.preventDefault(); const b=$('#bLogin'); b.disabled=true; $('#mLogin').textContent='';
+  const r=await api('mitra_login',{email:$('#lEmail').value,password:$('#lPass').value}); b.disabled=false;
+  if(!r.ok){ $('#mLogin').textContent=r.error||'Gagal masuk.'; return; }
+  setTok(r.token); $('#lPass').value=''; load();
+};
+$('#toForgot').onclick=()=>{ $('#fEmail').value=$('#lEmail').value; $('#mForgot').textContent=''; show('vForgot'); };
+$('#toLogin').onclick=$('#toLogin2').onclick=()=>{ history.replaceState(null,'',location.pathname); show('vLogin'); };
+$('#fForgot').onsubmit=async e=>{
+  e.preventDefault(); const b=$('#bForgot'); b.disabled=true;
+  const r=await api('mitra_forgot',{email:$('#fEmail').value}); b.disabled=false;
+  const m=$('#mForgot'); m.className='msg '+(r.ok?'ok':'err'); m.textContent=r.ok?r.message:(r.error||'Gagal.');
+};
+let resetTok='';
+$('#fReset').onsubmit=async e=>{
+  e.preventDefault(); const m=$('#mReset'); m.textContent='';
+  if($('#rPass').value!==$('#rPass2').value){ m.textContent='Kedua password tidak sama.'; return; }
+  const b=$('#bReset'); b.disabled=true;
+  const r=await api('mitra_reset',{token:resetTok,password:$('#rPass').value}); b.disabled=false;
+  if(!r.ok){ m.textContent=r.error||'Gagal.'; return; }
+  history.replaceState(null,'',location.pathname); setTok(r.token); load();
+};
+
+/* ---------- mulai ---------- */
+(async function(){
+  const m=location.hash.match(/^#reset=([a-f0-9]{48})$/);
+  if(m){
+    resetTok=m[1]; setTok(null); show('vReset');
+    const r=await api('mitra_reset_check',{token:resetTok});
+    if(!r.ok){ $('#rSub').textContent=''; $('#mReset').textContent=r.error||'Tautan tidak berlaku.'; return; }
+    $('#rSub').textContent='Untuk akun mitra '+r.name+' ('+r.email+').'; $('#fReset').classList.remove('hidden');
+    return;
+  }
+  if(token){ await load(); if(!D) show('vLogin'); } else show('vLogin');
+})();
+})();
+</script>
+</body>
+</html>
