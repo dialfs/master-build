@@ -1,3 +1,34 @@
 Tue Nov 17 11:06:50 WIB 2026
 == 1/3 Commit, push, deploy ==
 No syntax errors detected in /Users/dias/Herd/dei-pusat/backend/support-provision.php
+master-build commit OK
+dei-pusat commit OK
+From github.com:dialfs/master-build
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+master-build OK 485338e
+From github.com:dialfs/dei-pusat
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+dei-pusat OK 45dc6c2
+Total bytes received: 262
+
+sent 20.93K bytes  received 262 bytes  1.03K bytes/sec
+total size is 63.03M  speedup is 2,974.10
+Permission OK.
+Selesai. Cek: https://chat.deintegra.com/releases/ + panel admin.
+
+== 2/3 Pasang tenant di server ==
+Tenant dei-support dipasang di /home/u1545168/public_html/chatbot.deintegra.com/support (versi v1.2.194), paket Pro.
+Asisten Support: tenant=dei-support alamat=https://chatbot.deintegra.com/support tombol Bantuan=mati
+Cek https://chatbot.deintegra.com/support/api/index.php?action=bootstrap: HTTP 200 OK (bot: Asisten Bantuan DEI)
+Berikutnya: cron pusat mengirim penanda tenant Support dalam <= 1 menit, lalu tenant menarik umpan KB (71 entri).
+Masuk ke dashboard tenant: Admin Pusat > Daftar Tenant > DEI Support > Masuk.
+
+== 3/3 Cek dari luar ==
+dashboard login HTTP 200  <- harus 200
+bootstrap: {"ok":true,"config":{"chatbot_enabled":true,"whatsapp_enabled":false,"whatsapp_number":"","whatsapp_message":"Halo tim DEI, saya butuh bantuan DEI Chatbot.","wa
+
+Berikutnya: tunggu 2-10 menit, lalu Admin Pusat > Pengaturan > Asisten Support harus menunjukkan 'Terakhir ditarik'.
+SELESAI Tue Nov 17 11:07:33 WIB 2026
+Tekan Enter untuk menutup...

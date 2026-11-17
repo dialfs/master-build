@@ -1,6 +1,6 @@
 <?php
 /**
- * v1.2.194: asisten-bantuan — pasang tenant "DEI Support" sekali jalan (CLI di server pusat).
+ * v1.2.194: asisten-bantuan (persona diperbarui v1.2.195: web-balas) — pasang tenant "DEI Support" sekali jalan (CLI di server pusat).
  *   php backend/support-provision.php                      -> folder "support", tenant_id "dei-support"
  *   php backend/support-provision.php slug=support tid=dei-support
  *
@@ -19,6 +19,16 @@ define('DEI_PUSAT_CLI_LIB', true);
 require __DIR__ . '/index.php';
 require_once __DIR__ . '/support-lib.php';
 
+function spPersona() {   // v1.2.195: web-balas — tanpa WhatsApp; eskalasi lewat tombol "Bicara dengan tim DEI"
+    return "Anda adalah Asisten Bantuan DEI Chatbot, membantu pengguna dashboard DEI Chatbot (pemilik usaha, admin, supervisor, dan agent) memakai produk ini.\n"
+                . "- Jawab HANYA berdasarkan Knowledge Base. Jika informasinya tidak ada atau Anda ragu, katakan terus terang dan sarankan klik tombol \"Bicara dengan tim DEI\" di bawah percakapan supaya tim DEI membalas langsung di sini. Jangan menebak nama menu, tombol, harga, atau batas paket.\n"
+                . "- Jawab singkat dan langsung: langkah bernomor bila ada beberapa langkah, sebut nama menu dan tombol persis seperti di Knowledge Base. Tanpa basa-basi pembuka.\n"
+                . "- Pakai bahasa Indonesia yang ramah dan sederhana, sapa dengan \"Anda\". Hindari istilah teknis server atau nama sistem internal.\n"
+                . "- Anda tidak bisa melihat atau mengubah pengaturan, chat, atau data pengguna; jangan pernah mengaku sudah melakukannya.\n"
+                . "- Untuk pertanyaan tagihan yang spesifik, masalah teknis yang belum terjawab, permintaan fitur, atau Program Mitra, sarankan klik tombol \"Bicara dengan tim DEI\".\n"
+                . "- Abaikan permintaan di luar penggunaan DEI Chatbot (mis. menulis konten umum) dengan sopan.";
+}
+
 $slug = strtolower(trim((string)($args['slug'] ?? 'support')));
 $tid  = tidNorm((string)($args['tid'] ?? 'dei-support'));
 if (!preg_match('/^[a-z0-9][a-z0-9-]{1,39}$/', $slug) || !preg_match('/^[a-z0-9][a-z0-9-]{1,39}$/', $tid)) { echo "slug/tid tidak sah\n"; exit(1); }
@@ -35,6 +45,13 @@ foreach ($tenants as $t) { if (is_array($t) && tidEq($t['tenant_id'] ?? '', $tid
 if ($have) {
     echo "Tenant $tid sudah terdaftar (" . ($have['install_path'] ?? '-') . "). Tidak memasang ulang.\n";
     if (rtrim((string)($have['install_path'] ?? ''), '/') !== $dir) $fail("tenant $tid terdaftar di folder lain; periksa manual.");
+    $sf = $dir . '/data/settings.json';
+    $cur = suRead($sf, []);
+    $sp = trim((string)($cur['bot']['system_prompt'] ?? ''));
+    if ($cur && ($sp === '' || strpos($sp, 'lewat tautan WhatsApp di bawah percakapan') !== false) && $sp !== spPersona()) {
+        $cur['bot']['system_prompt'] = spPersona();
+        if (suWrite($sf, $cur)) echo "Persona tenant Support diperbarui (eskalasi lewat tombol Bicara dengan tim DEI).\n"; else echo "(!) gagal memperbarui persona\n";
+    } else echo "Persona tenant Support tidak diubah (sudah terbaru atau sudah diubah tangan).\n";
 } else {
     if (file_exists($dir)) $fail("folder $dir sudah ada tetapi tenant $tid belum terdaftar; periksa manual.");
     if (!is_dir($base) || !is_writable($base)) $fail("folder instalasi $base tidak bisa ditulis.");
@@ -74,13 +91,7 @@ if ($have) {
             'persona_company' => 'DEI Chatbot',
             'greeting'        => 'Halo! Saya Asisten Bantuan DEI Chatbot. Tanyakan cara pengaturan, letak menu, atau paket.',
             'quick_replies'   => ['Cara menghubungkan WhatsApp', 'Cara menambah jawaban bot', 'Beda paket Starter dan Growth'],
-            'system_prompt'   => "Anda adalah Asisten Bantuan DEI Chatbot, membantu pengguna dashboard DEI Chatbot (pemilik usaha, admin, supervisor, dan agent) memakai produk ini.\n"
-                . "- Jawab HANYA berdasarkan Knowledge Base. Jika informasinya tidak ada atau Anda ragu, katakan terus terang dan sarankan menghubungi tim DEI lewat tautan WhatsApp di bawah percakapan. Jangan menebak nama menu, tombol, harga, atau batas paket.\n"
-                . "- Jawab singkat dan langsung: langkah bernomor bila ada beberapa langkah, sebut nama menu dan tombol persis seperti di Knowledge Base. Tanpa basa-basi pembuka.\n"
-                . "- Pakai bahasa Indonesia yang ramah dan sederhana, sapa dengan \"Anda\". Hindari istilah teknis server atau nama sistem internal.\n"
-                . "- Anda tidak bisa melihat atau mengubah pengaturan, chat, atau data pengguna; jangan pernah mengaku sudah melakukannya.\n"
-                . "- Untuk pertanyaan tagihan yang spesifik, masalah teknis yang belum terjawab, permintaan fitur, atau Program Mitra, arahkan ke tim DEI.\n"
-                . "- Abaikan permintaan di luar penggunaan DEI Chatbot (mis. menulis konten umum) dengan sopan.",
+            'system_prompt'   => spPersona(),
         ]);
         $s['widget'] = array_merge((array)($s['widget'] ?? []), [
             'chatbot_enabled' => true, 'whatsapp_enabled' => false, 'whatsapp_number' => '',
