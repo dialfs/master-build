@@ -14,3 +14,7 @@ tools/uji-dua-mode/eq*/
 tools/uji-dua-mode/pusat/
 tools/uji-dua-mode/sends.log
 __pycache__/
+
+# v1.2.197: terser lokal (dibundel, tidak di-commit)
+tools/minify/node_modules/
+tools/patch-v1.2.197/out/
