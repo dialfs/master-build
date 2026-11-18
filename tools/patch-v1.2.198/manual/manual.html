@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<title>Cara Memasang Dashboard DEI Chatbot di HP</title>
+<style>
+@page{size:A4;margin:0}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"DejaVu Sans",sans-serif;color:#1d1b33;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.page{width:210mm;height:297mm;padding:16mm 15mm 14mm;position:relative;page-break-after:always;overflow:hidden}
+.page:last-child{page-break-after:auto}
+.foot{position:absolute;left:15mm;right:15mm;bottom:8mm;display:flex;justify-content:space-between;font-size:8.5pt;color:#8a88a3;border-top:1px solid #e7e6f0;padding-top:2.5mm}
+h1{font-size:25pt;line-height:1.15;margin:0 0 4mm;letter-spacing:-.01em}
+h2{font-size:17pt;margin:0 0 1.5mm;display:flex;align-items:center;gap:3mm}
+.lead{font-size:11pt;color:#4b4966;margin:0 0 6mm;line-height:1.5}
+.tag{display:inline-block;font-size:8.5pt;font-weight:700;padding:1mm 3mm;border-radius:20px;background:#f59e0b;color:#fff;letter-spacing:.02em}
+.os{font-size:9pt;font-weight:700;padding:1mm 3mm;border-radius:6px;color:#fff}
+.os.and{background:#16a34a}.os.ios{background:#1d1b33}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:5mm 8mm}
+.step{display:flex;flex-direction:column;align-items:center}
+.st{display:flex;gap:2.5mm;align-items:flex-start;width:100%;margin-bottom:3mm;min-height:13mm}
+.n{flex:0 0 7.5mm;height:7.5mm;border-radius:50%;background:#140383;color:#fff;font-weight:700;font-size:11pt;display:flex;align-items:center;justify-content:center}
+.st p{margin:0;font-size:10pt;line-height:1.45}
+.st b{color:#140383}
+/* bingkai HP */
+.phone{width:210px;border-radius:30px;background:#111;padding:8px;box-shadow:0 6px 18px rgba(20,3,131,.15)}
+.scr{position:relative;border-radius:23px;overflow:hidden;background:#fff}
+.sb{height:16px;background:#fff;font-size:7.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;padding:0 14px}
+.view{position:relative;width:194px;height:290px;overflow:hidden}
+.view>img{position:absolute;left:0;top:0;display:block;width:100%}
+.view>img.bot{top:auto;bottom:0}
+.dim::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.42)}
+/* bilah Chrome Android */
+.cbar{height:36px;background:#fff;border-bottom:1px solid #e5e5e5;display:flex;align-items:center;gap:6px;padding:0 6px 0 8px;position:relative}
+.url{flex:1;height:24px;border-radius:12px;background:#f1f3f4;font-size:8.5px;color:#444;display:flex;align-items:center;padding:0 9px;gap:5px;white-space:nowrap;overflow:hidden}
+.ibtn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;position:relative}
+/* bilah Safari bawah */
+.sbar{background:#f7f7f8;border-top:1px solid #ddd;padding:5px 8px 6px;position:relative}
+.surl{height:24px;border-radius:9px;background:#e9e9ec;font-size:8.5px;color:#333;display:flex;align-items:center;justify-content:center;margin-bottom:5px}
+.stool{display:flex;justify-content:space-around;align-items:center;height:18px}
+/* sorotan */
+.hl{position:absolute;border:3px solid #f59e0b;border-radius:10px;box-shadow:0 0 0 3px rgba(245,158,11,.25);z-index:5}
+.hl.r{border-radius:50%}
+.pin{position:absolute;z-index:6;width:20px;height:20px;border-radius:50%;background:#f59e0b;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+/* menu Chrome */
+.cmenu{position:absolute;top:4px;right:4px;width:146px;background:#fff;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.28);z-index:4;padding:4px 0;font-size:8.6px}
+.cmenu .ic{display:flex;justify-content:space-around;padding:4px 6px 6px;border-bottom:1px solid #eee;margin-bottom:2px;color:#555}
+.cmenu div.it{padding:5.5px 12px;color:#222}
+.cmenu div.it.on{background:#fff4dc;font-weight:700;position:relative}
+/* dialog instal */
+.dlg{position:absolute;left:12px;right:12px;top:140px;background:#fff;border-radius:16px;padding:14px;z-index:4;font-size:9px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.dlg h4{margin:0 0 9px;font-size:11.5px}
+.dlg .ap{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.dlg .ap img{width:30px;height:30px;border-radius:7px}
+.dlg .bt{display:flex;justify-content:flex-end;gap:16px;font-weight:700;color:#1a56db;font-size:10px;position:relative}
+/* lembar Bagikan iOS */
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#f2f2f6;border-radius:14px 14px 0 0;z-index:4;padding:10px 10px 14px;font-size:9px}
+.sheet .hd{display:flex;gap:8px;align-items:center;background:#fff;border-radius:10px;padding:7px;margin-bottom:8px}
+.sheet .hd img{width:26px;height:26px;border-radius:6px}
+.sheet .apps{display:flex;gap:10px;padding:2px 4px 9px}
+.sheet .apps span{width:34px;height:34px;border-radius:9px;display:block}
+.sheet .grp{background:#fff;border-radius:10px;overflow:hidden;margin-bottom:7px}
+.sheet .row{display:flex;justify-content:space-between;align-items:center;padding:7.5px 10px;border-bottom:1px solid #ececf0}
+.sheet .row:last-child{border-bottom:none}
+.sheet .row.on{background:#fff4dc;font-weight:700}
+/* layar Tambah iOS */
+.add{position:absolute;inset:0;background:#f2f2f6;z-index:4;font-size:9.5px}
+.add .top{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f7f7f8;border-bottom:1px solid #ddd;font-size:9.5px;position:relative}
+.add .top b{font-size:10px}
+.add .card{margin:14px 12px;background:#fff;border-radius:11px;padding:11px;display:flex;gap:10px;align-items:center}
+.add .card>div{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.add .card img{width:44px;height:44px;border-radius:10px}
+.add .card .nm{border-bottom:1px solid #e5e5ea;padding-bottom:5px;margin-bottom:5px;font-size:11px}
+.add .card small{color:#8e8e93}
+.add p{margin:0 14px;color:#6c6c70;font-size:8.5px;line-height:1.4}
+/* layar utama */
+.home{position:relative;width:194px;height:322px;background:linear-gradient(160deg,#4f46e5,#7c3aed 45%,#db2777);padding:22px 10px}
+.home .apps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 6px}
+.home .a{display:flex;flex-direction:column;align-items:center;gap:4px;color:#fff;font-size:7.5px}
+.home .a span{width:34px;height:34px;border-radius:11px;background:rgba(255,255,255,.28);display:block}
+.home .a img{width:34px;height:34px;border-radius:11px;display:block}
+.home .dock{position:absolute;left:10px;right:10px;bottom:12px;height:58px;border-radius:20px;background:rgba(255,255,255,.25);display:flex;justify-content:space-around;align-items:center}
+.home .dock span{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.4);display:block}
+.note{font-size:8.5pt;color:#6f6d88;margin-top:5mm;line-height:1.45}
+/* sampul */
+.cover-top{background:#140383;color:#fff;margin:-16mm -15mm 10mm;padding:20mm 15mm 14mm;position:relative}
+.cover-top img{width:20mm;height:20mm;border-radius:5mm;margin-bottom:7mm;display:block}
+.cover-top h1{color:#fff;font-size:28pt}
+.cover-top p{margin:0;font-size:12pt;color:#d6d3ff;line-height:1.5}
+.why{display:grid;grid-template-columns:repeat(3,1fr);gap:5mm;margin-bottom:9mm}
+.why div{border:1px solid #e7e6f0;border-radius:4mm;padding:5mm;font-size:9.5pt;line-height:1.45;color:#4b4966}
+.why b{display:block;font-size:11pt;color:#1d1b33;margin-bottom:1.5mm}
+.toc{border-radius:4mm;background:#f6f5fc;padding:6mm 7mm}
+.toc h3{margin:0 0 3mm;font-size:12pt}
+.toc ol{margin:0;padding-left:5mm;font-size:10.5pt;line-height:1.9}
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:5mm;margin-top:8mm}
+.quick div{border-radius:4mm;padding:5mm 6mm;font-size:10pt;line-height:1.55}
+.quick .q1{background:#ecfdf3;border:1px solid #bbf7d0}.quick .q2{background:#f4f4f6;border:1px solid #e1e1e6}
+.quick h4{margin:0 0 2mm;font-size:11pt}
+.faq{margin-top:2mm}
+.faq .q{border:1px solid #e7e6f0;border-radius:3.5mm;padding:4mm 5mm;margin-bottom:3.5mm;break-inside:avoid}
+.faq .q>b{display:block;font-size:10.5pt;margin-bottom:1.2mm}
+.faq .q span{font-size:9.6pt;line-height:1.5;color:#4b4966}
+.box{background:#fffaf0;border:1px solid #f5c451;border-radius:4mm;padding:5mm 6mm;font-size:10pt;line-height:1.55;margin-top:5mm}
+</style></head><body>
+
+<!-- ======================= HALAMAN 1: SAMPUL ======================= -->
+<section class="page">
+  <div class="cover-top">
+    <img src="icon-192.png" alt="">
+    <span class="tag">SERING DITANYAKAN</span>
+    <h1 style="margin-top:4mm">Cara Memasang Dashboard<br>DEI Chatbot di HP</h1>
+    <p>Jadikan dashboard sebuah ikon di layar utama HP, seperti aplikasi biasa.<br>Untuk Android (Chrome) dan iPhone (Safari).</p>
+  </div>
+  <div class="why">
+    <div><b>Sekali ketuk</b>Tidak perlu mengetik alamat dan mencari tab browser setiap kali mau membalas chat.</div>
+    <div><b>Layar penuh</b>Dashboard terbuka di jendela sendiri tanpa bilah alamat, jadi ruang chat lebih lega.</div>
+    <div><b>Notifikasi lebih andal</b>Pesan baru tetap diberitahukan. Di iPhone, notifikasi <u>hanya</u> bisa aktif bila dashboard dibuka dari ikon.</div>
+  </div>
+  <div class="toc">
+    <h3>Isi panduan</h3>
+    <ol>
+      <li>Android dengan Google Chrome — halaman 2</li>
+      <li>iPhone dengan Safari — halaman 3</li>
+      <li>Setelah ikon terpasang: buka dari ikon dan aktifkan notifikasi — halaman 4</li>
+      <li>Masalah yang sering ditemui — halaman 5</li>
+    </ol>
+  </div>
+  <div class="quick">
+    <div class="q1"><h4><span class="os and">ANDROID</span>&nbsp; Ringkas</h4>Chrome &rsaquo; buka dashboard &amp; login &rsaquo; menu <b>&#8942;</b> &rsaquo; <b>Tambahkan ke layar utama</b> / <b>Instal aplikasi</b> &rsaquo; <b>Instal</b></div>
+    <div class="q2"><h4><span class="os ios">iPHONE</span>&nbsp; Ringkas</h4>Safari &rsaquo; buka dashboard &amp; login &rsaquo; <b>Bagikan</b> &rsaquo; <b>Tambah ke Layar Utama</b> &rsaquo; <b>Tambah</b></div>
+  </div>
+  <p class="note">Gambar menu browser di panduan ini adalah ilustrasi. Nama dan letak tombol bisa sedikit berbeda menurut merek HP, versi sistem, dan bahasa yang dipakai. Tampilan dashboard diambil dari dashboard DEI Chatbot.</p>
+  <div class="foot"><span>DEI Chatbot · PT Daya Estima Integra</span><span>1</span></div>
+</section>
+
+<!-- ======================= HALAMAN 2: ANDROID ======================= -->
+<section class="page">
+  <h2><span class="os and">ANDROID</span> Memasang dengan Google Chrome</h2>
+  <p class="lead">Pakai aplikasi <b>Chrome</b>. Jangan membuka tautan dari dalam WhatsApp atau Instagram, karena browser bawaan aplikasi itu tidak punya menu pasang.</p>
+  <div class="grid">
+    <div class="step">
+      <div class="st"><div class="n">1</div><p>Buka <b>Chrome</b>, ketik alamat dashboard tenant Anda, lalu <b>login</b> seperti biasa.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="cbar"><div class="url">&#128274; chatbot.namausaha.com/dashboard…</div><div class="ibtn">&#8942;</div>
+          <div class="hl" style="left:4px;top:4px;width:150px;height:28px"></div><div class="pin" style="left:146px;top:-6px">1</div></div>
+        <div class="view"><img src="android-login.png"></div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">2</div><p>Setelah masuk dashboard, ketuk menu <b>&#8942;</b> (tiga titik) di <b>kanan atas</b>.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="cbar"><div class="url">&#128274; chatbot.namausaha.com/dashboard…</div><div class="ibtn" style="font-size:15px;font-weight:700">&#8942;</div>
+          <div class="hl r" style="right:2px;top:4px;width:28px;height:28px"></div><div class="pin" style="right:28px;top:22px">2</div></div>
+        <div class="view"><img src="android-dash.png"></div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">3</div><p>Pilih <b>Tambahkan ke layar utama</b>. Di sebagian HP namanya <b>Instal aplikasi</b>.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="cbar"><div class="url">&#128274; chatbot.namausaha.com/dashboard…</div><div class="ibtn">&#8942;</div></div>
+        <div class="view"><img src="android-dash.png">
+          <div class="cmenu">
+            <div class="ic"><span>&#8594;</span><span>&#9734;</span><span>&#8681;</span><span>&#9432;</span><span>&#8635;</span></div>
+            <div class="it">Tab baru</div><div class="it">Tab Samaran baru</div><div class="it">Histori</div><div class="it">Download</div><div class="it">Bookmark</div>
+            <div class="it">Bagikan…</div><div class="it">Cari di halaman</div>
+            <div class="it on">Tambahkan ke layar utama<div class="hl" style="inset:-2px -3px"></div><div class="pin" style="left:-14px;top:2px">3</div></div>
+            <div class="it">Situs desktop</div><div class="it">Setelan</div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">4</div><p>Muncul kotak konfirmasi. Ketuk <b>Instal</b> (atau <b>Tambahkan</b>). Ikon <b>DEI</b> langsung muncul di layar utama.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="cbar"><div class="url">&#128274; chatbot.namausaha.com/dashboard…</div><div class="ibtn">&#8942;</div></div>
+        <div class="view dim"><img src="android-dash.png"></div>
+        <div class="dlg"><h4>Instal aplikasi</h4>
+          <div class="ap"><img src="icon-192.png"><div><b>DEI Chatbot Dashboard</b><br><span style="color:#777">chatbot.namausaha.com</span></div></div>
+          <div class="bt"><span style="color:#555">Batal</span><span style="position:relative">Instal<div class="hl" style="inset:-6px -9px"></div><div class="pin" style="right:-24px;top:-10px">4</div></span></div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+  <div class="foot"><span>Cara Memasang Dashboard DEI Chatbot di HP</span><span>2</span></div>
+</section>
+
+<!-- ======================= HALAMAN 3: iPHONE ======================= -->
+<section class="page">
+  <h2><span class="os ios">iPHONE</span> Memasang dengan Safari</h2>
+  <p class="lead">Pakai aplikasi <b>Safari</b>, bukan browser di dalam WhatsApp atau Instagram.</p>
+  <div class="grid">
+    <div class="step">
+      <div class="st"><div class="n">1</div><p>Buka <b>Safari</b>, ketik alamat dashboard tenant Anda, lalu <b>login</b>.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="view"><img src="ios-login.png"></div>
+        <div class="sbar"><div class="surl">&#128274; chatbot.namausaha.com</div>
+          <div class="stool"><span>&#8249;</span><span>&#8250;</span><span>&#11014;</span><span>&#128214;</span><span>&#10697;</span></div>
+          <div class="hl" style="left:6px;top:3px;width:166px;height:28px"></div><div class="pin" style="left:164px;top:-10px">1</div></div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">2</div><p>Ketuk tombol <b>Bagikan</b> (kotak dengan panah ke atas) di bilah bawah. Bila tidak terlihat, ketuk <b>&bull;&bull;&bull;</b> di bilah alamat dulu.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="view"><img src="ios-dash.png"></div>
+        <div class="sbar"><div class="surl">&#128274; chatbot.namausaha.com</div>
+          <div class="stool"><span>&#8249;</span><span>&#8250;</span><span style="font-size:13px;color:#0a64ff">&#11014;</span><span>&#128214;</span><span>&#10697;</span></div>
+          <div class="hl r" style="left:82px;top:31px;width:26px;height:24px"></div><div class="pin" style="left:108px;top:20px">2</div></div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">3</div><p>Geser daftar ke bawah lalu pilih <b>Tambah ke Layar Utama</b>.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="view dim"><img src="ios-dash.png"></div>
+        <div class="sbar"><div class="surl">&#128274; chatbot.namausaha.com</div><div class="stool"><span>&#8249;</span><span>&#8250;</span><span>&#11014;</span><span>&#128214;</span><span>&#10697;</span></div></div>
+        <div class="sheet">
+          <div class="hd"><img src="icon-192.png"><div><b>DEI Chatbot</b><br><span style="color:#888">chatbot.namausaha.com</span></div></div>
+          <div class="apps"><span style="background:#34c759"></span><span style="background:#25d366"></span><span style="background:#0a84ff"></span><span style="background:#ff9500"></span><span style="background:#af52de"></span></div>
+          <div class="grp"><div class="row">Salin <span>&#10063;</span></div><div class="row">Tambah ke Daftar Bacaan <span>&#128083;</span></div><div class="row">Tambah Penanda <span>&#128214;</span></div></div>
+          <div class="grp"><div class="row">Tambah ke Favorit <span>&#9734;</span></div>
+            <div class="row on" style="position:relative">Tambah ke Layar Utama <span>&#8862;</span><div class="hl" style="inset:-1px"></div><div class="pin" style="right:-4px;top:-12px">3</div></div>
+            <div class="row">Cari di Halaman <span>&#128269;</span></div></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">4</div><p>Nama ikon boleh diganti, misalnya <b>DEI</b> atau nama usaha Anda. Ketuk <b>Tambah</b> di kanan atas.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="view"><img src="ios-dash.png">
+          <div class="add">
+            <div class="top"><span style="color:#0a64ff">Batalkan</span><b>Tambah ke Layar Utama</b><span style="color:#0a64ff;font-weight:700;position:relative">Tambah<div class="hl" style="inset:-5px -7px"></div><div class="pin" style="right:-12px;top:16px">4</div></span></div>
+            <div class="card"><img src="icon-192.png"><div style="flex:1"><div class="nm">DEI</div><small>https://chatbot.namausaha.com/…</small></div></div>
+            <p>Ikon akan ditambahkan ke layar utama Anda agar Anda dapat mengakses situs web ini dengan cepat.</p>
+          </div>
+        </div>
+        <div style="height:51px;background:#f2f2f6"></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="foot"><span>Cara Memasang Dashboard DEI Chatbot di HP</span><span>3</span></div>
+</section>
+
+<!-- ======================= HALAMAN 4: SETELAH TERPASANG ======================= -->
+<section class="page">
+  <h2>Setelah ikon terpasang</h2>
+  <p class="lead">Langkah ini sama untuk Android dan iPhone.</p>
+  <div class="grid">
+    <div class="step">
+      <div class="st"><div class="n">5</div><p>Ikon <b>DEI</b> ada di layar utama. Mulai sekarang buka dashboard <b>dari ikon ini</b>, bukan dari browser.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="home">
+          <div class="apps">
+            <div class="a"><span></span>Kamera</div><div class="a"><span></span>Galeri</div><div class="a"><span></span>Kalender</div><div class="a"><span></span>Setelan</div>
+            <div class="a"><span></span>Peta</div><div class="a"><span></span>Catatan</div><div class="a"><span></span>Jam</div>
+            <div class="a" style="position:relative"><img src="icon-192.png">DEI<div class="hl" style="left:1px;top:-5px;width:44px;height:44px;border-radius:13px"></div><div class="pin" style="right:-4px;top:-14px">5</div></div>
+          </div>
+          <div class="dock"><span></span><span></span><span></span><span></span></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">6</div><p>Dashboard terbuka <b>layar penuh</b> tanpa bilah alamat browser. Login sekali; selama tidak keluar, Anda tetap masuk.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="view"><img src="ios-dash.png"><div class="hl" style="left:2%;top:0.6%;width:96%;height:9.2%"></div><div class="pin" style="left:44%;top:8%">6</div></div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">7</div><p>Buka menu <b>&#9776;</b>, ketuk <b>Notifikasi</b>, lalu pilih <b>Izinkan</b> supaya pesan baru diberitahukan.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="view"><img class="bot" src="ios-menu.png">
+          <div class="hl" style="left:3%;top:84.6%;width:57%;height:6.6%"></div><div class="pin" style="left:57%;top:80%">7</div>
+        </div>
+      </div></div>
+    </div>
+    <div class="step">
+      <div class="st"><div class="n">8</div><p>Lupa caranya? Panduan ini juga ada di dashboard: <b>Panduan</b> &rsaquo; <b>Sering dicari</b> &rsaquo; <b>Memasang dashboard di HP</b>.</p></div>
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09.41</span><span>&#9679;&#9679;&#9679; 100%</span></div>
+        <div class="view"><img src="android-help-open.png"><div class="hl" style="left:4%;top:25.6%;width:91.5%;height:73%"></div><div class="pin" style="left:88%;top:22%">8</div></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="foot"><span>Cara Memasang Dashboard DEI Chatbot di HP</span><span>4</span></div>
+</section>
+
+<!-- ======================= HALAMAN 5: MASALAH UMUM ======================= -->
+<section class="page">
+  <h2>Masalah yang sering ditemui</h2>
+  <p class="lead">Bila langkah di atas tidak berjalan, cek daftar berikut dulu.</p>
+  <div class="faq">
+    <div class="q"><b>Menu "Tambahkan ke layar utama" / "Tambah ke Layar Utama" tidak ada</b><span>Biasanya dashboard dibuka dari dalam WhatsApp, Instagram, atau aplikasi lain. Salin alamatnya, lalu buka langsung di aplikasi <b>Chrome</b> (Android) atau <b>Safari</b> (iPhone).</span></div>
+    <div class="q"><b>Di Android ada tombol "Pasang sekarang" di Pusat Bantuan</b><span>Itu jalan pintas: ketuk tombolnya lalu pilih <b>Instal</b>. Hasilnya sama dengan langkah 2–4. Tombol hanya muncul bila browser mendukung dan ikon belum terpasang.</span></div>
+    <div class="q"><b>Notifikasi di iPhone tidak muncul</b><span>Pastikan iOS minimal versi 16.4, dashboard dibuka <b>dari ikon di layar utama</b> (bukan dari Safari), lalu ketuk <b>Notifikasi</b> dan pilih <b>Izinkan</b>. Cek juga Pengaturan &rsaquo; Notifikasi &rsaquo; DEI, pastikan izin aktif dan mode Fokus tidak menahannya.</span></div>
+    <div class="q"><b>Notifikasi di Android sering telat atau tidak ada</b><span>Buka Setelan HP &rsaquo; Aplikasi &rsaquo; Chrome (atau DEI) &rsaquo; Baterai, pilih <b>Tidak dibatasi</b>. Beberapa merek (Xiaomi, Oppo, Vivo, Realme) mematikan aplikasi di latar untuk hemat baterai.</span></div>
+    <div class="q"><b>Saya memegang beberapa tenant / usaha</b><span>Satu ikon untuk satu alamat dashboard. Ulangi langkah pemasangan dari alamat tenant yang lain, lalu beri nama ikon yang berbeda (iPhone: di langkah 4).</span></div>
+    <div class="q"><b>Ikon terhapus atau mau dipasang ulang</b><span>Tahan ikon lalu hapus, kemudian ulangi langkah pemasangan. Data dan pengaturan dashboard tidak ikut terhapus karena semuanya tersimpan di server.</span></div>
+    <div class="q"><b>Tampilan belum berubah setelah ada pembaruan dashboard</b><span>Tutup dashboard sepenuhnya (geser dari daftar aplikasi terbuka), lalu buka lagi dari ikon.</span></div>
+  </div>
+  <div class="box"><b>Masih belum berhasil?</b> Di dashboard, ketuk tombol <b>Bantuan</b> (ikon headset di sebelah nama Anda) untuk bertanya ke Asisten Bantuan, atau hubungi tim DEI.</div>
+  <div class="foot"><span>Cara Memasang Dashboard DEI Chatbot di HP</span><span>5</span></div>
+</section>
+</body></html>
