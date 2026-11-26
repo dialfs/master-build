@@ -75,13 +75,15 @@ def ai_queue(replies):
     with open(os.path.expanduser('~/demo/seed/ai-queue.json'), 'w') as f: json.dump(replies, f, ensure_ascii=False)
 
 import random
-def wa_in(num, name, text, bot_reply=None, t=None):
+def wa_in(num, name, text, bot_reply=None, t=None, ad=None):
     if bot_reply is not None: ai_queue([bot_reply])
     t = t or _clock['t']
     mid = 'false_%s@c.us_3A%s' % (num, ''.join(random.choice('0123456789ABCDEF') for _ in range(16)))
     evt = {'event': 'message', 'session': 'dei-demo', 'me': {'id': '6281100000001@c.us', 'pushName': 'Nusa EV'},
            'payload': {'id': mid, 'from': num + '@c.us', 'to': '6281100000001@c.us', 'fromMe': False, 'body': text,
                        'timestamp': int(t.timestamp()), 'hasMedia': False, '_data': {'notifyName': name}}}
+    if ad:
+        evt['payload']['_data']['ctwaContext'] = {'sourceUrl': 'https://fb.me/demo' + ad[1], 'sourceId': ad[1], 'sourceType': 'ad', 'title': ad[0], 'description': ad[0], 'ctwaClid': 'ARdemo' + ad[1]}
     r = call('wa_webhook_waha', 'POST', params={'key': 'seedkey'}, body=evt, t=t, raw=True)
     if r.strip() != 'OK': print('  webhook ->', r[:200])
     return r

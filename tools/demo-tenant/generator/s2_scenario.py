@@ -55,6 +55,9 @@ def convo(num, name, start, steps):
         if kind == 'in':
             wa_in(num, name, st[1], st[2] if len(st) > 2 else None)
             tick(st[3] if len(st) > 3 else 2)
+        elif kind == 'inad':
+            wa_in(num, name, st[1], st[2], ad=st[3])
+            tick(st[4] if len(st) > 4 else 2)
         elif kind == 'agent':
             tok = '@' + st[1]
             call('wa_send_manual', 'POST', token=tok, body={'number': num, 'text': st[2]})
@@ -107,7 +110,7 @@ analyze(N_BAMBANG, nama='Bambang', kebutuhan='Nusa Volt S, tanya harga & garansi
 # Dewi (H-13) -> Close Deal, sudah jadi pelanggan
 N_DEWI = '6281299900104'
 convo(N_DEWI, 'Dewi Lestari', at(13, 10, 2), [
- ('in', 'Halo kak, Volt S ada promo bulan ini?', 'Halo Kak! Bulan ini pembelian Nusa Volt S dapat bonus paket helm + jas hujan (senilai Rp 450.000). Harga Volt S Rp 18.900.000 OTR Jakarta. Kakak rencana beli cash atau kredit?'),
+ ('inad', 'Halo kak, Volt S ada promo bulan ini?', 'Halo Kak! Bulan ini pembelian Nusa Volt S dapat bonus paket helm + jas hujan (senilai Rp 450.000). Harga Volt S Rp 18.900.000 OTR Jakarta. Kakak rencana beli cash atau kredit?', ('Promo Akhir Tahun Nusa EV: bonus helm + jas hujan', '120210000000002')),
  ('in', 'Cash kak. Bisa dikirim ke Depok?', 'Bisa Kak, pengiriman gratis untuk Jabodetabek, 2–4 hari kerja setelah pembayaran lunas. Boleh saya sambungkan ke tim sales untuk proses pemesanannya?'),
  ('in', 'Boleh kak, warna putih ya', 'Baik Kak, saya teruskan ke tim sales ya. Mohon tunggu sebentar 🙏', 6),
  ('human',), ('claim',),
@@ -130,7 +133,7 @@ act(N_DEWI, at(10, 14, 0), 'call', 'Konfirmasi unit sudah diterima dalam kondisi
 # Andi (H-12) -> pipeline Negosiasi
 N_ANDI = '6281299900101'
 convo(N_ANDI, 'Andi', at(12, 10, 5), [
- ('in', 'Halo kak, mau tanya harga Nusa Volt X berapa ya?', 'Halo Kak! Nusa Volt X harganya Rp 24.500.000 OTR Jakarta, sudah termasuk STNK, BPKB, charger, dan garansi baterai 5 tahun. Jarak tempuhnya sampai ± 110 km sekali cas. Boleh tahu Kakak domisili di mana?'),
+ ('inad', 'Halo kak, mau tanya harga Nusa Volt X berapa ya?', 'Halo Kak! Nusa Volt X harganya Rp 24.500.000 OTR Jakarta, sudah termasuk STNK, BPKB, charger, dan garansi baterai 5 tahun. Jarak tempuhnya sampai ± 110 km sekali cas. Boleh tahu Kakak domisili di mana?', ('Volt X — cicilan mulai 800 ribuan', '120210000000001')),
  ('in', 'Saya di Bekasi. Bisa dicicil ga?', 'Bisa Kak 😊 Cicilan lewat leasing partner kami dengan DP mulai 10% (± Rp 2.450.000). Perkiraan angsuran: 12 bln ± Rp 2,1 jt, 24 bln ± Rp 1,15 jt, 36 bln ± Rp 830 rb per bulan. Angka final mengikuti persetujuan leasing. Mau sekalian dijadwalkan test ride?'),
  ('in', 'Boleh, Sabtu ini bisa test ride jam 10?', 'Bisa Kak, showroom buka Sabtu 09.00–18.00. Boleh minta nama lengkap Kakak? Nanti tim sales kami konfirmasi jadwalnya.'),
  ('in', 'Andi Pratama', 'Terima kasih Kak Andi! Test ride Nusa Volt X: Sabtu jam 10.00 di showroom Nusa EV, Jl. Mawar Raya No. 12, Jakarta Timur. Jangan lupa bawa SIM C ya. Tim sales akan konfirmasi 🙏', 20),
@@ -198,7 +201,7 @@ status(N_HENDRA, 'negosiasi', at(1, 10, 35))
 # Yoga (H-7) -> tukar tambah, Qualified
 N_YOGA = '6281299900106'
 convo(N_YOGA, 'Yoga Saputra', at(7, 20, 15), [
- ('in', 'Bisa tukar tambah motor bensin ga kak? Saya ada Beat 2019', 'Bisa Kak! Tukar tambah berlaku untuk motor bensin merek apa pun. Harga taksiran Beat 2019 ditentukan setelah unit dicek di showroom (± 30 menit). Jangan lupa bawa STNK & BPKB asli ya.'),
+ ('inad', 'Bisa tukar tambah motor bensin ga kak? Saya ada Beat 2019', 'Bisa Kak! Tukar tambah berlaku untuk motor bensin merek apa pun. Harga taksiran Beat 2019 ditentukan setelah unit dicek di showroom (± 30 menit). Jangan lupa bawa STNK & BPKB asli ya.', ('Tukar tambah motor bensin jadi DP', '120210000000003')),
  ('in', 'Mau ganti ke Volt X kak. Kira2 Beat saya dihargai berapa?', 'Taksiran pastinya menunggu pengecekan unit, Kak. Nilai tukar tambah langsung memotong harga Volt X (Rp 24.500.000) atau dipakai sebagai DP. Mau saya jadwalkan cek unit sekaligus test ride?'),
  ('in', 'Minggu depan aja kak saya kabari', 'Siap Kak Yoga, ditunggu kabarnya ya 🙏', 3),
 ])
@@ -211,7 +214,7 @@ act(N_YOGA, at(6, 9, 30), 'wa', 'Kirim info syarat tukar tambah & promo Volt X. 
 # Maya (H-6) -> dijawab bot sampai selesai
 N_MAYA = '6281299900107'
 convo(N_MAYA, 'Maya Anggraini', at(6, 16, 5), [
- ('in', 'Kak aku tinggal di apartemen, bisa ngecas motornya gimana ya?', 'Bisa Kak 😊 Baterai Nusa EV bisa dilepas, jadi bisa dibawa dan dicas di dalam unit apartemen pakai stop kontak biasa 220 V. Waktu cas 0–100% ± 4–5 jam.'),
+ ('inad', 'Kak aku tinggal di apartemen, bisa ngecas motornya gimana ya?', 'Bisa Kak 😊 Baterai Nusa EV bisa dilepas, jadi bisa dibawa dan dicas di dalam unit apartemen pakai stop kontak biasa 220 V. Waktu cas 0–100% ± 4–5 jam.', ('Volt X — cicilan mulai 800 ribuan', '120210000000001')),
  ('in', 'Listrik unitku 1300 VA aman?', 'Aman Kak. Daya charger 600 W, jadi 1.300 VA cukup selama tidak bersamaan dengan alat berdaya besar seperti setrika atau microwave.'),
  ('in', 'Oke makasih infonya kak', 'Sama-sama Kak Maya! Kalau mau test ride, showroom buka setiap hari ya ⚡', 3),
 ])
@@ -263,7 +266,7 @@ act(N_RATNA, at(2, 15, 0), 'wa', 'Menunggu foto KTP, KK, dan rekening koran suam
 
 # Lina (hari ini) -> belum dibalas, menunggu admin
 N_LINA = '6281299900109'
-convo(N_LINA, 'Lina Marlina', at(0, 14, 10), [
+convo(N_LINA, 'Lina Marlina', at(0, 7, 40), [
  ('in', 'Kak Volt X warna merah ready? Saya mau ambil minggu ini, cash', 'Halo Kak Lina! Volt X warna Merah memang khusus tipe ini 😍 Untuk cek stok dan proses pembelian cash, saya sambungkan ke tim kami ya.', 4),
  ('human',),
  ('in', 'Ok ditunggu ya kak', None, 2),
@@ -272,11 +275,19 @@ tag(N_LINA, 'hot_prospect')
 
 # Nanda (hari ini) -> bot sedang melayani
 N_NANDA = '6281299900111'
-convo(N_NANDA, 'Nanda Putri', at(0, 16, 45), [
+convo(N_NANDA, 'Nanda Putri', at(0, 8, 25), [
  ('in', 'Kak hari Minggu showroom buka? Mau test ride Volt S', 'Buka Kak! Hari Minggu showroom buka 10.00–16.00. Test ride gratis, bawa SIM C ya. Mau saya catat jam berapa?'),
  ('in', 'Jam 11 kak, atas nama Nanda', 'Siap Kak Nanda, test ride Volt S hari Minggu jam 11.00 sudah dicatat. Sampai ketemu di showroom 😊', 2),
 ])
 tag(N_NANDA, 'new')
+
+# Gilang (hari ini) -> dari iklan CTWA, dijawab bot
+N_GILANG = '6281299900113'
+convo(N_GILANG, 'Gilang Ramadhan', at(0, 8, 5), [
+ ('inad', 'Halo, promo akhir tahun masih berlaku? Mau Volt X', 'Masih berlaku Kak sampai akhir bulan! Volt X Rp 24.500.000 OTR Jakarta, bonus helm + jas hujan. Mau cash atau kredit? DP kredit mulai Rp 2.450.000.', ('Promo Akhir Tahun Nusa EV: bonus helm + jas hujan', '120210000000002')),
+ ('in', 'Kredit kak, tenor 36 bulan berapa?', 'Untuk Volt X DP 10%, tenor 36 bulan sekitar Rp 830 ribu per bulan, Kak (final mengikuti persetujuan leasing). Boleh saya bantu jadwalkan test ride dulu?', 3),
+])
+tag(N_GILANG, 'warm')
 
 # ---------- 4. Lead manual (CRM) ----------
 set_time(at(4, 15, 10))
@@ -302,16 +313,16 @@ def task_from_bubble(num, title, status_, assignee, due, note, t, kind='in', idx
     src = {'number': num, 'k': 'q' + e['ts'] + e.get('wamid', ''), 'ts': e['ts'], 'kind': 'in', 'text': e['q'], 'mt': '', 'mn': ''}
     return call('task_save', 'POST', token='@admin', body={'title': title, 'status': status_, 'assignee': assignee, 'due': due, 'note': note, 'src': src})
 
-r = task_from_bubble(N_LINA, 'Cek stok Volt X Merah & kabari Kak Lina (cash minggu ini)', 'new', 'admin', ymd(0), 'Prioritas — pembeli cash.', at(0, 14, 25), idx_text='merah')
+r = task_from_bubble(N_LINA, 'Cek stok Volt X Merah & kabari Kak Lina (cash minggu ini)', 'new', 'admin', ymd(0), 'Prioritas — pembeli cash.', at(0, 7, 55), idx_text='merah')
 r = task_from_bubble(N_HENDRA, 'Siapkan unit demo Cargo Pro untuk meeting Kamis di Cakung', 'done', 'sales', ymd(-6), '', at(9, 15, 0), idx_text='pengadaan')
 set_time(at(1, 11, 0))
 r = call('task_save', 'POST', token='@sales', body={'title': 'Revisi penawaran PT Kirim Cepat + 2 baterai cadangan', 'status': 'progress', 'assignee': 'sales', 'due': ymd(1), 'note': 'Minta approval harga baterai cadangan ke SPV dulu.', 'lead': N_HENDRA})
 tid = r.get('task', {}).get('id')
-set_time(at(0, 9, 15)); call('task_note', 'POST', token='@admin', body={'id': tid, 'text': 'SPV setuju baterai cadangan Rp 5,9 jt/unit. Silakan kirim revisi.'})
+set_time(at(0, 8, 15)); call('task_note', 'POST', token='@admin', body={'id': tid, 'text': 'SPV setuju baterai cadangan Rp 5,9 jt/unit. Silakan kirim revisi.'})
 r = task_from_bubble(N_RATNA, 'Cek kelengkapan dokumen leasing Bu Ratna', 'pending', 'admin', ymd(1), 'Menunggu dokumen dikirim pelanggan.', at(2, 15, 10), idx_text='ajukan')
 
 # ---------- 6. Chat web (widget) ----------
-def web(start, msgs, lead=None):
+def web(start, msgs, lead=None, utm=None):
     set_time(start)
     r = call('web_conv_new', 'POST', body={})
     cid, vid = r.get('conversation_id') or r.get('id'), r.get('visitor_id')
@@ -319,12 +330,40 @@ def web(start, msgs, lead=None):
     hist = []
     for q, a in msgs:
         tick(1); ai_queue([a])
-        call('chat', 'POST', body={'message': q, 'conversation_id': cid, 'visitor_id': vid, 'history': hist, 'utm': {'source': 'google', 'medium': 'organic'}})
+        call('chat', 'POST', body={'message': q, 'conversation_id': cid, 'visitor_id': vid, 'history': hist, 'utm': utm or {}})
         hist += [{'role': 'user', 'content': q}, {'role': 'assistant', 'content': a}]
         tick(2)
 web(at(4, 21, 5), [('Berapa lama ngecas sampai penuh?', 'Waktu cas 0–100% sekitar 4–5 jam pakai stop kontak rumah biasa 220 V, Kak.'),
-                   ('Bisa pakai listrik rumah 900 VA?', 'Bisa Kak, daya charger 600 W. Saat mengecas, hindari menyalakan alat berdaya besar bersamaan. Untuk lebih leluasa disarankan 1.300 VA ke atas.')])
-web(at(0, 11, 30), [('Ada promo akhir tahun?', 'Ada Kak! Bulan ini pembelian Volt S dapat bonus helm + jas hujan, dan tukar tambah motor bensin bisa langsung jadi DP. Mau saya bantu jadwalkan test ride?')])
+                   ('Bisa pakai listrik rumah 900 VA?', 'Bisa Kak, daya charger 600 W. Saat mengecas, hindari menyalakan alat berdaya besar bersamaan. Untuk lebih leluasa disarankan 1.300 VA ke atas.')],
+    utm={'utm_source': 'google', 'utm_medium': 'cpc', 'utm_campaign': 'volt-x-search'})
+web(at(9, 20, 30), [('Garansi baterai berapa tahun?', 'Garansi baterai 5 tahun atau 50.000 km, Kak. Rangka & dinamo 3 tahun.')],
+    utm={'utm_source': 'instagram', 'utm_medium': 'social', 'utm_campaign': 'promo-akhir-tahun'})
+web(at(6, 13, 10), [('Showroom di mana ya?', 'Showroom Nusa EV ada di Jl. Mawar Raya No. 12, Jakarta Timur. Buka Senin–Sabtu 09.00–18.00, Minggu 10.00–16.00.')],
+    utm={'utm_source': 'google', 'utm_medium': 'organic', 'utm_campaign': ''})
+web(at(0, 8, 50), [('Ada promo akhir tahun?', 'Ada Kak! Bulan ini pembelian Volt S dapat bonus helm + jas hujan, dan tukar tambah motor bensin bisa langsung jadi DP. Mau saya bantu jadwalkan test ride?')],
+    utm={'utm_source': 'facebook', 'utm_medium': 'cpc', 'utm_campaign': 'promo-akhir-tahun'})
+
+# ---------- 7. Customer Feedback ----------
+set_time(at(14, 9, 0))
+call('gc_admin', 'POST', token='@admin', body={'op': 'save', 'conf': {'enabled': True, 'ask_name': True, 'ask_room': False, 'ask_phone_web': True,
+     'ref_label': 'Nomor pesanan', 'ref_label_en': 'Order number'}})
+FB = [(12, 'Dewi Lestari', '081299900104', [5, 5, 5, 4, 5], 'Pengiriman ke Depok cepat, unit mulus. Admin responsif!'),
+      (9, 'Fajar Nugroho', '081299900108', [5, 4, 5, 5, 4], 'Servis cepat, ruang tunggu nyaman.'),
+      (6, 'Rudi Hartono', '081299900105', [3, 3, 5, 3, 4], 'Awalnya baterai drop, tapi ditangani dengan baik setelah update firmware.'),
+      (4, 'Agus W', '081299900301', [4, 4, 4, 3, 4], 'Antrian servis Sabtu agak lama.'),
+      (2, 'Maya Anggraini', '081299900107', [5, 5, 4, 5, 5], 'Info charging di apartemen jelas sekali, terima kasih.'),
+      (1, 'Hana', '081299900302', [2, 3, 2, 2, 3], 'Test ride harus menunggu lama karena unit dipakai pengunjung lain.')]
+for d, nm, ph, rr, cm in FB:
+    set_time(at(d, 16, 20))
+    ids = ['overall', 'quality', 'staff', 'speed', 'value']
+    call('gc_submit', 'POST', body={'name': nm, 'phone': ph, 'ratings': dict(zip(ids, rr)), 'comment': cm}, extra_env={'REMOTE_ADDR': '36.80.1.%d' % d})
+
+# ---------- 8. Scan topik ----------
+set_time(at(0, 9, 0))
+for dd in (30, 7):
+    r = call('topic_scan_run', 'POST', token='@admin', body={'days': dd, 'channel': ''})
+    print('topik', dd, len((r.get('scan') or {}).get('topics') or []))
+    tick(1)
 
 set_time(NOW)
 print('selesai')

@@ -10,7 +10,7 @@ stop() { echo "$1"; read -r -p "Tekan Enter untuk menutup..." _; exit 1; }
 date
 echo "== 1/4 Cek & commit =="
 php -l "$TD/demo-provision.php" || stop "LINT GAGAL"
-[[ "$(md5 -q "$TD/demo-data.zip")" == "b0a8c0fb6ba8c6a5fa580681a93eb3b4" ]] || stop "demo-data.zip tidak cocok (md5)."
+[[ "$(md5 -q "$TD/demo-data.zip")" == "713fa835b7ef1b33249373723ec323ef" ]] || stop "demo-data.zip tidak cocok (md5)."
 rm -f "$HERD/master-build/.git/"*.lock
 (cd "$HERD/master-build" && git add tools/demo-tenant && git commit -qm "tools: tenant demo (chatbot.deintegra.com/demo) dengan data contoh" -m "$TRAILER" && echo "master-build commit OK") || echo "(master-build: tidak ada yang di-commit)"
 (cd "$HERD/master-build" && rm -f .git/*.lock && git pull --ff-only origin main && git push -q origin main && echo "master-build OK $(git rev-parse --short HEAD)") || echo "(!) push master-build gagal — lanjut pasang, push nanti"

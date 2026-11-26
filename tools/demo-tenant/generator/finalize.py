@@ -24,12 +24,16 @@ s['central_server'] = {'url': '', 'tenant_id': '', 'license_key': '', 'auto_upda
 wj('settings.json', s)
 
 for n in ['cap-cache.json', 'license-cache.json', 'login-log.json', 'ratelimit.json', 'lockout.json', 'vapid-keys.json',
-          'version.json', 'self-url.txt', '.secret.php', 'waha-sent.json', 'push-subs.json', 'sso-used.json', 'release-notes-cache.json']:
+          'version.json', 'topic-scan-usage.json', 'self-url.txt', '.secret.php', 'waha-sent.json', 'push-subs.json', 'sso-used.json', 'release-notes-cache.json']:
     p = os.path.join(STG, n)
     if os.path.exists(p): os.remove(p)
 for p in glob.glob(STG + '/*.lock') + glob.glob(STG + '/.locks'): (shutil.rmtree if os.path.isdir(p) else os.remove)(p)
 shutil.rmtree(STG + '/wa-health', ignore_errors=True)
 
+import datetime
+_sl = [x for x in (rj('sales.json') or {}).get('items', []) if x.get('active')]
+if _sl: wj('sales-targets.json', {_sl[0]['id']: {'rev': 150000000, 'deals': 6, 'acts': 60}})   # target contoh untuk Laporan Sales (v1.2.221)
+wj('demo-anchor.json', {'date': datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).strftime('%Y-%m-%d'), 'note': 'Tanggal acuan data contoh; demo-reset.php menggeser semua tanggal ke hari ini.'})
 # periksa sisa jejak seeding
 bad = subprocess.run(['grep', '-rlE', '"seed"|127\\.0\\.0\\.1|mock-key|Sementara-Demo', STG], capture_output=True, text=True).stdout
 print('sisa jejak:', bad or '(tidak ada)')

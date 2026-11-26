@@ -1,3 +1,26 @@
 Wed Nov 25 17:48:33 WIB 2026
 == 1/4 Cek & commit ==
 No syntax errors detected in /Users/dias/Herd/master-build/tools/demo-tenant/demo-provision.php
+master-build commit OK
+From github.com:dialfs/master-build
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+master-build OK 443bf7e
+
+== 2/4 Kirim ke server ==
+
+== 3/4 Pasang tenant di server ==
+Tenant demo dipasang di /home/u1545168/public_html/chatbot.deintegra.com/demo (versi v1.2.220), paket Pro, batas 1.000 balasan AI / USD 5 per bulan.
+bootstrap: HTTP 200 OK (bot: Nadia - Nusa EV)
+login admin: HTTP 200 OK (peran admin)
+login sales: HTTP 200 OK (peran sales)
+Dashboard: https://chatbot.deintegra.com/demo/dashboard/chatbot-ai/login.html
+
+== 4/4 Cek dari luar ==
+login.html HTTP 200  <- harus 200
+data/users.json publik HTTP 403  <- harus 403/404
+login admin: {"ok":true,"token":"YWRtaW4.6b06bd0c.6b06bd0c.0325e5acd09fdf
+
+Buka: https://chatbot.deintegra.com/demo/dashboard/chatbot-ai/login.html  (admin/admin, sales/sales)
+SELESAI Wed Nov 25 17:48:44 WIB 2026
+Tekan Enter untuk menutup...
