@@ -1,0 +1,25 @@
+      <div class="card" id="tplCard" style="margin-top:18px"><!-- v1.2.226: buat-template -->
+        <h3 style="margin:0 0 4px">Template WhatsApp</h3>
+        <p class="help" style="margin:0 0 12px">Buat message template baru langsung dari dashboard. Template dikirim ke Meta untuk ditinjau; setelah status <b>APPROVED</b> template bisa dipakai di Blast &amp; notifikasi.</p>
+        <div class="grid2" style="align-items:start;gap:18px">
+          <div>
+            <div class="row"><label class="fl">Nama template</label><input type="text" id="tplName" class="mono" placeholder="mis. info_test_drive"><div class="help">Huruf kecil, angka &amp; garis bawah. Spasi otomatis jadi _.</div></div>
+            <div class="grid2">
+              <div class="row"><label class="fl">Kategori</label><select id="tplCat"><option value="UTILITY">Utility (info transaksi/layanan)</option><option value="MARKETING">Marketing (promosi)</option></select></div>
+              <div class="row"><label class="fl">Bahasa</label><select id="tplLang"><option value="id">Indonesia (id)</option><option value="en_US">English (en_US)</option><option value="en">English (en)</option></select></div>
+            </div>
+            <div class="row"><label class="fl">Header (opsional)</label><input type="text" id="tplHead" maxlength="60" placeholder="mis. Jadwal Test Drive"></div>
+            <div class="row"><label class="fl">Isi pesan</label><textarea id="tplBody" rows="5" maxlength="1024" placeholder="Halo {{1}}, jadwal test drive Anda {{2}} sudah kami terima."></textarea><div class="help">Variabel ditulis {{1}}, {{2}}, … berurutan.</div></div>
+            <div id="tplEx"></div>
+            <div class="row"><label class="fl">Footer (opsional)</label><input type="text" id="tplFoot" maxlength="60" placeholder="mis. Balas STOP untuk berhenti"></div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+              <button class="btn" id="tplSubmit" type="button">Kirim ke Meta</button>
+              <span id="tplStatus" class="help" style="margin:0"></span>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b>Daftar template</b><button class="btn ghost sm" id="tplReload" type="button" title="Muat ulang"><span data-ico="rotate-cw" data-ico-size="14"></span></button></div>
+            <div id="tplList" style="font-size:13px;color:var(--muted)">Memuat…</div>
+          </div>
+        </div>
+      </div>
